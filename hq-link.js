@@ -1,85 +1,71 @@
-// HQ chat delivery: gets Chris's messages to Grok Bot + the team.
-// Swap this file out (WebSocket, API, etc.) without touching the chat UI: the UI only calls
-//   send({ to, text, sentAt }) -> { status: 'delivered' | 'needs-tap' | 'failed', url?, ref?, error? }
+// HQ chat delivery: gets Chris's messages to Grok Bot + the team, instantly, with no login and no token on the device.
+// The UI (chat.js) only calls:
+//   send({ to, text, sentAt }) -> { status: 'delivered' | 'failed', ref?, error? }
 //   fetchReplies() -> [{ ref, id, from, text, at }]
 //   isLinked() -> bool
 //
-// v1 transport = GitHub Issues on a PRIVATE inbox repo that Grok Bot watches with `gh`.
-// Nothing secret lives in this public code. A per-device "HQ key" (a fine-grained GitHub token
-// limited to Issues on the inbox repo) is stored only in this device's localStorage. Install it once by
-// opening the setup link  https://johnsonswork-star.github.io/grok-bot-hq/#hqkey=<token>
-// (the page saves it and strips it from the address bar).
-// With no key, sending falls back to a pre-filled GitHub "new issue" page that Chris taps Submit on.
-export const INBOX_REPO = 'johnsonswork-star/grok-bot-hq-inbox';
-export const LABEL = 'hq-chat';
-const API = 'https://api.github.com';
-const KEY = 'hq.key', SENT = 'hq.sentRefs';
+// v2 transport = end-to-end encrypted relay:
+//   iPad --(encrypted to the HQ inbox public key)--> ntfy.sh topic --> HQ bridge --> GitHub issue in the PRIVATE
+//   repo johnsonswork-star/grok-bot-hq-inbox (label hq-chat). The bridge runs on Grok Bot's box (instant) with a
+//   GitHub Action backup (hourly). Replies = issue comments, encrypted to THIS device's own key and relayed back
+//   on a per-device ntfy topic. Only public keys are in this file; the relay only ever sees ciphertext.
+import { seal, open, newKeyPair, importPriv, randomId } from './hq-crypto.js';
 
-(function captureSetupLink() {
-  const m = location.hash.match(/hqkey=([^&]+)/);
-  if (m) {
-    try { localStorage.setItem(KEY, decodeURIComponent(m[1])); } catch (e) {}
-    history.replaceState(null, '', location.pathname + location.search);
-  }
-  if (/hqkey=clear/.test(location.hash)) { try { localStorage.removeItem(KEY); } catch (e) {} }
+export const INBOX_REPO = 'johnsonswork-star/grok-bot-hq-inbox';
+const RELAY = 'https://ntfy.sh';
+const INBOX_TOPIC = 'hqin_fzBxIcY6ogUeBH0F8ziL4j6ngcEZ4mld';
+const INBOX_PUB = {"kty":"EC","crv":"P-256","x":"z0ZG58n1mbb7yy0m4A4gqjxWAJ59Qq37Zw3Bn6nVEBQ","y":"W2tdYXFuAE_Y-q9P44DpwynBHUTSD7pAffCo_5vY37M"};
+const DEV = 'hq.device';
+
+(function cleanupOldSetup() { // v1 used a per-device GitHub key; drop it
+  try { localStorage.removeItem('hq.key'); } catch (e) {}
+  if (/hqkey=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
 })();
 
-const key = () => { try { const k = localStorage.getItem(KEY); return k && k !== 'clear' ? k : null; } catch (e) { return null; } };
-export const isLinked = () => !!key();
-const sentRefs = () => { try { return JSON.parse(localStorage.getItem(SENT) || '[]'); } catch (e) { return []; } };
-const saveRefs = r => { try { localStorage.setItem(SENT, JSON.stringify(r.slice(-15))); } catch (e) {} };
-
-function chicago(d) {
-  try { return d.toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' }) + ' CT'; }
-  catch (e) { return d.toISOString(); }
-}
-function issueFor({ to, text, sentAt }) {
-  const snippet = text.replace(/\s+/g, ' ').slice(0, 60) + (text.length > 60 ? '…' : '');
-  const team = to === 'Grok Bot' ? 'Grok Bot (+ team)' : `${to} (via Grok Bot + team)`;
-  return {
-    title: `HQ chat → ${to}: ${snippet}`,
-    body: `**From:** Chris (Bot HQ)\n**To:** ${team}\n**Sent:** ${chicago(sentAt)} (${sentAt.toISOString()})\n\n---\n\n${text}\n\n---\n_Reply by commenting on this issue. Start the comment with \`**Bot Name:**\` to show it from a specific bot; replies appear in the HQ chat on Chris's iPad._`,
-  };
-}
-async function gh(path, opts = {}) {
-  const r = await fetch(API + path, { ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${key()}`,
-    'X-GitHub-Api-Version': '2022-11-28', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
-  if (!r.ok) throw new Error(`GitHub ${r.status}`);
-  return r.json();
-}
-
-export async function send(msg) {
-  const issue = issueFor(msg);
-  if (key()) {
-    try {
-      let j;
-      try { j = await gh(`/repos/${INBOX_REPO}/issues`, { method: 'POST', body: JSON.stringify({ ...issue, labels: [LABEL] }) }); }
-      catch (e) { j = await gh(`/repos/${INBOX_REPO}/issues`, { method: 'POST', body: JSON.stringify(issue) }); } // token may lack label rights
-      saveRefs([...sentRefs(), j.number]);
-      return { status: 'delivered', ref: j.number, url: j.html_url };
-    } catch (e) {
-      return { status: 'failed', error: e.message, url: prefill(issue) };
+let devP = null;
+function device() {
+  return devP ||= (async () => {
+    let d = null; try { d = JSON.parse(localStorage.getItem(DEV) || 'null'); } catch (e) {}
+    if (!d || !d.privJwk || !d.topic) {
+      const k = await newKeyPair();
+      d = { id: randomId(9), topic: 'hqout_' + randomId(18), ...k };
+      try { localStorage.setItem(DEV, JSON.stringify(d)); } catch (e) {}
     }
-  }
-  return { status: 'needs-tap', url: prefill(issue) };
+    d.priv = await importPriv(d.privJwk);
+    return d;
+  })();
 }
-function prefill(issue) {
-  const q = new URLSearchParams({ title: issue.title, body: issue.body, labels: LABEL });
-  return `https://github.com/${INBOX_REPO}/issues/new?${q}`;
+export const isLinked = () => !!(globalThis.crypto && crypto.subtle);
+
+export async function send({ to, text, sentAt }) {
+  try {
+    const d = await device();
+    const mid = randomId(9);
+    const env = await seal({ v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(),
+      device: { id: d.id, topic: d.topic, pub: d.pubJwk }, ua: navigator.userAgent.slice(0, 120) }, INBOX_PUB);
+    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(env) });
+    if (!r.ok) throw new Error('relay ' + r.status);
+    return { status: 'delivered', ref: mid };
+  } catch (e) {
+    return { status: 'failed', error: e.message };
+  }
 }
 
-// Real replies only: comments on the issues this device sent.
+// Real replies only: comments on this device's messages, decrypted locally.
 export async function fetchReplies() {
-  if (!key()) return [];
   const out = [];
-  for (const ref of sentRefs().slice(-8)) {
-    try {
-      const cs = await gh(`/repos/${INBOX_REPO}/issues/${ref}/comments?per_page=50`);
-      for (const c of cs) {
-        const m = c.body.match(/^\s*\*\*([^*]{1,40}):\*\*\s*/);
-        out.push({ ref, id: c.id, from: m ? m[1].trim() : 'Grok Bot', text: m ? c.body.slice(m[0].length) : c.body, at: c.created_at });
-      }
-    } catch (e) {}
-  }
+  try {
+    const d = await device();
+    const r = await fetch(`${RELAY}/${d.topic}/json?poll=1&since=all`);
+    if (!r.ok) return out;
+    for (const line of (await r.text()).split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
+        const p = await open(JSON.parse(m.message), d.priv);
+        out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at });
+      } catch (e) {}
+    }
+  } catch (e) {}
   return out;
 }

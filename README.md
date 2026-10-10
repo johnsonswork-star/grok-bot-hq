@@ -1,4 +1,4 @@
-# Bot Office HQ (v1.2)
+# Bot Office HQ (v1.3)
 
 **Live, always-on URL: https://johnsonswork-star.github.io/grok-bot-hq/**
 (hosted on GitHub Pages; works on iPad over Wi-Fi or cellular, no PC and no server on our side needed)
@@ -63,11 +63,20 @@ Hold the Xbox **View** button (Standard Gamepad `buttons[8]`, a.k.a. Back/Select
 
 Who you talk to: the open desk panel, else the desk you're looking at, else the last desk you used (A or Y), else **Grok Bot**. Change it with the dropdown or LB/RB.
 
-**Delivery (real, no canned replies):** each message becomes a GitHub issue (label `hq-chat`) in the **private** repo `johnsonswork-star/grok-bot-hq-inbox`, which Grok Bot watches. Replies are issue comments and show up in the panel (polled every 15 s while it's open). Grok Bot side: `tools/hq-inbox.sh` (list / read / reply / done).
+**Delivery (real, instant, no login, no token on the iPad):** tap Send (or A) and the message is delivered in-app in about a second. The status reads "✓ Delivered to Grok Bot & team". No GitHub page opens and nothing has to be set up on the device.
 
-- **Linked device** (status line green, "Linked to Grok Bot + team"): sends instantly in-app and shows "✓ Delivered to Grok Bot & team". Needs a one-time HQ key on that device: open `https://johnsonswork-star.github.io/grok-bot-hq/#hqkey=<fine-grained GitHub token, Issues read/write on grok-bot-hq-inbox only>`. The page stores it in that device's localStorage and strips it from the URL. `#hqkey=clear` removes it. No key is ever in the public code.
-- **Not linked** (orange status): Send opens a pre-filled GitHub "new issue" page; tap **Submit** there (must be signed in to GitHub as johnsonswork-star). The message shows "Tap here, then Submit, to deliver" until then.
-- Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
+How it works (v2, end-to-end encrypted):
+
+1. `hq-link.js` encrypts the message in the browser (WebCrypto ECDH P-256 + AES-256-GCM, `hq-crypto.js`) to the HQ inbox **public** key and POSTs the ciphertext to a long random topic on the free public relay **ntfy.sh** (no account). Only public keys are in the site code; the relay only ever sees ciphertext.
+2. The **HQ bridge** on Grok Bot's box (`tools/hq-bridge.mjs watch`) streams that topic, decrypts with the private key (`~/.config/grok-bot-hq/inbox-key.json`, mode 600, never published) and files a GitHub issue (label `hq-chat`) in the **private** repo `johnsonswork-star/grok-bot-hq-inbox` within ~2 s.
+3. Each device creates its own keypair + private reply topic on first use (localStorage `hq.device`). The public half rides inside the encrypted message and is stored in a hidden `hq-meta` comment in the issue.
+4. Replies are issue comments. They're encrypted to that device's key and posted to its reply topic, both by `hq-inbox.sh reply` (immediately) and by the bridge's comment sweep (every 20 s; this also catches comments made on github.com). The chat panel polls its reply topic every 15 s while open and decrypts locally.
+
+Grok Bot side: `tools/hq-inbox.sh` (list / read / reply / done / bridge). `list` also restarts the bridge if it isn't running and does a catch-up pass. The relay keeps messages for 12 h, so a bridge restart within 12 h loses nothing. Bridge log: `~/.config/grok-bot-hq/bridge.log`.
+
+If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
+
+Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
 ## Layout (north = the big window wall, you spawn at the south entry door)
 

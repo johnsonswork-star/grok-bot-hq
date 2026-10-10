@@ -20,12 +20,12 @@ export function createChat({ stations, onOpenChange }) {
       if (m.kind === 'me') return `<div class="msg me"><div class="who">You → ${esc(m.to)}</div><div class="txt">${esc(m.text)}</div>
         <div class="st ${m.status}">${m.status === 'delivered' ? '✓ Delivered to Grok Bot &amp; team'
           : m.status === 'sending' ? 'Sending…'
-          : `<a href="${esc(m.url)}" target="_blank" rel="noopener">${m.status === 'failed' ? '⚠ Not sent. Tap to send via GitHub' : 'Tap here, then Submit, to deliver'}</a>`}</div></div>`;
+          : `<a href="#" class="retry" data-at="${m.at}">⚠ Not sent (no signal?). Tap to retry</a>`}</div></div>`;
       return `<div class="msg bot"><div class="who">${esc(m.from)}</div><div class="txt">${esc(m.text)}</div></div>`;
     }).join('') : `<div class="empty">Messages go straight to Grok Bot and the team. Replies show up here.</div>`;
     log.scrollTop = log.scrollHeight;
-    status.innerHTML = link.isLinked() ? '<span class="ok">● Linked to Grok Bot + team</span>'
-      : '<span class="warn">● HQ link not set up on this device. Sends open GitHub to submit</span>';
+    status.innerHTML = link.isLinked() ? '<span class="ok">● Live to Grok Bot + team (encrypted)</span>'
+      : '<span class="warn">● This browser can\'t encrypt messages. Update iPadOS / Safari</span>';
   }
   function setTarget(s) { target = s || target; sel.value = target.id; $('.cname').textContent = target.name; $('.cdot').style.background = target.color; input.placeholder = `Message ${target.name}${target.hero ? '' : ' (via Grok Bot)'}…`; }
   sel.addEventListener('change', () => setTarget(stations.find(s => s.id === sel.value)));
@@ -34,15 +34,19 @@ export function createChat({ stations, onOpenChange }) {
     text = (text || '').trim(); if (!text) return;
     const m = { kind: 'me', to: target.name, text, at: Date.now(), status: 'sending' };
     entries.push(m); render();
-    const r = await link.send({ to: target.name, text, sentAt: new Date() });
-    Object.assign(m, { status: r.status, url: r.url || '', ref: r.ref }); save(); render();
-    // A pre-filled GitHub page only opens from a real tap (iOS blocks pop-ups from controller presses).
-    if (r.status === 'needs-tap' && lastGesture && Date.now() - lastGesture < 900) window.open(r.url, '_blank', 'noopener');
+    await deliver(m);
   }
-  let lastGesture = 0;
-  el.addEventListener('pointerdown', () => { lastGesture = Date.now(); }, true);
-  $('form').addEventListener('submit', e => { e.preventDefault(); lastGesture = Date.now(); const t = input.value; input.value = ''; send(t); });
-  chipsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { lastGesture = Date.now(); send(CHIPS[+b.dataset.i]); } });
+  async function deliver(m) {
+    m.status = 'sending'; render();
+    const r = await link.send({ to: m.to, text: m.text, sentAt: new Date(m.at) });
+    Object.assign(m, { status: r.status, ref: r.ref }); save(); render();
+  }
+  log.addEventListener('click', e => {
+    const a = e.target.closest('a.retry'); if (!a) return; e.preventDefault();
+    const m = entries.find(x => x.kind === 'me' && String(x.at) === a.dataset.at); if (m) deliver(m);
+  });
+  $('form').addEventListener('submit', e => { e.preventDefault(); const t = input.value; input.value = ''; send(t); });
+  chipsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { send(CHIPS[+b.dataset.i]); } });
   $('.cx').addEventListener('click', () => close());
 
   async function poll() {
