@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Bot Office HQ</title>
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bot HQ">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icons/icon-192.png">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#f4efe8;
+    overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+  body{position:fixed;inset:0;touch-action:none}
+  canvas{display:block;touch-action:none}
+  #menu{cursor:pointer}
+  /* touch controls (shown on touch devices until a controller connects) */
+  #touchui{display:none}
+  .touch #touchui{display:block}
+  .haspad #touchui,.haspad #knob,.haspad #knobbase{display:none!important}
+  #touchui .btn{position:fixed;width:74px;height:74px;border-radius:50%;background:rgba(20,18,16,.55);border:2px solid rgba(255,255,255,.35);color:#fff;
+    font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.1;touch-action:none}
+  #t-interact{right:calc(24px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom));border-color:#7CFC9A!important}
+  #t-next{right:calc(110px + env(safe-area-inset-right));bottom:calc(64px + env(safe-area-inset-bottom))}
+  #t-pause{right:calc(24px + env(safe-area-inset-right));top:calc(40px + env(safe-area-inset-top));width:54px!important;height:54px!important}
+  #knobbase,#knob{position:fixed;display:none;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}
+  #knobbase{width:120px;height:120px;border:2px solid rgba(255,255,255,.35);background:rgba(0,0,0,.15)}
+  #knob{width:54px;height:54px;background:rgba(255,255,255,.55)}
+  /* "press any button" prompt until the controller is seen */
+  #padprompt{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translateX(-50%);background:rgba(232,163,61,.92);color:#1a1410;
+    font-weight:700;font-size:15px;padding:8px 16px;border-radius:999px;pointer-events:none;animation:pulse 1.6s ease-in-out infinite}
+  .haspad #padprompt,.haspad .padprompt-in{display:none}
+  .padprompt-in{margin-top:12px;color:#ffd27a;font-weight:600}
+  @keyframes pulse{50%{opacity:.6}}
+  .touch #hint .kb{display:none}
+  #hint .tc{display:none}
+  .touch:not(.haspad) #hint .tc{display:inline}
+  .touch:not(.haspad) #hint .gp{display:none}
+  #reticle{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 0 0 2px rgba(0,0,0,.25);pointer-events:none;transition:transform .12s,background .12s}
+  #reticle.hot{transform:scale(2.2);background:#ffd27a}
+  #hint{position:fixed;left:16px;bottom:14px;font-size:13px;line-height:1.5;background:rgba(20,18,16,.55);padding:8px 12px;border-radius:8px;pointer-events:none}
+  #pad{position:fixed;right:16px;bottom:14px;font-size:13px;background:rgba(20,18,16,.55);padding:8px 12px;border-radius:8px;pointer-events:none}
+  #pad .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#b55;margin-right:6px}
+  #pad.on .dot{background:#5c5}
+  #focus{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);font-size:15px;background:rgba(20,18,16,.6);padding:6px 14px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .15s}
+  #focus.show{opacity:1}
+  #panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);min-width:320px;max-width:420px;background:rgba(28,25,22,.92);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:20px 24px;display:none}
+  #panel h2{margin:0 0 6px;font-size:22px}
+  #panel .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:middle}
+  #panel p{margin:8px 0;color:#d8d0c6;font-size:14px}
+  #panel small{color:#a99}
+  #menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,9,8,.6);backdrop-filter:blur(3px)}
+  #menu .card{background:rgba(28,25,22,.95);border-radius:16px;padding:28px 34px;max-width:520px;border:1px solid rgba(255,255,255,.1)}
+  #menu h1{margin:0 0 4px;font-size:26px}
+  #menu table{border-collapse:collapse;margin-top:12px;font-size:14px}
+  #menu td{padding:3px 14px 3px 0;color:#ddd}
+  #menu td:first-child{color:#ffd27a;white-space:nowrap}
+  #menu .go{margin-top:16px;font-size:15px;color:#fff}
+  #fps{position:fixed;right:16px;top:12px;font-size:12px;opacity:.6;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="reticle"></div>
+<div id="focus"></div>
+<div id="hint"><span class="gp">Gamepad: L stick move · R stick look · A interact<br><span style="opacity:.75">Y next station · B close · Start pause<span class="kb"> · Keyboard: WASD + mouse, E interact, Tab next</span></span></span><span class="tc">Touch: drag left side to move · drag right side to look</span></div>
+<div id="pad"><span class="dot"></span><span id="padtxt">No controller: press any button on it</span></div>
+<div id="padprompt">🎮 Press any button on your controller</div>
+<div id="touchui">
+  <div class="btn" id="t-interact">Interact</div>
+  <div class="btn" id="t-next">Next<br>desk</div>
+  <div class="btn" id="t-pause">❚❚</div>
+</div>
+<div id="knobbase"></div><div id="knob"></div>
+<div id="fps"></div>
+<div id="panel"></div>
+<div id="menu"><div class="card">
+  <h1>Bot Office HQ</h1>
+  <div style="opacity:.8">Home base for your Grok Bot team.</div>
+  <table>
+    <tr><td>L stick / WASD</td><td>Move (click L stick or hold Shift to jog)</td></tr>
+    <tr><td>R stick / Mouse</td><td>Look</td></tr>
+    <tr><td>A / Cross / E</td><td>Interact with the desk you're looking at</td></tr>
+    <tr><td>B / Circle / Q</td><td>Close panel</td></tr>
+    <tr><td>Y / Triangle / Tab</td><td>Walk to next bot station</td></tr>
+    <tr><td>Start / Options / Esc</td><td>Pause menu</td></tr>
+  </table>
+  <div class="padprompt-in">🎮 Controller: press any button on it so it connects</div>
+  <div class="go" id="go">Tap / click here, or press A / Start to enter</div>
+</div></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

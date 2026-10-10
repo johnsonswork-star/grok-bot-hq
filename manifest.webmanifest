@@ -1,0 +1,15 @@
+{
+  "name": "Bot Office HQ",
+  "short_name": "Bot HQ",
+  "description": "3D office home base for the Grok Bot team. Walk it with a controller.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

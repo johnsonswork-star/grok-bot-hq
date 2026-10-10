@@ -1,0 +1,8 @@
+{
+  "name": "bot-office",
+  "version": "0.1.0",
+  "private": true,
+  "description": "3D office home base for the Grok Bot team (gamepad + keyboard).",
+  "scripts": { "start": "node serve.js" },
+  "dependencies": { "three": "0.169.0" }
+}
