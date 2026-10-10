@@ -1,3 +1,4 @@
+import { createChat } from './chat.js';
 import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
 
@@ -416,11 +417,16 @@ document.getElementById('menu').addEventListener('click', () => { setPaused(fals
 renderer.domElement.addEventListener('click', () => { if (!paused && !document.pointerLockElement) lockPointer(); });
 document.addEventListener('pointerlockchange', () => {
   // Esc releases the lock: treat that as "pause" unless we released it ourselves
-  if (CAN_LOCK && !document.pointerLockElement && !paused && lastInput === 'mouse') setPaused(true);
+  if (CAN_LOCK && !document.pointerLockElement && !paused && !chat.isOpen() && lastInput === 'mouse') setPaused(true);
 });
 let lastInput = 'mouse';
 addEventListener('mousemove', e => { if (document.pointerLockElement) { mouseDX += e.movementX; mouseDY += e.movementY; lastInput = 'mouse'; } });
 addEventListener('keydown', e => {
+  if (chat.isOpen()) { // typing in chat: don't walk / interact
+    if (e.code === 'Escape') { e.preventDefault(); chat.close(); }
+    return;
+  }
+  if ((e.code === 'Enter' || e.code === 'KeyT') && !paused) { e.preventDefault(); openChat(); return; }
   if (e.code === 'Tab') e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code); lastInput = 'mouse';
@@ -484,12 +490,13 @@ function tapBtn(id, fn) {
 tapBtn('t-interact', () => interact());
 tapBtn('t-next', () => nextStation(1));
 tapBtn('t-pause', () => setPaused(!paused));
+tapBtn('t-chat', () => openChat());
 tapBtn('panel', () => closePanel());
 // Block iOS pinch-zoom / double-tap zoom / rubber-band scrolling.
 for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.target === document.body || e.target === document.documentElement) e.preventDefault(); }, { passive: false });
 let lastTouchEnd = 0;
-document.addEventListener('touchend', e => { const n = Date.now(); if (n - lastTouchEnd < 300) e.preventDefault(); lastTouchEnd = n; }, { passive: false });
+document.addEventListener('touchend', e => { if (e.target.closest?.('#chat')) return; const n = Date.now(); if (n - lastTouchEnd < 300) e.preventDefault(); lastTouchEnd = n; }, { passive: false });
 
 const DEAD = 0.16;
 function stick(x, y) {
@@ -499,6 +506,7 @@ function stick(x, y) {
   return [x / m * n, y / m * n];
 }
 const prevButtons = [];
+const VIEW_BTN = 8, VIEW_HOLD_MS = 500;
 function padState() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let pad = null; for (const p of pads) if (p && p.connected) { pad = p; break; }
@@ -513,7 +521,10 @@ function padState() {
   ui.padtxt.textContent = `${id} connected`;
   const pressed = i => !!pad.buttons[i]?.pressed;
   const edge = i => { const p = pressed(i), was = prevButtons[i]; prevButtons[i] = p; return p && !was; };
-  const st = { pad, L: stick(pad.axes[0] || 0, pad.axes[1] || 0), R: stick(pad.axes[2] || 0, pad.axes[3] || 0),
+  // Xbox View (two squares, left of the Xbox button) = Standard Gamepad buttons[8] ("Back/Select").
+  // In the standard map buttons[6] is LT, so 6 is only treated as View when the browser reports a non-standard mapping.
+  const viewDown = pressed(VIEW_BTN) || (pad.mapping !== 'standard' && pressed(6));
+  const st = { pad, viewDown, LB: edge(4), RB: edge(5), L: stick(pad.axes[0] || 0, pad.axes[1] || 0), R: stick(pad.axes[2] || 0, pad.axes[3] || 0),
     A: edge(0), B: edge(1), X: edge(2), Y: edge(3), start: edge(9), back: edge(8), sprint: pressed(10) || (pad.buttons[7]?.value || 0) > 0.5,
     dpad: { up: edge(12), down: edge(13), left: edge(14), right: edge(15) } };
   if (st.L[0] || st.L[1] || st.R[0] || st.R[1] || pad.buttons.some(b => b.pressed)) lastInput = 'pad';
@@ -547,14 +558,15 @@ function setFocus(s) {
   ui.focus.classList.toggle('show', !!s);
   if (s) { s.frame.visible = true; s.plate.scale.copy(s.plate.userData.baseScale).multiplyScalar(1.15); ui.focus.textContent = `${s.name}  ·  A / E to open`; }
 }
+let lastDesk = null;
 function interact() {
   if (paused) return;
   if (panelOpen) return closePanel();
   if (!focused) return;
-  panelOpen = focused;
+  panelOpen = focused; lastDesk = focused;
   ui.panel.innerHTML = `<h2><span class="sw" style="background:${focused.color}"></span>${focused.name}</h2>
     <p>${focused.role}</p><p><b style="color:#7CFC9A">● Station ready</b></p>
-    <small>Chat and live status for this bot come in v2. B / Q / A to close.</small>`;
+    <small>Hold View (or Enter) to message this bot via Grok Bot + team. B / Q / A to close.</small>`;
   ui.panel.style.display = 'block';
 }
 function closePanel() { panelOpen = null; ui.panel.style.display = 'none'; }
@@ -563,8 +575,33 @@ function nextStation(dir = 1) {
   if (paused) return;
   closePanel();
   stationIdx = (stationIdx + dir + stations.length) % stations.length;
-  const s = stations[stationIdx];
+  const s = stations[stationIdx]; lastDesk = s;
   player.travel = { from: player.pos.clone(), to: new THREE.Vector3(s.stand.x, 0, s.stand.z), yaw0: player.yaw, yaw1: s.yaw, t: 0 };
+}
+// ---------- HQ chat ----------
+const chat = createChat({ stations, onOpenChange: o => {
+  if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
+} });
+// who you talk to: open panel > desk you're looking at > last desk you used > Grok Bot
+function openChat() { if (paused) return; chat.show(panelOpen || focused || lastDesk || stations.find(s => s.hero)); }
+const holdHint = document.getElementById('holdhint'), holdBar = holdHint.querySelector('i');
+let viewT0 = null, viewFired = false, tapHintT = 0;
+function rumble(pad, ms, mag) { try { pad.vibrationActuator?.playEffect?.('dual-rumble', { duration: ms, strongMagnitude: mag, weakMagnitude: mag })?.catch?.(() => {}); } catch (e) {} }
+function handleView(gp, now) {
+  if (gp.viewDown) {
+    if (viewT0 === null) { viewT0 = now; viewFired = false; }
+    const held = now - viewT0;
+    if (!viewFired && !paused) {
+      holdHint.classList.toggle('show', held > 120 && !chat.isOpen());
+      holdBar.style.width = Math.min(100, held / VIEW_HOLD_MS * 100) + '%';
+    }
+    if (!viewFired && held >= VIEW_HOLD_MS && !paused) { viewFired = true; holdHint.classList.remove('show'); rumble(gp.pad, 80, 0.5); chat.isOpen() ? chat.close() : openChat(); }
+  } else if (viewT0 !== null) {
+    // short tap: no chat, just a tiny nudge + reminder
+    if (!viewFired && !paused) { rumble(gp.pad, 30, 0.2); holdHint.textContent = 'Hold View to chat'; holdHint.appendChild(holdBar); holdBar.style.width = '0%'; holdHint.classList.add('show'); tapHintT = now + 900; }
+    viewT0 = null;
+  }
+  if (tapHintT && now > tapHintT && viewT0 === null) { holdHint.classList.remove('show'); tapHintT = 0; }
 }
 function shortestAngle(a, b) { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
 
@@ -575,7 +612,9 @@ const WALK = 3.2, RUN = 5.6, LOOK = 2.6, MOUSE = 0.0022;
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const gp = padState();
-  if (gp) {
+  if (gp) handleView(gp, performance.now());
+  if (gp && chat.isOpen()) chat.pad(gp);
+  else if (gp) {
     if (gp.start) { setPaused(!paused); }
     else if (paused && gp.A) setPaused(false);
     else if (!paused) {
@@ -585,7 +624,7 @@ function tick() {
       if (gp.dpad.left) nextStation(-1);
     }
   }
-  if (!paused) {
+  if (!paused && !chat.isOpen()) {
     let mx = 0, mz = 0, lx = 0, ly = 0, sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
     if (keys.has('KeyW') || keys.has('ArrowUp')) mz -= 1;
     if (keys.has('KeyS') || keys.has('ArrowDown')) mz += 1;
@@ -631,7 +670,7 @@ camera.position.set(player.pos.x, EYE, player.pos.z);
 setPaused(true);
 tick();
 // debug hook for automated screenshots
-window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK };
+window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

@@ -62,21 +62,70 @@
   #menu td:first-child{color:#ffd27a;white-space:nowrap}
   #menu .go{margin-top:16px;font-size:15px;color:#fff}
   #fps{position:fixed;right:16px;top:12px;font-size:12px;opacity:.6;pointer-events:none}
+  /* ---- HQ chat (long-press View) ---- */
+  #holdhint{position:fixed;left:50%;top:calc(50% + 34px);transform:translateX(-50%);background:rgba(20,18,16,.75);border:1px solid rgba(232,163,61,.5);color:#ffd27a;
+    font-size:13px;font-weight:700;padding:6px 14px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .12s;overflow:hidden}
+  #holdhint.show{opacity:1}
+  #holdhint i{position:absolute;left:0;bottom:0;height:3px;width:0;background:#e8a33d}
+  #chat{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translate(-50%,24px);width:min(760px,calc(100vw - 28px));height:min(62vh,520px);
+    display:flex;flex-direction:column;background:rgba(18,16,14,.86);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid rgba(232,163,61,.55);
+    border-radius:18px;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 18px 50px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,210,122,.15);opacity:0;pointer-events:none;
+    transition:opacity .18s,transform .18s;touch-action:manipulation;-webkit-user-select:text;user-select:text;z-index:20}
+  #chat.open{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
+  #chat .chead{display:flex;align-items:center;gap:10px;padding:12px 14px 10px 18px;border-bottom:1px solid rgba(232,163,61,.25)}
+  #chat .cdot{width:12px;height:12px;border-radius:50%;box-shadow:0 0 10px currentColor;flex:none}
+  #chat .ctitle{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#e8a33d;font-weight:800}
+  #chat .cname{font-size:20px;font-weight:700;color:#fff}
+  #chat select{margin-left:auto;font-size:16px;background:rgba(255,255,255,.08);color:#f4efe8;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:8px 10px;max-width:42%}
+  #chat .cx{width:46px;height:46px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff;font-size:22px;flex:none}
+  #chat .cstatus{padding:6px 18px 0;font-size:12px}
+  #chat .cstatus .ok{color:#7CFC9A} #chat .cstatus .warn{color:#ffb35c}
+  #chat .log{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:10px 16px;display:flex;flex-direction:column;gap:10px}
+  #chat .empty{margin:auto;color:#a99;font-size:15px;text-align:center;max-width:380px}
+  #chat .msg{max-width:78%;padding:9px 13px;border-radius:14px;font-size:16px;line-height:1.35}
+  #chat .msg .who{font-size:11px;font-weight:700;letter-spacing:.04em;opacity:.7;margin-bottom:2px}
+  #chat .msg .txt{white-space:pre-wrap;word-wrap:break-word}
+  #chat .me{align-self:flex-end;background:linear-gradient(180deg,#e8a33d,#c98a2a);color:#1a1410;border-bottom-right-radius:4px}
+  #chat .me .st{font-size:11px;margin-top:4px;font-weight:700;opacity:.85}
+  #chat .me .st a{color:#1a1410;text-decoration:underline}
+  #chat .bot{align-self:flex-start;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.1);border-bottom-left-radius:4px}
+  #chat .chips{display:flex;gap:8px;padding:4px 14px;overflow-x:auto;flex:none}
+  #chat .chips button{flex:none;font-size:14px;padding:9px 14px;border-radius:999px;border:1px solid rgba(232,163,61,.45);background:rgba(232,163,61,.1);color:#ffd27a}
+  #chat .chips button.sel{background:#e8a33d;color:#1a1410}
+  #chat form{display:flex;gap:10px;padding:10px 14px 14px}
+  #chat input{flex:1;min-width:0;font-size:17px;padding:13px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.35);color:#fff;outline:none}
+  #chat input:focus{border-color:#e8a33d}
+  #chat .send{font-size:17px;font-weight:800;padding:0 22px;border-radius:14px;border:0;background:#e8a33d;color:#1a1410;min-height:50px}
+  #chat .padhelp{display:none;font-size:11px;color:#a99;padding:0 18px 8px}
+  .haspad #chat .padhelp{display:block}
+  .chatting #touchui,.chatting #hint,.chatting #focus,.chatting #reticle,.chatting #knob,.chatting #knobbase,.chatting #padprompt{display:none!important}
+  #t-chat{left:calc(24px + env(safe-area-inset-left));top:calc(40px + env(safe-area-inset-top));width:64px!important;height:54px!important;border-radius:16px!important;border-color:#e8a33d!important}
 </style>
 </head>
 <body>
 <div id="reticle"></div>
 <div id="focus"></div>
-<div id="hint"><span class="gp">Gamepad: L stick move · R stick look · A interact<br><span style="opacity:.75">Y next station · B close · Start pause<span class="kb"> · Keyboard: WASD + mouse, E interact, Tab next</span></span></span><span class="tc">Touch: drag left side to move · drag right side to look</span></div>
+<div id="hint"><span class="gp">Gamepad: L stick move · R stick look · A interact<br><span style="opacity:.75">Y next station · B close · Hold View chat · Start pause<span class="kb"> · Keyboard: WASD + mouse, E interact, Tab next, Enter chat</span></span></span><span class="tc">Touch: drag left side to move · drag right side to look</span></div>
 <div id="pad"><span class="dot"></span><span id="padtxt">No controller: press any button on it</span></div>
 <div id="padprompt">🎮 Press any button on your controller</div>
 <div id="touchui">
   <div class="btn" id="t-interact">Interact</div>
   <div class="btn" id="t-next">Next<br>desk</div>
   <div class="btn" id="t-pause">❚❚</div>
+  <div class="btn" id="t-chat">💬 Chat</div>
 </div>
 <div id="knobbase"></div><div id="knob"></div>
 <div id="fps"></div>
+<div id="holdhint">Hold View to chat<i></i></div>
+<div id="chat" role="dialog" aria-label="HQ chat">
+  <div class="chead"><span class="cdot"></span><div><div class="ctitle">HQ Chat</div><div class="cname">Grok Bot</div></div>
+    <select aria-label="Talk to"></select><button type="button" class="cx" aria-label="Close">✕</button></div>
+  <div class="cstatus"></div>
+  <div class="log"></div>
+  <div class="chips"></div>
+  <form autocomplete="off"><input type="text" enterkeyhint="send" autocapitalize="sentences" placeholder="Message Grok Bot…"><button class="send" type="submit">Send</button></form>
+  <div class="padhelp">LB / RB switch bot · D-pad pick a quick message · A send · B or hold View to close</div>
+</div>
 <div id="panel"></div>
 <div id="menu"><div class="card">
   <h1>Bot Office HQ</h1>
@@ -87,6 +136,7 @@
     <tr><td>A / Cross / E</td><td>Interact with the desk you're looking at</td></tr>
     <tr><td>B / Circle / Q</td><td>Close panel</td></tr>
     <tr><td>Y / Triangle / Tab</td><td>Walk to next bot station</td></tr>
+    <tr><td>Hold View (⧉) / Enter</td><td>Open HQ chat with Grok Bot + team</td></tr>
     <tr><td>Start / Options / Esc</td><td>Pause menu</td></tr>
   </table>
   <div class="padprompt-in">🎮 Controller: press any button on it so it connects</div>

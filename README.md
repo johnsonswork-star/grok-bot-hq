@@ -1,4 +1,4 @@
-# Bot Office HQ (v1.1)
+# Bot Office HQ (v1.2)
 
 **Live, always-on URL: https://johnsonswork-star.github.io/grok-bot-hq/**
 (hosted on GitHub Pages; works on iPad over Wi-Fi or cellular, no PC and no server on our side needed)
@@ -48,12 +48,26 @@ iPad tuning: the pixel ratio is capped at 1.25, the shadow map is lighter (1024,
 | Interact (open bot panel) | A / Cross | E |
 | Close panel | B / Circle | Q |
 | Walk to next bot station | Y / Triangle or D-pad → (D-pad ← for previous) | Tab |
+| **HQ chat (Grok Bot + team)** | **Hold View (⧉, two squares) ~0.5 s.** Short tap does nothing (small rumble + "Hold View to chat" hint) | Enter or T. Touch: 💬 Chat button (top left) |
+| In chat | LB / RB switch bot · D-pad pick quick message · A send · R stick scroll · **B** or hold View again to close | Type + Enter · Esc closes |
 | Pause menu | Start / Options | Esc or P |
 | Enter from menu | A / Start | Click the menu |
 
 Sticks have a 0.16 radial deadzone, and the look stick has a response curve so small movements are precise. Walk speed is 3.2 m/s and jog is 5.6 m/s. Collision keeps you out of walls, desks, glass, and furniture.
 
 The center reticle lights up when you're looking at a bot desk. That desk's monitor gets a gold frame and its nameplate grows. Press A to open its panel.
+
+## HQ chat
+
+Hold the Xbox **View** button (Standard Gamepad `buttons[8]`, a.k.a. Back/Select) for 500 ms to open a chat panel. A gold bar fills under the reticle while you hold, the pad rumbles when it opens. `buttons[6]` is LT in the standard map, so it only counts as View if the browser reports a non-standard mapping. Moving and looking are paused while chat is open.
+
+Who you talk to: the open desk panel, else the desk you're looking at, else the last desk you used (A or Y), else **Grok Bot**. Change it with the dropdown or LB/RB.
+
+**Delivery (real, no canned replies):** each message becomes a GitHub issue (label `hq-chat`) in the **private** repo `johnsonswork-star/grok-bot-hq-inbox`, which Grok Bot watches. Replies are issue comments and show up in the panel (polled every 15 s while it's open). Grok Bot side: `tools/hq-inbox.sh` (list / read / reply / done).
+
+- **Linked device** (status line green, "Linked to Grok Bot + team"): sends instantly in-app and shows "✓ Delivered to Grok Bot & team". Needs a one-time HQ key on that device: open `https://johnsonswork-star.github.io/grok-bot-hq/#hqkey=<fine-grained GitHub token, Issues read/write on grok-bot-hq-inbox only>`. The page stores it in that device's localStorage and strips it from the URL. `#hqkey=clear` removes it. No key is ever in the public code.
+- **Not linked** (orange status): Send opens a pre-filled GitHub "new issue" page; tap **Submit** there (must be signed in to GitHub as johnsonswork-star). The message shows "Tap here, then Submit, to deliver" until then.
+- Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
 ## Layout (north = the big window wall, you spawn at the south entry door)
 
@@ -75,6 +89,7 @@ The center reticle lights up when you're looking at a bot desk. That desk's moni
 
 - `index.html`: HUD (reticle, hint, pad status, fps), pause menu, and interact panel
 - `main.js`: scene, lighting, furniture, collision, input (gamepad + keyboard/mouse), and interaction
+- `chat.js`: HQ chat panel UI. `hq-link.js`: delivery transport (GitHub Issues inbox). `tools/hq-inbox.sh`: Grok Bot's inbox helper
 - `stations.js`: **the bot roster.** Edit name, short label, color, position (x/z in meters), rotation, and role text here to add or move bots
 - `serve.js`: tiny zero-dependency static server
 - `manifest.webmanifest`, `icons/`, `sw.js`: Home Screen / PWA support (full screen, icon, offline fallback)
