@@ -47,9 +47,23 @@ export const BIO = { grok: 'Michael Scott, needy goofy boss', inbox: 'Pam Beesly
   icons: 'Andy Bernard, eager Cornell a cappella guy', onpad: 'Phyllis Vance, sweet, Bob Vance\'s wife', builder: 'Stanley Hudson, grumpy, crosswords', faith: 'Angela Martin, uptight cat lady',
   broker: 'Oscar Martinez, smart, "actually"', conn: 'Kevin Malone, slow, loves food', review: 'Creed Bratton, bizarre shady past', kids: 'Meredith Palmer, party girl',
   designer: 'Kelly Kapoor, fast-talking gossip', profile: 'Toby Flenderson, sad apologetic HR guy' };
+// HQ #64/#66: hard rate limit on the free model (shared by office chat + Direct stand-ins). Over the limit -> built-in lines.
+// GitHub Models was checked first (Chris asked for it) but GitHub retired it on Jul 30 2026 (inference API + catalog gone;
+// from this box models.github.ai only answers a stub "OK"), so the free providers stay OpenRouter :free / Gemini free tier.
+const RATE = `${DIR}/free-llm-rate.json`, PER_MIN = +(process.env.FREE_LLM_PER_MIN || 6), PER_DAY = +(process.env.FREE_LLM_PER_DAY || 150);
+function takeSlot() {
+  const now = Date.now(), day = new Date(now).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  let r = {}; try { r = JSON.parse(fs.readFileSync(RATE, 'utf8')); } catch {}
+  if (r.day !== day) r = { day, n: 0, recent: [] };
+  r.recent = (r.recent || []).filter(t => now - t < 60e3);
+  if (r.n >= PER_DAY || r.recent.length >= PER_MIN) return false;
+  r.n++; r.recent.push(now); try { fs.writeFileSync(RATE, JSON.stringify(r), { mode: 0o600 }); } catch {}
+  return true;
+}
 export async function freeLine(bot, text, ctx = '') {
   const c = env(); if (!c.orKey && !c.gemKey) return null;
-  const prompt = `You are ${BIO[bot] || BIO.inbox} from The Office (US), working at a cozy virtual Dunder Mifflin office. Your boss's boss Chris (the owner) just said in the office chat: "${clip(text, 200)}". ` +
+  if (!takeSlot()) { say('free model rate limit hit -> built-in line'); return null; }
+  const prompt = `You are ${BIO[bot] || BIO.inbox} from The Office (US), working at a cozy virtual Dunder Mifflin office.${st(bot)?.bot ? ` Your desk here is ${st(bot).bot}: ${st(bot).role}` : ''} Your boss's boss Chris (the owner) just said in the office chat: "${clip(text, 200)}". ` +
     `Reply with ONE short, friendly, PG, in-character line (under 22 words). Do not promise to do any real work, send anything, or make decisions; that is Michael's job. Reply with the line only.` + (ctx ? `\n${ctx}` : '');
   try {
     if (c.orKey) {

@@ -38,7 +38,7 @@ export function createChat({ stations, onOpenChange, snapshot, onLog, near, onCo
   const tabsEl = document.createElement('div'); tabsEl.className = 'ctabs';
   tabsEl.innerHTML = `<button type="button" data-tab="michael">★ Michael <small>(Grok Bot)</small></button><button type="button" data-tab="office">📣 Office</button><button type="button" data-tab="direct">💬 Direct <small>1:1, no Michael</small></button>`;
   const peopleEl = document.createElement('div'); peopleEl.className = 'people';
-  peopleEl.innerHTML = PEOPLE.map(s => `<button type="button" data-id="${s.id}" title="${esc(s.name)} · ${esc(s.bot)}"><span class="wdot" style="background:${s.color}"></span>${esc(first(s))}${s.teammate ? ' <b class="real">✓</b>' : ''}<i class="unread"></i></button>`).join('');
+  peopleEl.innerHTML = PEOPLE.map(s => `<button type="button" data-id="${s.id}" title="${esc(s.name)} · ${esc(s.bot)}"><span class="wdot" style="background:${s.color}"></span>${esc(first(s))}${s.teammate || s.covered ? ' <b class="real">✓</b>' : ''}<i class="unread"></i></button>`).join('');
   $('.chead').after(tabsEl); tabsEl.after(peopleEl);
   tabsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.tab); });
   peopleEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { setDm(stOf(b.dataset.id)); input.focus(); } });
@@ -57,7 +57,7 @@ export function createChat({ stations, onOpenChange, snapshot, onLog, near, onCo
     if (tab !== 'direct') return;
     $('.ctitle').textContent = 'Direct · 1:1 · Michael is not in this chat';
     $('.cname').textContent = `${s.name} · ${s.bot}`; $('.cdot').style.background = s.color;
-    input.placeholder = s.teammate ? `Message ${first(s)} (goes to the real ${s.bot})…` : `Message ${first(s)} (office character)…`;
+    input.placeholder = s.teammate ? `Message ${first(s)} (goes to the real ${s.bot} bot)…` : s.covered ? `Message ${first(s)} (${s.bot}: ${s.covered} does the work)…` : `Message ${first(s)} (office character)…`;
     last = ''; render();
   }
   let entries = []; try { entries = JSON.parse(localStorage.getItem(LOG) || '[]'); } catch (e) {}
@@ -87,7 +87,7 @@ export function createChat({ stations, onOpenChange, snapshot, onLog, near, onCo
   }
   function directNote(m) {
     const s = stOf(idOf(m.thread.slice(3))) || stOf(m.thread.slice(3));
-    return `Delivered to ${esc(first(s) || m.to)} · no Michael` + (s?.teammate && m.route !== 'office-cmd' ? ` · queued for the real ${esc(s.bot)}` : '');
+    return `Delivered to ${esc(first(s) || m.to)} · no Michael` + (s?.teammate && m.route !== 'office-cmd' ? ` · queued for the real ${esc(s.bot)}` : s?.covered && m.route !== 'office-cmd' ? ` · queued for ${esc(s.covered)} (${esc(s.bot)})` : '');
   }
   function markUnread(every) {
     const lastBy = {};
@@ -110,13 +110,13 @@ export function createChat({ stations, onOpenChange, snapshot, onLog, near, onCo
           : `<a href="#" class="retry" data-at="${m.at}">⚠ Not sent (no signal?). Tap to retry</a>`}</div></div>`;
       const cls = m.sub === 'banter' || m.sub === 'say' ? 'bot side' : m.sub === 'route' ? 'bot route' : 'bot';
       return `<div class="msg ${cls}"><div class="who">${whoLine(m)}</div><div class="txt">${esc(m.text)}</div></div>`;
-    }).join('') : tab === 'direct' ? `<div class="empty">Just you and ${esc(dm.name)}. Michael is not in this chat.<br><br>${dm.teammate ? `${esc(first(dm))} is the real <b>${esc(dm.bot)}</b> teammate: what you send here goes to that bot, and its own answers come back in this thread (✓ real). The office ${esc(first(dm))} answers right away in the meantime.` : `${esc(first(dm))} is an office character (no real bot behind this desk yet): chats in character and does moves like "get out of the way".`}</div>`
+    }).join('') : tab === 'direct' ? `<div class="empty">Just you and ${esc(dm.name)}. Michael is not in this chat.<br><br>${dm.teammate ? `${esc(first(dm))} is the real <b>${esc(dm.bot)}</b> bot: ${esc(dm.role || '')} What you send here goes to that bot, and its own answers come back in this thread (✓ real). The office ${esc(first(dm))} answers right away in the meantime.` : dm.covered ? `${esc(first(dm))} is the <b>${esc(dm.bot)}</b> desk: ${esc(dm.role || '')} Real requests go to ${esc(dm.covered)}, who answers here as ${esc(first(dm))} (✓ real).` : `${esc(first(dm))} is an office character (no real bot behind this desk yet): chats in character and does moves like "get out of the way".`}</div>`
       : tab === 'michael' ? `<div class="empty">Michael = the real Grok Bot. Real orders, questions, builds. For a 1:1 with one teammate use 💬 Direct.</div>`
       : `<div class="empty">The whole office in one chat. Small talk and simple moves ("Phyllis, get out of the way") get answered right here for free. Real orders go to Michael (the real Grok Bot).</div>`;
     log.scrollTop = log.scrollHeight;
     try { onLog?.(entries, every.filter(m => !m.thread)); } catch (e) {} // Grok Bot's desk monitor mirrors the office chat (never Direct threads); bubbles react to this device's log
     status.innerHTML = !link.isLinked() ? '<span class="warn">● This browser can\'t encrypt messages. Update iPadOS / Safari</span>'
-      : tab === 'direct' ? `<span class="ok">● 1:1 with ${esc(first(dm))} · Michael is not in this chat${dm.teammate ? ` · goes to the real ${esc(dm.bot)}` : ' · office character'}</span>`
+      : tab === 'direct' ? `<span class="ok">● 1:1 with ${esc(first(dm))} · Michael is not in this chat${dm.teammate ? ` · goes to the real ${esc(dm.bot)}` : dm.covered ? ` · ${esc(dm.covered)} does the work` : ' · office character'}</span>`
       : tab === 'michael' ? '<span class="ok">● Michael = the real Grok Bot · real orders, questions, builds</span>'
       : link.isLinked() ? '<span class="ok">● One office chat · small talk + moves = free office bot · real orders = Michael (Grok Bot)</span>'
       : '<span class="warn">● This browser can\'t encrypt messages. Update iPadOS / Safari</span>';

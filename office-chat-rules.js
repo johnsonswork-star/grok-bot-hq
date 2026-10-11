@@ -34,7 +34,7 @@ const FORCE_OFFICE = /^\s*(\/office|\/casual|!office)\b\s*/i;
 const ALL = /\b(every(one|body)|all of you|y'?all|you all|team|guys|the office|whole office|people)\b/i;
 
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const NAMES = STATIONS.map(s => ({ id: s.id, words: [s.name, s.name.split(' ')[0], s.short, s.bot].filter(Boolean).map(w => w.toLowerCase()) }));
+const NAMES = STATIONS.map(s => ({ id: s.id, words: [s.name, s.name.split(' ')[0], s.short, s.bot, ...(s.aka || [])].filter(Boolean).map(w => w.toLowerCase()) }));
 const nameRe = new RegExp('\\b(' + [...new Set(NAMES.flatMap(n => n.words))].sort((a, b) => b.length - a.length).map(esc).join('|') + ')\\b', 'gi');
 const idOfWord = w => NAMES.find(n => n.words.includes(w.toLowerCase()))?.id || null;
 export const station = id => STATIONS.find(s => s.id === id);
