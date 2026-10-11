@@ -1,6 +1,8 @@
 import { createChat } from './chat.js';
 import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
+import { createWorkers } from './workers.js';
+import { startLiveReload, takeResume } from './live.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -228,17 +230,29 @@ function chair(parent, x, z, ry = 0) {
   box(0.6, 0.04, 0.08, M.steel, 0, 0.05, 0, g); box(0.08, 0.04, 0.6, M.steel, 0, 0.05, 0, g);
   parent.add(g); return g;
 }
-function monitorScreenTex(st) {
-  return canvasTex(512, 300, (g, w, h) => {
+function drawScreen(g, w, h, st, busy = false, task = '') {
+  {
     const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, st.color); grd.addColorStop(1, '#141820');
     g.fillStyle = grd; g.fillRect(0, 0, w, h);
     g.fillStyle = 'rgba(255,255,255,.08)'; for (let y = 0; y < h; y += 6) g.fillRect(0, y, w, 1);
     g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.font = `800 ${st.short.length > 3 ? 104 : 130}px system-ui,Segoe UI,Arial`; g.fillText(st.short, w / 2, h / 2 - 22);
     g.font = '500 30px system-ui,Segoe UI,Arial'; g.fillStyle = 'rgba(255,255,255,.85)'; g.fillText(st.name, w / 2, h - 52);
-    g.fillStyle = '#7CFC9A'; g.beginPath(); g.arc(28, 28, 9, 0, 7); g.fill();
-    g.font = '600 20px system-ui,Arial'; g.textAlign = 'left'; g.fillText('READY', 44, 29);
-  });
+    g.fillStyle = busy ? '#ffb74d' : '#7CFC9A'; g.beginPath(); g.arc(28, 28, 9, 0, 7); g.fill();
+    g.font = '600 20px system-ui,Arial'; g.textAlign = 'left'; g.fillText(busy ? 'WORKING' : 'READY', 44, 29);
+    if (busy && task) {
+      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, h - 30, w, 30);
+      g.fillStyle = '#ffd59a'; g.font = '600 19px system-ui,Arial'; g.textAlign = 'center';
+      let t = task; while (g.measureText(t).width > w - 24 && t.length > 4) t = t.slice(0, -2);
+      g.fillText(t === task ? t : t + '…', w / 2, h - 14);
+    }
+  }
+}
+function monitorScreenTex(st) { return canvasTex(512, 300, (g, w, h) => drawScreen(g, w, h, st)); }
+function setScreenStatus(s, busy, task) {
+  const tex = s.screen.material.map, c = tex.image, g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height); g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  drawScreen(g, c.width, c.height, s, busy, task); tex.needsUpdate = true;
 }
 function nameplateSprite(st) {
   const tex = canvasTex(1024, 200, (g, w, h) => {
@@ -294,10 +308,21 @@ for (const st of STATIONS) {
   g.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(g); bounds.expandByScalar(0.05);
   // where you stand to use this desk (behind the chair), facing the monitor
-  const standLocal = new THREE.Vector3(0, 0, dd / 2 + 1.7);
+  // offset to one side so a worker sitting at the desk doesn't block the monitor (over-the-shoulder view)
+  const standLocal = new THREE.Vector3(0.6 * s, 0, dd / 2 + 1.7);
   const stand = standLocal.applyMatrix4(g.matrixWorld);
-  stations.push({ ...st, group: g, screen, frame, plate, bounds, stand, yaw: st.ry, center: new THREE.Vector3(st.x, 1, st.z) });
+  const mon = new THREE.Vector3(0, 0, mz).applyMatrix4(g.matrixWorld);
+  const yaw = Math.atan2(-(mon.x - stand.x), -(mon.z - stand.z));
+  stations.push({ ...st, group: g, screen, frame, plate, bounds, stand, yaw, center: new THREE.Vector3(st.x, 1, st.z) });
 }
+
+// worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
+const workers = createWorkers({ scene, stations, colliders,
+  extraColliders: [-12.7, 12.7].map(cx => ({ minX: cx - 2.3, maxX: cx + 2.3, minZ: -5.45, maxZ: -5.35 })), onStatus: (s, busy, task) => {
+  const st = stations.find(x => x.id === s.id); if (!st) return;
+  st.busy = busy; st.task = task; setScreenStatus(st, busy, task);
+  if (panelOpen === st) showPanel(st);
+} });
 
 // pod dividers + carpets
 for (const cx of [-12.7, 12.7]) {
@@ -334,7 +359,7 @@ box(15, 0.006, 3.4, M.carpet, 0, 0.003, -11.3, scene, false);
     const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#1d2733'); grd.addColorStop(1, '#3b2a1c'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
     g.fillStyle = '#e8a33d'; g.font = '800 92px system-ui,Arial'; g.fillText('HQ BRIEFING', 60, 150);
     g.fillStyle = '#ddd'; g.font = '500 44px system-ui,Arial';
-    ['14 bots on the floor', 'All stations ready', 'Chat links: coming in v2'].forEach((t, i) => g.fillText('• ' + t, 70, 260 + i * 80));
+    ['14 bots on the floor', 'Idle bots roam, busy bots sit at their desk', 'Hold View to chat with the team'].forEach((t, i) => g.fillText('• ' + t, 70, 260 + i * 80));
   });
   const bs = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.12), new THREE.MeshBasicMaterial({ map: brief, toneMapped: false }));
   bs.rotation.y = -Math.PI / 2; bs.position.set(18.85, 1.55, tz); scene.add(bs);
@@ -540,6 +565,7 @@ function findFocus() {
   camera.getWorldDirection(tmpV); ray.set(camera.position, tmpV);
   let best = null, bestD = 6;
   for (const s of stations) { const p = ray.intersectBox(s.bounds, hitPt); if (p) { const d = p.distanceTo(camera.position); if (d < bestD) { bestD = d; best = s; } } }
+  const wk = workers.pick(ray, bestD); if (wk) return stations.find(s => s.id === wk.st.id);
   if (best) return best;
   // fallback: nearest desk within 2.6m that is roughly in front of you
   let nd = 2.6;
@@ -564,8 +590,14 @@ function interact() {
   if (panelOpen) return closePanel();
   if (!focused) return;
   panelOpen = focused; lastDesk = focused;
-  ui.panel.innerHTML = `<h2><span class="sw" style="background:${focused.color}"></span>${focused.name}</h2>
-    <p>${focused.role}</p><p><b style="color:#7CFC9A">● Station ready</b></p>
+  showPanel(focused);
+}
+const escH = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function showPanel(s) {
+  const status = s.busy ? `<b style="color:#ffb74d">● Working at desk</b>${s.task ? ': ' + escH(s.task) : ''}`
+    : `<b style="color:#7CFC9A">● Idle</b>: out on the floor, ready for a task`;
+  ui.panel.innerHTML = `<h2><span class="sw" style="background:${s.color}"></span>${s.name}</h2>
+    <p>${s.role}</p><p>${status}</p>
     <small>Hold View (or Enter) to message this bot via Grok Bot + team. B / Q / A to close.</small>`;
   ui.panel.style.display = 'block';
 }
@@ -670,6 +702,7 @@ function tick() {
   const bob = 0;
   camera.position.set(player.pos.x, EYE + bob, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
+  workers.update(dt, clock.elapsedTime, player);
   setFocus(paused ? null : findFocus());
   for (const s of stations) { // fade nearby plates you aren't looking at so they don't stack up
     const d = Math.hypot(s.x - player.pos.x, s.z - player.pos.z);
@@ -681,9 +714,29 @@ function tick() {
 }
 camera.position.set(player.pos.x, EYE, player.pos.z);
 setPaused(true);
+// came back from a live reload: same spot, same view, chat reopened with the draft intact
+const resume = takeResume();
+if (resume) {
+  player.pos.set(resume.x, 0, resume.z); player.yaw = resume.yaw; player.pitch = resume.pitch;
+  if (!resume.paused) setPaused(false);
+  if (resume.chat) { chat.show(stations.find(s => s.id === resume.chat.to) || stations.find(s => s.hero)); chat.restoreDraft(resume.chat); }
+  else if (resume.draft?.text) chat.restoreDraft(resume.draft);
+  setTimeout(() => toast('Office updated'), 300);
+}
+function toast(msg) {
+  let el = document.getElementById('livetoast');
+  if (!el) { el = document.createElement('div'); el.id = 'livetoast'; el.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);background:rgba(24,22,20,.88);color:#ffd59a;padding:8px 16px;border-radius:999px;font:600 14px system-ui,Arial;z-index:50;pointer-events:none;transition:opacity .4s'; document.body.appendChild(el); }
+  el.textContent = msg; el.style.opacity = '1'; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+startLiveReload({
+  toast,
+  isSafe: () => !chat.isSending() && !chat.isTyping(),
+  getState: () => ({ x: player.pos.x, z: player.pos.z, yaw: player.yaw, pitch: player.pitch, paused,
+    chat: chat.isOpen() ? chat.draft() : null, draft: chat.draft() }),
+});
 tick();
 // debug hook for automated screenshots
-window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot };
+window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

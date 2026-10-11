@@ -83,5 +83,9 @@ export function createChat({ stations, onOpenChange, snapshot }) {
     if (gp.R[1]) log.scrollTop += gp.R[1] * 14;
   }
   render();
-  return { show, close, toggle: s => (open ? close() : show(s)), isOpen: () => open, pad, isTyping: () => document.activeElement === input };
+  return { show, close, toggle: s => (open ? close() : show(s)), isOpen: () => open, pad, isTyping: () => document.activeElement === input,
+    // live reload: never reload mid-send; carry the draft + who you were talking to across the reload
+    isSending: () => entries.some(m => m.kind === 'me' && m.status === 'sending'),
+    draft: () => ({ text: input.value, to: target.id }),
+    restoreDraft(d) { if (!d) return; const s = stations.find(x => x.id === d.to); if (s) setTarget(s); if (d.text) input.value = d.text; } };
 }

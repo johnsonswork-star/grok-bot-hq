@@ -140,3 +140,18 @@ After filing each new HQ issue, the bridge POSTs `{source, event:"hq-chat", issu
 - Background facts the replies may use: `~/.config/grok-bot-hq/hq-context.md`.
 - Approval asks (buy/send/delete/...) get a "reply yes to confirm" answer plus a line in `~/.config/grok-bot-hq/needs-chris.jsonl`.
 - Every handled message is logged to `~/.config/grok-bot-hq/tasks.jsonl` so the full Grok Bot session can do the real work.
+
+## Worker characters (one per bot)
+`workers.js` gives every station in `stations.js` a low-poly worker (shirt = bot color, short-name tag over the head).
+- **Idle**: roams the floor: coffee at the kitchenette, windows, phone calls, thinking, chatting with another idle worker. Glances at you when you walk up.
+- **Busy**: walks (A* around desks, pods, columns) to its own chair, sits and types. Its monitor switches to `WORKING` + the task line, and the desk panel (A / E) shows "Working at desk: <task>".
+- Looking at a worker focuses that bot, so A / E or Hold View works on people too.
+
+**What counts as busy:** `tasks.json` at the site root (polled every 20 s, never cached):
+```json
+{ "busy": { "grok": "HQ chat on duty", "builder": { "task": "Ship login fix", "until": "2026-10-10T22:00:00-05:00" } } }
+```
+Mark bots from the box: `tools/set-busy.sh builder "Ship login fix" [minutes]`, `tools/set-busy.sh builder off`, `tools/set-busy.sh list` (commits + pushes just tasks.json; live in ~1 min). Test without deploying: `?busy=builder,review` (or `?busy=all`) on the URL, or `__office.workers.setBusy('builder', 'task')` in the console.
+
+## Live reload
+`deploy.sh` writes `version.json` with a build id. The open office polls it every 20 s; on a new build it waits until no HQ message is sending and you aren't typing, then reloads and restores your spot, view, open chat, and draft text. Pages files are revalidated by the service worker (no 10-minute stale cache).
