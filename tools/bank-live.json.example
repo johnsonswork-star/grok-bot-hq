@@ -1,0 +1,10 @@
+{
+ "_note": "Shape of the decrypted bank feed (FAKE numbers). The real one is never committed: it is encrypted to the iPad and relayed via ntfy topic <device-topic>_bank.",
+ "type": "bank", "v": 1, "at": 1791680000000, "updatedAt": "2026-10-11T01:59:00.000Z", "readOnly": true,
+ "totals": { "cash": 1234.56, "cashAvailable": 1200.00, "credit": { "balance": 310.25, "available": 2689.75 }, "loans": null, "investments": null },
+ "accounts": [
+  { "inst": "Example Bank", "name": "Everyday Checking", "last4": "0000", "cls": "cash", "sub": "checking", "bal": 1000.00, "avail": 980.00, "limit": null },
+  { "inst": "Example Bank", "name": "Savings", "last4": "1111", "cls": "cash", "sub": "savings", "bal": 234.56, "avail": 220.00, "limit": null },
+  { "inst": "Example Card", "name": "Rewards Visa", "last4": "2222", "cls": "liability", "sub": "credit card", "bal": 310.25, "avail": 2689.75, "limit": 3000 }
+ ]
+}

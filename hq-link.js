@@ -103,3 +103,23 @@ export async function fetchInboxFeed() {
   } catch (e) {}
   return null;
 }
+
+// Whiteboard BANK panel feed: read-only balances (redacted: institution, account name, last 4, balances, totals),
+// encrypted on the box to THIS device's key and posted to `<topic>_bank` (tools/refresh-bank-feed.mjs).
+// Never on the public site. Returns the newest feed or null.
+export async function fetchBankFeed() {
+  try {
+    const d = await device();
+    const r = await fetch(`${RELAY}/${d.topic}_bank/json?poll=1&since=all&t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const lines = (await r.text()).split('\n').filter(l => l.trim()).reverse();
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
+        const p = await open(JSON.parse(m.message), d.priv);
+        if (p.type === 'bank' && Array.isArray(p.accounts)) return p;
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return null;
+}

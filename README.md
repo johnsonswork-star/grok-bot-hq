@@ -182,3 +182,13 @@ Refreshing (Gmail lives in Grok Bot's Gmail connector, not on the box, so there'
 1. Grok Bot: Gmail `search_threads` `{query:"in:inbox -category:promotions -category:social", pageSize:40}` saved to a file.
 2. `node tools/refresh-inbox-feed.mjs <file>` (`--dry` to preview). Local copy: `~/.config/grok-bot-hq/inbox-live.json`.
 Do it whenever Grok Bot is already awake for HQ chat or a Gmail check, or when Chris asks.
+
+## Whiteboard BANK panel (read-only balances)
+Conference-room whiteboard, right column. Balances come from the Finance connector (Plaid, read-only) and are
+**never committed to this public repo**: `tools/refresh-bank-feed.mjs` redacts them (institution, account name,
+last 4, balances, totals; no ids, no transactions), encrypts them to each HQ device key, and posts them to that
+device's private ntfy topic `<topic>_bank`. The iPad decrypts, keeps the last good copy, and shows
+"read-only · updated h:mm CT" (marked stale / "bank feed offline" when the relay has nothing).
+Refresh after each Finance pull (see the script header):
+`node tools/refresh-bank-feed.mjs <accounts-file> <connections-file>` (or no args = reuse `~/.config/grok-bot-hq/bank-snapshot.json`).
+Shape: `tools/bank-live.json.example` (fake numbers).

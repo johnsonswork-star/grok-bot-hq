@@ -5,7 +5,7 @@ import { createWorkers } from './workers.js';
 import { createMonitors } from './monitors.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed } from './hq-link.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -752,6 +752,21 @@ function snapshot(maxW = 1280, q = 0.7) {
     monitors.setInbox('inbox', f);
   }
   poll(); setInterval(poll, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+})();
+// Whiteboard BANK panel: read-only balances, encrypted to this iPad (tools/refresh-bank-feed.mjs). Last good copy kept on
+// this device; if the relay has nothing (offline / expired) the panel shows that copy marked stale, or "bank feed offline".
+(function bankFeed() {
+  const KEY = 'hq.bankFeed';
+  let last = null; try { last = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+  if (last) whiteboard.setBank(last, true); // show the saved copy right away; the first poll marks it stale if the relay is empty
+  async function poll() {
+    if (document.hidden) return;
+    const f = await fetchBankFeed();
+    if (f && (!last || f.at >= last.at)) { last = f; try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) {} }
+    whiteboard.setBank(last, !!f);
+  }
+  poll(); setInterval(poll, 120000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 })();
 const chat = createChat({ stations, snapshot, onLog: entries => monitors.setLog(entries), onOpenChange: o => {

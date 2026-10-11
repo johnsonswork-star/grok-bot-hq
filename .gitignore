@@ -4,3 +4,5 @@ shots/
 tools/hq-webhook.env
 tools/slack.env
 *.bak
+bank-live.json
+bank-snapshot.json

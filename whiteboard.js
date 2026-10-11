@@ -1,7 +1,8 @@
 // Full-wall whiteboard in the conference room (south wall). Looks hand-drawn in marker, but it's a live widget screen:
 // a canvas texture redrawn only when data changes (iPad-friendly, no per-frame work).
 // Widgets: clock (CT), live weather (Open-Meteo, keyless), live markets (CNBC public quote feed, keyless + CORS-open),
-// team status (tasks.json, same file the workers use) and a bank placeholder (NOT connected; nothing is fetched until Chris says go).
+// team status (tasks.json, same file the workers use) and BANK: read-only balances from Finance/Plaid, decrypted on this
+// device (main.js polls hq-link.fetchBankFeed and calls whiteboard.setBank). Bank data is never in the public repo.
 import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
 
@@ -211,15 +212,36 @@ function draw(g, st) {
     if (team.length > max) text(g, `+${team.length - max} more`, tx + 52, ty + 108 + max * 40, 24, INK.grey);
   }
 
-  // ---- bank placeholder (NOT connected) ----
-  const bx = 2290, by = 140, bw = 240, bh = 400;
-  pen(g, INK.green, 5); dashed(g, bx, by, bw, bh, 'bank');
-  text(g, 'BANK', bx + 24, by + 60, 44, INK.green, { tilt: -0.01 });
-  text(g, 'connect when', bx + 24, by + 116, 28, INK.green);
-  text(g, 'Chris says go', bx + 24, by + 152, 28, INK.green);
-  text(g, '$ — — —', bx + 24, by + 250, 46, 'rgba(31,122,58,.35)');
-  text(g, 'not linked', bx + 24, by + 320, 24, INK.grey);
-  text(g, 'placeholder', bx + bw - 20, by + bh - 20, 22, INK.grey, { align: 'right', tilt: -0.02 });
+  // ---- bank (read-only, encrypted feed; see tools/refresh-bank-feed.mjs) ----
+  const bx = 2290, by = 140, bw = 240, bh = 400, bank = st.bank;
+  pen(g, INK.green, 5); rect(g, bx, by, bw, bh, 'bank', 3);
+  text(g, 'BANK', bx + 24, by + 56, 44, INK.green, { tilt: -0.01 });
+  if (!bank) {
+    text(g, st.bankStatus === 'offline' ? 'bank feed' : 'loading…', bx + 24, by + 130, 30, INK.grey);
+    if (st.bankStatus === 'offline') text(g, 'offline', bx + 24, by + 168, 30, INK.grey);
+    text(g, 'read-only', bx + 24, by + bh - 18, 20, INK.grey);
+  } else {
+    const usd = v => (v == null || isNaN(v)) ? '—' : (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const T = bank.totals || {};
+    text(g, fit(g, usd(T.cash), 46, bw - 40), bx + 24, by + 114, 46, INK.green, { tilt: -0.015 });
+    text(g, 'cash total', bx + 26, by + 142, 22, INK.grey);
+    let y = by + 186;
+    const extra = [];
+    if (T.credit) extra.push(['cards owe', T.credit.balance, INK.red]);
+    if (T.investments != null) extra.push(['invested', T.investments, INK.blue]);
+    if (T.loans != null) extra.push(['loans', T.loans, INK.red]);
+    const rows = (bank.accounts || []).slice(0, Math.max(1, 3 - extra.length));
+    for (const a of rows) {
+      { const tail = a.last4 ? ' ··' + a.last4 : ''; g.font = `20px ${FONT}`; const tw4 = g.measureText(tail).width;
+        text(g, fit(g, a.name, 20, bw - 44 - tw4) + tail, bx + 24, y, 20, INK.grey); } y += 30;
+      text(g, usd(a.bal), bx + 30, y, 28, a.cls === 'liability' ? INK.red : INK.black); y += 38;
+    }
+    for (const [label, v, c] of extra) { text(g, label, bx + 24, y, 20, INK.grey); text(g, usd(v), bx + bw - 20, y, 26, c, { align: 'right' }); y += 34; }
+    const more = (bank.accounts || []).length - rows.length;
+    if (more > 0 && !extra.length) text(g, `+${more} more`, bx + 24, Math.min(y, by + bh - 50), 20, INK.grey);
+    text(g, 'read-only · updated', bx + 24, by + bh - 40, 20, INK.grey);
+    text(g, `${fmtTime(bank.at)} CT${st.bankStatus === 'offline' ? ' · stale' : ''}`, bx + 24, by + bh - 14, 20, st.bankStatus === 'offline' ? INK.orange : INK.grey);
+  }
 
   // tape on the board corners
   tape(g, 30, 22, 90, -0.6); tape(g, CW - 30, 22, 90, 0.6);
@@ -244,7 +266,7 @@ export function createWhiteboard({ scene, x0, x1, y0, y1, z, std, box }) {
   const surf = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat);
   surf.rotation.y = Math.PI; surf.position.set(cx, cy, z - 0.002); surf.receiveShadow = true; scene.add(surf);
 
-  const st = { wx: null, wxStatus: 'loading', mkt: null, mktStatus: 'loading', team: null };
+  const st = { wx: null, wxStatus: 'loading', mkt: null, mktStatus: 'loading', team: null, bank: null, bankStatus: 'loading' };
   // throttled redraw: coalesce bursts, at most one canvas upload per second, none while the app is hidden
   let lastDraw = 0, drawTimer = 0, dirty = false;
   const redraw = () => {
@@ -331,5 +353,12 @@ export function createWhiteboard({ scene, x0, x1, y0, y1, z, std, box }) {
   fetchWx(); fetchMkt(); fetchTeam();
   // redraw once more after fonts settle (Marker Felt etc. are system fonts on iPad, but be safe)
   document.fonts?.ready?.then(redraw).catch(() => {});
-  return { canvas, refresh: () => { fetchWx(); fetchMkt(); fetchTeam(); }, get weather() { return st.wx; }, get markets() { return st.mkt; }, get team() { return st.team; }, get status() { return st.wxStatus; } };
+  // bank: fed by main.js (decrypted on-device). feed = newest good copy or null; ok = did the last poll reach the relay with data
+  function setBank(feed, ok) {
+    const status = ok ? 'ok' : 'offline';
+    const sig = JSON.stringify([feed && feed.at, status]);
+    if (sig === st.bankSig) return; st.bankSig = sig;
+    if (feed) st.bank = feed; st.bankStatus = status; redraw();
+  }
+  return { canvas, setBank, refresh: () => { fetchWx(); fetchMkt(); fetchTeam(); }, get weather() { return st.wx; }, get markets() { return st.mkt; }, get team() { return st.team; }, get status() { return st.wxStatus; } };
 }
