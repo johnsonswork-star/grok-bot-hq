@@ -361,3 +361,28 @@ Each teammate keeps their **own** memory: everything you say to them in HQ chat 
 - Replies as a bot: `hq-inbox.sh read N` prints the recipient's digest under the message; `hq-inbox.sh memory <bot>` / `work-live.mjs memory <bot>` print it; `work-live.mjs say <bot> "…"` prints a one-line mood hint after saying it.
 
 **Tool:** `node tools/worker-memory.mjs log <bot|shared> "text" [--kind] [--issue N] | chris <bot> "text" | hq <issue> "<To>" "text" | recall <bot> [n] | digest <bot> [--json] | mood | list | sync | who <name>`.
+
+## One office chat (HQ #59)
+
+The HQ chat panel (hold View / Enter / 💬) is now **one chat for the whole office**: a single chronological stream with your messages (from any device), the office bot's in-character answers, the real Grok Bot's replies (Michael · ★ real Grok Bot), and teammates' own lines + banter (shown smaller, "chatting" / "says"). Every line is labeled with the Office character + bot (dot in their color). The audience defaults to **📣 Whole office**; LB / RB or the dropdown can still point a message at one person. Michael's desk monitor mirrors the same stream.
+
+**Who answers (triage).** `office-chat-rules.js` decides, and both the iPad and the box use that same file:
+
+| You type | Route | What happens |
+|---|---|---|
+| `Phyllis, get out of the way` · `tell Kevin to go to the water cooler` · `Andy come here` · `everyone back to your desks` · `Jim face me` · `Creed stop` · `Phyllis, as you were` · `everyone stop talking` | **office (free)** | The move runs on the iPad the moment you hit send, and that person answers in character. No AI. |
+| `hey everyone` · `how's it going Andy?` · `tell me a joke` · `thanks Pam` · `good work, team` | **office (free)** | Office bot answers in character: a FREE model if a key is set (OpenRouter `:free` / Gemini Flash free tier, same `llm.env` keys as banter), else built-in lines. |
+| anything with real work in it (build, fix, change, send, email, buy, check, status, schedule, picks, yes/no/ok, questions it doesn't recognize…) | **grok** | Filed as an HQ issue + Slack #hq-chat wake, exactly like before. The 3D view screenshot rides along. The chat shows "★ to Michael (Grok Bot) · #n" and a "Michael: On it (HQ #n)" line. |
+| `Phyllis move and then build me a widget` | **both** | Phyllis moves right away (free); the order goes to Grok Bot. |
+
+If it's unsure, it goes to the real Grok Bot. Overrides: start with `@grok` / `grok:` / `/grok` to force the real Grok Bot; `/office` forces the free office bot.
+
+**Commands (safe set, 3D office only).** `move` (step out of your way: walks 2-4 m away from you), `cooler` (water cooler), `desk` (sits at their desk; if they're not on a task they get up again after 90 s), `come` (walks to ~1.3 m in front of you and faces you), `face` (turns to you), `stop` (stays put ~40 s), `wander` (back to normal roaming), `hush` (no idle lines / banter from them for 20 min). Names can be first name, full name, the bot name or `everyone`. With no name, it's the person you're closest to / facing. Busy workers go back to their desk after the command. The casual path never touches files, email, deploys or money: it only moves people around in the 3D office and writes a chat line.
+
+**Add a command.** 1) Add an entry to `ACTS` in `office-chat-rules.js` (label + regex) and put it in `ACT_ORDER`; 2) add its lines to `ACT_LINE` (and any `SPECIAL['bot:act']`); 3) handle the act in `order()` in `workers.js` (or in `runCommands` in `main.js` for non-movement acts, like `hush` → `talk.hush`). Test the wording on the box: `node tools/office-chat.mjs test "Kevin go to the water cooler" [--to "Icon Shop"] [--near onpad]`.
+
+**Plumbing.**
+- iPad (`chat.js`): triage → run commands (`workers.order` / `talk.hush`) → instant line from the first person told → send through the same encrypted relay with `office: { near, bot, line }` and a client-picked message id (so the box's copy de-dupes). Small talk skips the screenshot.
+- Box (`tools/hq-bridge.mjs` → `tools/office-chat.mjs ingest`): re-triages. Office route: no GitHub issue, no Slack; an `ack` with `route:'office'` and the reply line(s) go straight back to that iPad, encrypted. Grok route: the bridge files + wakes as before and `noteGrok` adds the "On it" line. Every relayed Grok Bot reply is also logged (`noteReply`).
+- Unified log: `~/.config/grok-bot-hq/office-chat.jsonl` (Chris lines, office-bot replies, Grok replies, route notes). A publisher inside the bridge merges it with `says.jsonl` (teammates' lines + banter), keeps the newest 120 lines from the last 48 h, encrypts it per HQ device and posts it to `<device topic>_chat` whenever it changes (checked every 2 s). The iPad polls that every ~6-12 s (`hq-link.fetchChatFeed`) and merges it with its own log. Because the feed is shared, every device now sees the same office chat.
+- Box tools: `node tools/office-chat.mjs show [n]` (recent unified log), `test "text"`, `push`.

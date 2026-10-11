@@ -22,6 +22,8 @@ const saveState = s => { try { fs.mkdirSync(DIR, { recursive: true }); const d =
   fs.writeFileSync(STATE, JSON.stringify({ ...d, ...s, done: uniq(d.done, s.done), relayed: uniq(d.relayed, s.relayed) })); } catch {} };
 // HQ #58: each worker remembers what Chris says to them (tools/worker-memory.mjs). Best effort: never blocks filing.
 let wm = null; const memory = async () => wm ||= await import(new URL('./worker-memory.mjs', import.meta.url)).catch(e => { log('worker-memory load failed', e.message); return null; });
+// HQ #59: one office chat. Small talk + safe in-game commands are answered by the cheap office bot (tools/office-chat.mjs); real orders go on to Grok Bot.
+let oc = null; const officeChat = async () => oc ||= await import(new URL('./office-chat.mjs', import.meta.url)).catch(e => { log('office-chat load failed', e.message); return null; });
 const chicago = iso => { try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' }) + ' CT'; } catch { return iso; } };
 
 // Instant wake: POST each newly filed HQ message to the Grok Bot webhook routine `hq-chat-instant-wake`.
@@ -155,6 +157,7 @@ async function handle(m, priv, st) {
   if (p.type === 'refresh') return handleRefresh(p, st);
   if (p.type === 'pick') return handlePick(p, st);
   if (!p.mid || alreadyFiled(p.mid, st)) return;
+  let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
   const shot = p.shot ? saveShot(p.mid, p.shot) : null;
   if (p.shot && shot) log('shot saved', shot.file);
   const to = String(p.to || 'Grok Bot').slice(0, 60), text = String(p.text || '');
@@ -175,6 +178,7 @@ async function handle(m, priv, st) {
   try { fs.appendFileSync(`${DIR}/queue.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
   try { const W = await memory(); if (W) { const r = W.logHq({ issue: evt.issue, to, text, at: p.ts, src: 'hq' }); W.markSynced(evt.issue); log('memory: remembered by', r.join(', ') || '-'); } } catch (e) { log('memory error', e.message); }
   await sendAck(p, evt.issue);
+  try { (await officeChat())?.noteGrok(p, evt.issue, tri); } catch {}
   await fireWebhook(evt);
   await fireEmail(evt);
   await fireSlack(evt);
@@ -270,6 +274,7 @@ async function sweepComments() {
 
 async function watch() {
   const c = cfg(), priv = await importPriv(c.privJwk);
+  officeChat().then(O => O?.startPublisher(log)); // HQ #59: unified office chat feed -> <device topic>_chat
   const sweep = () => sweepComments().catch(e => log('sweep error', e.message));
   sweep(); setInterval(sweep, 20000);
   for (;;) {
@@ -302,6 +307,7 @@ async function relayComment(issueBody, c) {
   const msg = { id: String(c.id), ref: c.issue, from: nb ? nb[1].trim() : 'Grok Bot', text: nb ? c.body.slice(nb[0].length) : c.body, at: c.created_at };
   const r = await fetch(`${RELAY}/${device.topic}`, { method: 'POST', body: JSON.stringify(await seal(msg, device.pub)) });
   log('relayed comment', c.id, 'to device', device.id, r.status);
+  try { (await officeChat())?.noteReply({ id: c.id, issue: c.issue, from: msg.from, text: msg.text, at: c.created_at }); } catch {}
   if (r.ok) { const st = state(); (st.relayed ||= []).push(String(c.id)); st.relayed = st.relayed.slice(-500); saveState(st); }
 }
 

@@ -41,14 +41,15 @@ export const isLinked = () => !!(globalThis.crypto && crypto.subtle);
 
 const SHOT_MAX = 1.5e6; // chars of data URL (~1.1 MB JPEG); bigger shots are dropped, text still goes
 
-export async function send({ to, text, sentAt, shot }) {
+export async function send({ to, text, sentAt, shot, office, mid: fixedMid }) {
   try {
     const d = await device();
-    const mid = randomId(9);
+    const mid = fixedMid || randomId(9); // HQ #59: chat.js picks the id up front so its instant office-bot line and the box's copy match
     const post = async withShot => {
       const msg = { v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(),
         device: { id: d.id, topic: d.topic, pub: d.pubJwk }, ua: navigator.userAgent.slice(0, 120) };
       if (withShot) msg.shot = shot;
+      if (office) msg.office = office; // HQ #59: { near, bot, line } so the box's triage + reply match what the iPad already did
       const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
       if (!r.ok) throw new Error('relay ' + r.status);
     };
@@ -77,8 +78,8 @@ export async function fetchReplies() {
         const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
         const p = await open(JSON.parse(m.message), d.priv);
         if (p.type && p.type !== 'ack') continue; // other feed types never show as chat bubbles
-        if (p.type === 'ack') out.push({ type: 'ack', id: p.id, mid: p.mid, issue: p.issue, at: p.at }); // bridge: filed as issue #n
-        else out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at });
+        if (p.type === 'ack') out.push({ type: 'ack', id: p.id, mid: p.mid, issue: p.issue, route: p.route, at: p.at }); // bridge: filed as issue #n (or route 'office' = office bot took it)
+        else out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at, ...(p.office ? { office: true, via: p.via } : {}) });
       } catch (e) {}
     }
   } catch (e) {}
@@ -172,4 +173,24 @@ export async function requestPick({ bot, id, issue, picks }) {
     const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
     return r.ok;
   } catch (e) { return false; }
+}
+
+// HQ #59: the unified office chat (tools/office-chat.mjs on the box): Chris's messages from every device, office-bot replies,
+// Grok Bot replies, teammates' lines + banter. Encrypted to THIS device and posted to `<topic>_chat` (newest only, big ones
+// ride as an ntfy attachment). Returns { id, feed } | { id, same: true } | null.
+let chatId = null;
+export async function fetchChatFeed() {
+  try {
+    const d = await device();
+    const r = await fetch(`${RELAY}/${d.topic}_chat/json?poll=1&since=latest`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) return null;
+    const m = JSON.parse(line); if (m.event !== 'message') return null;
+    if (m.id === chatId) return { id: m.id, same: true };
+    let body = m.message;
+    if (m.attachment?.url) { const a = await fetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
+    const p = await open(JSON.parse(body), d.priv);
+    if (p.type !== 'office-chat' || !Array.isArray(p.items)) return null;
+    chatId = m.id; return { id: m.id, feed: p };
+  } catch (e) { return null; }
 }

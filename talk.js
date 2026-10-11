@@ -70,8 +70,12 @@ export function createTalk({ scene, workers, stations, camera }) {
     scene.add(sp); return sp;
   }
 
+  const hushed = new Map(); // HQ #59: "stop talking" from the office chat: no idle chatter / banter lines from them for 20 min
+  const hush = (id, ms = 20 * 60e3) => { hushed.set(id, performance.now() + ms); queue.splice(0, queue.length, ...queue.filter(q => q.id !== id)); };
+  const isHushed = id => (hushed.get(id) || 0) > performance.now();
   function say(id, text, { ttl, prio = 0, force = false } = {}) {
     if (!text || (quiet && !force)) return false;
+    if (!force && isHushed(id)) return false;
     const st = byId(id); if (!st) return false;
     const k = id + '|' + text; if (recent.has(k) && performance.now() - recent.get(k) < 120e3) return false; recent.set(k, performance.now());
     ttl = ttl || Math.max(3500, Math.min(8500, 2200 + text.length * 60));
@@ -119,7 +123,7 @@ export function createTalk({ scene, workers, stations, camera }) {
     // HQ #56 banter playback
     if (!banter && banterQ.length) {
       const g = banterQ.shift(), ids = [...new Set(g.map(x => x.bot))];
-      const ok = !quiet && now - t0 > BANTER_WARM && Date.now() - g[0].at < BANTER_STALE && !chrisBusy() && ids.length === 2 && ids.every(id => { const w = workers.get(id); return w && !w.busy; });
+      const ok = !quiet && now - t0 > BANTER_WARM && Date.now() - g[0].at < BANTER_STALE && !chrisBusy() && ids.length === 2 && !ids.some(isHushed) && ids.every(id => { const w = workers.get(id); return w && !w.busy; });
       if (ok) { const arrived = workers.meet?.(ids[0], ids[1], 6 + g.length * 6) || (() => true); banter = { lines: g, i: 0, arrived, since: now, next: 0 }; }
     }
     if (banter) {
@@ -221,5 +225,5 @@ export function createTalk({ scene, workers, stations, camera }) {
   }
   function onPickSent(id, picks) { pickSaid.set(id, Date.now()); react(id, 'picked', { picks }, { force: true, prio: 2 }); }
 
-  return { mood, say, react, update, onStatus, onWork, onNeeds, onChat, onPickSent, live, queue, quiet, get banter() { return banter; }, banterQ };
+  return { hush, mood, say, react, update, onStatus, onWork, onNeeds, onChat, onPickSent, live, queue, quiet, get banter() { return banter; }, banterQ };
 }

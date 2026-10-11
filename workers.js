@@ -313,8 +313,47 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     return () => A.there && B.there && A.chatWith === B;
   }
 
+  // HQ #59: safe in-game commands from the office chat ("Phyllis, get out of the way"). Only moves people around the 3D office.
+  // act: move | cooler | desk | come | face | stop | wander | hush (hush = talk.js). Busy workers go back to their desk afterwards.
+  function order(id, act, player) {
+    const w = workers.find(x => x.st.id === id); if (!w) return false;
+    const P0 = player?.pos || { x: w.x, z: w.z }, faceP = () => Math.atan2(-(P0.x - w.x), -(P0.z - w.z));
+    const leaveSeat = () => { if (w.state === 'work') { w.x = w.approach.x; w.z = w.approach.z; w.sit = 0.5; } release(w); w.free = false; };
+    const hold = (a, secs, yaw) => () => { startAct(w, a, yaw ?? w.yaw); w.timer = secs; };
+    clearTimeout(w.orderT);
+    if (act === 'move') {
+      leaveSeat();
+      let dx = w.x - P0.x, dz = w.z - P0.z, d = Math.hypot(dx, dz) || 1; dx /= d; dz /= d;
+      let best = null;
+      find: for (const r of [2.6, 3.4, 4.2, 1.9]) for (const da of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8]) {
+        const ca = Math.cos(da), sa = Math.sin(da), tx = w.x + (dx * ca - dz * sa) * r, tz = w.z + (dx * sa + dz * ca) * r;
+        if (!blockedAt(tx, tz) && Math.hypot(tx - P0.x, tz - P0.z) > 1.8 && astar(w.x, w.z, tx, tz)) { best = [tx, tz]; break find; }
+      }
+      if (!best) { const [i, j] = nearestFree(w.x + dx * 2.5, w.z + dz * 2.5); best = [cx(i), cz(j)]; }
+      goTo(w, best[0], best[1], () => { startAct(w, 'think', Math.atan2(-(P0.x - w.x), -(P0.z - w.z))); w.timer = 25; }, true);
+    } else if (act === 'cooler') {
+      leaveSeat(); const used = new Set(workers.filter(o => o !== w && o.poi).map(o => o.poi)); const c = POIS.find(p => p.act === 'water' && !used.has(p)) || POIS.find(p => p.act === 'water'); if (!c) return false;
+      w.poi = c; goTo(w, c.x, c.z, () => { startAct(w, 'water', c.yaw); w.timer = 25; }, true);
+    } else if (act === 'desk') {
+      goToDesk(w); if (!w.busy) w.orderT = setTimeout(() => { if (!w.busy && w.state === 'work') leaveDesk(w); }, 90000);
+    } else if (act === 'come') {
+      leaveSeat(); let tx = P0.x - Math.sin(player?.yaw || 0) * 1.3, tz = P0.z - Math.cos(player?.yaw || 0) * 1.3;
+      if (blockedAt(tx, tz)) { const [i, j] = nearestFree(tx, tz); tx = cx(i); tz = cz(j); }
+      goTo(w, tx, tz, () => { startAct(w, 'chat', Math.atan2(-(P0.x - w.x), -(P0.z - w.z))); w.timer = 25; }, true);
+    } else if (act === 'face') {
+      if (w.state === 'work') { w.yaw = faceP(); return true; }
+      w.path = null; release(w); startAct(w, 'chat', faceP()); w.timer = 15;
+    } else if (act === 'stop') {
+      if (w.state === 'work') return true;
+      w.path = null; release(w); startAct(w, 'think', w.yaw); w.timer = 40;
+    } else if (act === 'wander') {
+      if (w.state === 'work' && !w.busy) leaveDesk(w); else if (w.state !== 'work') { w.path = null; release(w); chooseIdle(w); }
+    } else return false;
+    return true;
+  }
+
   return {
-    workers, update, pick, poll, meet,
+    workers, update, pick, poll, meet, order,
     get: id => workers.find(w => w.st.id === id),
     setBusy(id, task) { override.set(id, task === false || task == null ? false : task || 'On a task'); resolve(); },
     clear(id) { id ? override.delete(id) : override.clear(); resolve(); },

@@ -24,10 +24,10 @@ export const ACTS = {
 const ACT_ORDER = ['hush', 'move', 'cooler', 'desk', 'come', 'face', 'wander', 'stop']; // first match wins ("stop talking" = hush, not stop)
 
 // Anything with these goes to the real Grok Bot (order / decision / real data / real work), even if it also has a command.
-const ORDER = /\b(build|make|create|add|fix|change|update|remove|delete|deploy|ship|publish|send|e-?mail|text|call|buy|order|purchase|pay|book|schedule|remind|research|look ?up|find|check|review|write|draft|design|set ?up|install|connect|refresh|pull|show me|upload|download|post|reply|answer|cancel|approve|sign|file|fill|invoice|quote|price|budget|bank|money|account|password|login|log in|app|website|site|code|bug|feature|screen|board|widget|monitor|layout|model|logo|badge|mockup|shirt|tee|hat|order|task|project|plan|todo|to-do|asap|urgent|deadline|tomorrow|today|tonight|next week|status|progress|update|report|summary|how (do|does|much|many|long)|what('?s| is| are) (my|our|the|next)|when|where is|can you|could you|would you|will you|please|i need|i want|we need|let'?s|go ahead|do it|yes|no|confirm|picks?|choose)\b/i;
+const ORDER = /\b(build|make|create|add|fix|change|update|remove|delete|deploy|ship|publish|send|e-?mail|text|call|buy|order|purchase|pay|book|schedule|remind|research|look ?up|find|check|review|write|draft|design|set ?up|install|connect|refresh|pull|show me|upload|download|post|reply|answer|cancel|approve|sign|file|fill|invoice|quote|price|budget|bank|money|account|password|login|log in|app|website|site|code|bug|feature|screen|board|widget|monitor|layout|model|logo|badge|mockup|shirt|tee|hat|order|task|project|plan|todo|to-do|asap|urgent|ok(ay)?|k|sure|yep|yeah|yup|nope|sounds good|perfect|do that|redo|undo|again|bigger|smaller|wrong|broken|instead|deadline|tomorrow|today|tonight|next week|status|progress|update|report|summary|how (do|does|much|many|long)|what('?s| is| are) (my|our|the|next)|when|where is|can you|could you|would you|will you|please|i need|i want|we need|let'?s|go ahead|do it|yes|no|confirm|picks?|choose)\b/i;
 
 // Small talk the office bot can take (no order words left after commands/names are stripped).
-const CASUAL = /^(hi|hello|hey|heya|yo|sup|howdy|hiya|gm|gn|good (morning|afternoon|evening|night)|morning|night|thanks?( you)?|thx|ty|appreciate (it|you)|lol|lmao|rofl|haha+|hehe+|ha|nice|cool|awesome|great|sweet|love it|love you( all| guys)?|good (job|work|stuff)|great (job|work)|well done|nailed it|you rock|you guys rock|bravo|cheers|ok(ay)?|k|sure|bye|later|see (ya|you)|good ?bye|night all|what'?s up|wh?at up|how( are|'re| r) (you|u|y'?all|ya|everyone|everybody)( doing)?|how'?s (it going|everyone|everybody|life|your day)|how( is|'s) (the )?(office|everyone)|who'?s hungry|tell (me |us )?a joke|joke|that'?s what she said|bears,? beets,? battlestar galactica|it'?s pretzel day|dance|sing( a song| something)?|party|happy (friday|monday|birthday)|what'?s good|how( was|'s) (your )?(weekend|lunch)|i'?m (back|here|bored|tired|hungry)|miss (you|me)|hello (everyone|everybody|all|team|office)|hey (everyone|everybody|all|team|guys|y'?all))\b/i;
+const CASUAL = /^(hi|hello|hey|heya|yo|sup|howdy|hiya|gm|gn|good (morning|afternoon|evening|night)|morning|night|thanks?( you)?|thx|ty|appreciate (it|you)|lol|lmao|rofl|haha+|hehe+|ha|nice|cool|awesome|great|sweet|love it|love you( all| guys)?|good (job|work|stuff)|great (job|work)|well done|nailed it|you rock|you guys rock|bravo|cheers|bye|later|see (ya|you)|good ?bye|night all|what'?s up|wh?at up|how( are|'re| r) (you|u|y'?all|ya|everyone|everybody)( doing)?|how'?s (it going|everyone|everybody|life|your day)|how( is|'s) (the )?(office|everyone)|who'?s hungry|who is hungry|nice one|good one|tell (me |us )?a joke|joke|that'?s what she said|bears,? beets,? battlestar galactica|it'?s pretzel day|dance|sing( a song| something)?|party|happy (friday|monday|birthday)|what'?s good|how( was|'s) (your )?(weekend|lunch)|i'?m (back|here|bored|tired|hungry)|miss (you|me)|hello (everyone|everybody|all|team|office)|hey (everyone|everybody|all|team|guys|y'?all))\b/i;
 
 const FORCE_GROK = /^\s*(@?grok\b[:,]?|\/grok\b|!grok\b|michael[:,]\s*(i need|please|can you))/i;
 const FORCE_OFFICE = /^\s*(\/office|\/casual|!office)\b\s*/i;
@@ -42,7 +42,7 @@ export const idOf = who => { if (!who) return null; const w = String(who).toLowe
 export const OFFICE_TO = 'Office'; // chat target meaning "the whole office" (no single bot)
 
 export function triage(raw, { to = OFFICE_TO, near = null } = {}) {
-  let text = String(raw || '').trim();
+  let text = String(raw || '').replace(/[\u2018\u2019\u02bc]/g, "'").replace(/[\u201c\u201d]/g, '"').trim(); // iPad smart quotes
   if (FORCE_GROK.test(text)) return { route: 'grok', kind: 'order', cmds: [], speaker: 'grok', why: 'asked for Grok Bot by name' };
   const forceOffice = FORCE_OFFICE.test(text); if (forceOffice) text = text.replace(FORCE_OFFICE, '');
   const low = text.toLowerCase();
@@ -68,8 +68,12 @@ export function triage(raw, { to = OFFICE_TO, near = null } = {}) {
   const speaker = cmds[0]?.bot || named.find(id => !station(id)?.hero) || (toId && !station(toId)?.hero ? toId : null) || (near && !station(near)?.hero ? near : 'inbox');
   if (cmds.length && (!order || forceOffice)) return { route: 'office', kind: 'cmd', cmds, speaker, why: `in-game command (${cmds.map(c => c.act).join(', ')})` };
   if (cmds.length) return { route: 'grok', kind: 'order', cmds, speaker: 'grok', why: 'command + a real order' };
-  const words = rest.split(/\s+/).filter(Boolean).length;
-  const casual = forceOffice || (!order && (CASUAL.test(text.replace(nameRe, '').replace(/^[\s,!.]+/, '')) || CASUAL.test(text) || (words <= 5 && !text.includes('?'))));
+  // small talk = a known casual phrase with (almost) nothing else in the message; anything unrecognized goes to Grok Bot
+  const bare = low.replace(nameRe, ' ').replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const cre = new RegExp(CASUAL.source.replace(/^\^/, ''), 'i'); let rem = bare, hit = false;
+  for (let i = 0, m; i < 4 && (m = rem.match(cre)); i++) { hit = true; rem = rem.replace(m[0], ' '); }
+  const left = hit ? rem.replace(/\b(team|guys|everyone|everybody|all|y'?all|so|much|again|today|there|too|and|you|u|man|dude|bud|buddy|folks|gang|office|dunder|mifflin|lol|haha|please|pls)\b/g, ' ').trim().split(/\s+/).filter(Boolean).length : 99;
+  const casual = forceOffice || (!order && left <= 1);
   if (casual) return { route: 'office', kind: 'casual', cmds: [], speaker, why: forceOffice ? '/office prefix' : 'small talk' };
   return { route: 'grok', kind: 'order', cmds: [], speaker: 'grok', why: order ? 'real order / question' : 'not clearly small talk' };
 }

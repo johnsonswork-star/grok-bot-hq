@@ -6,7 +6,7 @@ import { createMonitors } from './monitors.js';
 import { createTalk } from './talk.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, requestRefresh, requestPick } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick } from './hq-link.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -1279,9 +1279,21 @@ for (const s of stations) {
   cv.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (t && hit(t.clientX, t.clientY)) { e.preventDefault(); e.stopPropagation(); } }, { passive: false });
   cv.addEventListener('click', e => { if (e.pointerType === 'touch') return; if (hit(e.clientX, e.clientY)) e.stopPropagation(); });
 }
-const chat = createChat({ stations, snapshot, onLog: entries => { monitors.setLog(entries); talk?.onChat(entries); }, onOpenChange: o => {
+// HQ #59: one office chat. Safe in-game commands typed in chat ("Phyllis, get out of the way") run here instantly.
+function nearestWorker() { // who "move" / "come here" means when no name is given: closest person in front of you, else closest
+  let best = null, bd = 1e9;
+  for (const w of workers.workers) { const dx = w.x - player.pos.x, dz = w.z - player.pos.z, d = Math.hypot(dx, dz); if (d > 6) continue;
+    const ahead = (-Math.sin(player.yaw) * dx - Math.cos(player.yaw) * dz) / (d || 1); const score = d - ahead * 1.5; if (score < bd) { bd = score; best = w; } }
+  return best?.st.id || null;
+}
+function runCommands(cmds) { for (const c of cmds) { if (c.act === 'hush') talk?.hush?.(c.bot); else workers.order?.(c.bot, c.act, player); } }
+const chat = createChat({ stations, snapshot, near: nearestWorker, onCommands: runCommands, onLog: (entries, all) => { monitors.setLog(all || entries); talk?.onChat(entries); }, onOpenChange: o => {
   if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
 } });
+// HQ #59: shared office chat feed (every device's messages, office-bot + Grok Bot replies, teammates' lines + banter)
+async function pollChatFeed() { if (document.hidden) return; const r = await fetchChatFeed(); if (r?.feed) chat.setFeed(r.feed.items); }
+pollChatFeed(); setInterval(() => { if (chat.isOpen() || Math.random() < 0.5) pollChatFeed(); }, 6000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollChatFeed(); });
 // who you talk to: open panel > desk you're looking at > last desk you used > Grok Bot
 function openChat() { if (paused) return; chat.show(panelOpen || focused || lastDesk || stations.find(s => s.hero)); }
 const holdHint = document.getElementById('holdhint'), holdBar = holdHint.querySelector('i');

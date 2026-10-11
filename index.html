@@ -94,6 +94,10 @@
   #chat .me .st .noshot{opacity:.6;font-weight:600}
   #chat .me .st a{color:#1a1410;text-decoration:underline}
   #chat .bot{align-self:flex-start;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.1);border-bottom-left-radius:4px}
+  #chat .bot.side{opacity:.78;font-size:14px;background:rgba(255,255,255,.04);font-style:italic}
+  #chat .bot.route{background:rgba(232,163,61,.14);border-color:rgba(232,163,61,.45)}
+  #chat .wdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  #chat .msg .tm{margin-left:8px;opacity:.6;font-weight:600}
   #chat .chips{display:flex;gap:8px;padding:4px 14px;overflow-x:auto;flex:none}
   #chat .chips button{flex:none;font-size:14px;padding:9px 14px;border-radius:999px;border:1px solid rgba(232,163,61,.45);background:rgba(232,163,61,.1);color:#ffd27a}
   #chat .chips button.sel{background:#e8a33d;color:#1a1410}
@@ -123,13 +127,13 @@
 <div id="fps"></div>
 <div id="holdhint">Hold View to chat<i></i></div>
 <div id="chat" role="dialog" aria-label="HQ chat">
-  <div class="chead"><span class="cdot"></span><div><div class="ctitle">HQ Chat</div><div class="cname">Grok Bot</div></div>
+  <div class="chead"><span class="cdot"></span><div><div class="ctitle">Office chat · everyone</div><div class="cname">Dunder Mifflin · whole office</div></div>
     <select aria-label="Talk to"></select><button type="button" class="cx" aria-label="Close">✕</button></div>
   <div class="cstatus"></div>
   <div class="log"></div>
   <div class="chips"></div>
-  <form autocomplete="off"><input type="text" enterkeyhint="send" autocapitalize="sentences" placeholder="Message Grok Bot…"><button class="send" type="submit">Send</button></form>
-  <div class="padhelp">LB / RB switch bot · D-pad pick a quick message · A send · B or hold View to close</div>
+  <form autocomplete="off"><input type="text" enterkeyhint="send" autocapitalize="sentences" placeholder="Message the office…"><button class="send" type="submit">Send</button></form>
+  <div class="padhelp">LB / RB whole office or one person · D-pad pick a quick message · A send · B or hold View to close</div>
 </div>
 <div id="panel"></div>
 <div id="menu"><div class="card">
@@ -141,7 +145,7 @@
     <tr><td>A / Cross / E</td><td>Interact with the desk you're looking at</td></tr>
     <tr><td>B / Circle / Q</td><td>Close panel</td></tr>
     <tr><td>Y / Triangle / Tab</td><td>Walk to next bot station</td></tr>
-    <tr><td>Hold View (⧉) / Enter</td><td>Open HQ chat with Grok Bot + team</td></tr>
+    <tr><td>Hold View (⧉) / Enter</td><td>Office chat: whole team in one stream (real orders go to Grok Bot)</td></tr>
     <tr><td>Start / Options / Esc</td><td>Pause menu</td></tr>
   </table>
   <div class="padprompt-in">🎮 Controller: press any button on it so it connects</div>
