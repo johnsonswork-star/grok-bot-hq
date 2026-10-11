@@ -11,9 +11,9 @@
 //   Tap cards to select (multi-select), then SUBMIT PICKS: onPick() sends them through the encrypted HQ relay. Boards and
 //   desks flag every feed that waits on Chris ("WAITING ON YOU").
 //   Family Inbox: a REFRESH button on the screen (HQ #29) asks Grok Bot for a fresh pull.
-//   HQ #53 "Needs you": Toby's Profile & Settings screen lists everything waiting on Chris, built by needsList() from the
-//   same data the desks + Team Board use (feeds waiting on Chris, open pick cards, tasks.json `waiting`) plus the feed's
-//   `needs` (needs-chris.jsonl via tools/work-live.mjs need add). The Team Board's WAITING ON YOU count uses the same list.
+//   HQ #53/#55 "Needs you": the conference Team Board (under the picks row) lists everything waiting on Chris, built by
+//   needsList() from the same data the desks use (feeds waiting on Chris, open pick cards, tasks.json `waiting`) plus the feed's
+//   `needs` (needs-chris.jsonl). Toby's Profile & Settings desk only shows a one-line pointer to the board.
 // Data stays private: the transcript comes from this iPad's own HQ chat log (end-to-end encrypted relay), never a public file.
 // Perf (iPad): canvases redraw on change or at most ~3 fps for the cursor/scroll animation, and only for desks within
 // ~16 m of you (or the one you're focused on). The 3D loop just calls tick() every frame; it's time-gated inside.
@@ -363,6 +363,14 @@ function needsList(mons, extra) {
   open.sort((a, b) => (a.at || 0) - (b.at || 0)); done.sort((a, b) => (b.at || 0) - (a.at || 0));
   return { open, done };
 }
+// HQ #55: Toby's desk keeps only a one-line pointer; the real widget is the conference Team Board
+function needsPointer(g, L, t) {
+  const n = L?.open.length || 0, w = W, y = H - 64, hgt = 30;
+  g.fillStyle = n ? 'rgba(201,138,18,.92)' : 'rgba(46,125,79,.88)'; g.fillRect(0, y, w, hgt);
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = n ? '#1a1206' : '#fff'; g.font = `800 17px ${FONT}`;
+  g.fillText(n ? `⏳ ${n} need${n === 1 ? 's' : ''} you · see conference board` : '✓ Nothing needs you · list is on the conference board', w / 2, y + hgt / 2 + 1);
+}
+// (HQ #53 full-screen widget, unused since HQ #55 moved the list to the Team Board)
 function drawNeeds(g, s, m, t) {
   const w = W, h = H, hh = 58, pad = 20, foot = 30, L = m.needs || { open: [], done: [] }, n = L.open.length;
   g.fillStyle = '#121620'; g.fillRect(0, 0, w, h);
@@ -430,6 +438,13 @@ function boardPickLayout(n, top) {
 }
 function drawBoardPick(g, m, top, t, hover) {
   const pk = m.work.pick, done = pk.done, sel = done ? new Set(pk.picked) : m.sel || new Set(), L = boardPickLayout(pk.options.length, top), P = L.panel, who = m.s.name.split(' ')[0];
+  if (done) {   // HQ #55: once picks are in, the cards fold to one green strip so Needs you + tasks fit under it
+    const ph = 44; rr(g, P.x, top, P.w, ph, 12); g.fillStyle = 'rgba(46,125,79,.22)'; g.fill(); g.lineWidth = 3; g.strokeStyle = STAGE_COL.done; g.stroke();
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `900 20px ${FONT}`; g.fillStyle = STAGE_COL.done;
+    g.fillText(wrapOne(g, `✓ PICKS IN · ${who}'s ${lc1(pk.title)}: you picked ${pk.picked.join(', ')} · ${who} is on it`, P.w - 150), P.x + 14, top + ph / 2 + 1);
+    g.textAlign = 'right'; g.font = `600 16px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.55)'; g.fillText(`sent ${hm(pk.pickedAt)}`, P.x + P.w - 14, top + ph / 2 + 1);
+    return ph + 8;
+  }
   rr(g, P.x, P.y, P.w, P.h, 14); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill(); g.lineWidth = 3;
   g.globalAlpha = done ? 1 : 0.75 + 0.25 * Math.sin(t / 300); g.strokeStyle = done ? STAGE_COL.done : WAIT_COL; g.stroke(); g.globalAlpha = 1;
   g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `900 21px ${FONT}`; g.fillStyle = done ? STAGE_COL.done : WAIT_COL;
@@ -464,7 +479,32 @@ function drawBoardPick(g, m, top, t, hover) {
   g.fillText(st === 'done' ? `✓ PICKS IN · ${who.toUpperCase()} ON IT` : st === 'sent' ? `SENT ✓ ${who.toUpperCase()} HAS THEM` : st === 'sending' ? 'SENDING' + dots : st === 'failed' ? 'NOT SENT · TAP AGAIN' : `SUBMIT PICKS${n ? ' (' + n + ')' : ''} ▶`, r.x + r.w / 2, r.y + r.h / 2 + 1);
   return BPK.h + 6;
 }
-function drawBoard(g, rows, t, pm, hover, nNeeds) {
+// HQ #55: the full "Needs you" list lives on the Team Board, under the picks row (same needsList() source)
+function drawBoardNeeds(g, L, top, t, maxH, hideDone) {
+  const w = BOARD_W, x = 30, pw = w - 60, n = L.open.length;
+  g.textBaseline = 'middle';
+  if (!n) {   // empty: one calm green strip, last handled ask on the right
+    const ph = 42; rr(g, x, top, pw, ph, 12); g.fillStyle = 'rgba(46,125,79,.22)'; g.fill(); g.lineWidth = 2; g.strokeStyle = 'rgba(102,187,106,.6)'; g.stroke();
+    g.textAlign = 'left'; g.font = `900 20px ${FONT}`; g.fillStyle = '#7CFC9A'; const lbl = '✓ NEEDS YOU · nothing waiting on you right now'; g.fillText(lbl, x + 14, top + ph / 2 + 1);
+    const d = !hideDone && L.done[0]; if (d) { const lw = g.measureText(lbl).width; g.textAlign = 'right'; g.font = `600 16px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.5)'; g.fillText(wrapOne(g, `✓ ${d.title} · ${hm(d.at)}`, pw - lw - 50), x + pw - 14, top + ph / 2 + 1); }
+    return ph + 8;
+  }
+  const head = 32, rowH = 50, fit = Math.max(1, Math.min(3, Math.floor((maxH - head - 8) / rowH))), shown = L.open.slice(0, fit), ph = head + shown.length * rowH + 6;
+  rr(g, x, top, pw, ph, 12); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill(); g.lineWidth = 3; g.globalAlpha = 0.75 + 0.25 * Math.sin(t / 300); g.strokeStyle = WAIT_COL; g.stroke(); g.globalAlpha = 1;
+  g.textAlign = 'left'; g.font = `900 20px ${FONT}`; g.fillStyle = WAIT_COL; g.fillText(`⏳ NEEDS YOU · ${n}${n > shown.length ? ` · +${n - shown.length} more` : ''}`, x + 14, top + head / 2 + 2);
+  shown.forEach((r, i) => {
+    const ry = top + head + i * rowH;
+    g.globalAlpha = 0.12 + 0.05 * Math.sin(t / 300 + i); g.fillStyle = WAIT_COL; g.fillRect(x + 6, ry + 2, pw - 12, rowH - 4); g.globalAlpha = 1;
+    g.fillStyle = r.color || WAIT_COL; g.fillRect(x + 12, ry + 8, 6, rowH - 16);
+    const age = r.at ? `${ago(r.at)}${ago(r.at) === 'just now' ? '' : ' ago'}` : '';
+    g.textAlign = 'right'; g.font = `500 15px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.6)'; g.fillText(wrapOne(g, `${r.who}${age ? ' · ' + age : ''}`, 300), x + pw - 14, ry + 16);
+    const tx = x + 28, tw = pw - 28 - 330;
+    g.textAlign = 'left'; g.font = `800 19px ${FONT}`; g.fillStyle = '#fff'; g.fillText(wrapOne(g, r.title, tw), tx, ry + 16);
+    g.font = `800 15px ${FONT}`; g.fillStyle = WAIT_COL; g.fillText(wrapOne(g, '➜ ' + r.do, pw - 42), tx, ry + 36);
+  });
+  return ph + 8;
+}
+function drawBoard(g, rows, t, pm, hover, nNeeds, needs) {
   const w = BOARD_W, h = BOARD_H, pad = 30, hh = 78;
   const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#16202b'); grd.addColorStop(1, '#2c2118'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
   g.textBaseline = 'middle'; g.textAlign = 'left';
@@ -479,7 +519,9 @@ function drawBoard(g, rows, t, pm, hover, nNeeds) {
   for (const k of ['working', 'blocked', 'review', 'queued', 'done']) { const n = cnt(k); if (!n && k === 'blocked') continue; const lbl = `${STAGE_LABEL[k]} ${n}`, tw = g.measureText(lbl).width + 26;
     rr(g, cx, hh + 4, tw, 30, 15); g.fillStyle = n ? STAGE_COL[k] : 'rgba(255,255,255,.08)'; g.fill(); g.fillStyle = n ? '#10141c' : 'rgba(255,255,255,.45)'; g.fillText(lbl, cx + 13, hh + 20); cx += tw + 10; }
   g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(pad, hh + 44, w - pad * 2, 2);
-  const top = hh + 52 + (pm ? drawBoardPick(g, pm, hh + 52, t, hover) : 0), rowH = 62, fit = Math.floor((h - top - 8) / rowH), more = rows.length > fit ? rows.length - (fit - 1) : 0, shown = rows.slice(0, more ? fit - 1 : fit);
+  let top = hh + 52 + (pm ? drawBoardPick(g, pm, hh + 52, t, hover) : 0);
+  if (needs) top += drawBoardNeeds(g, needs, top, t, h - top - 70, !!pm);   // HQ #55: under the picks row (or the stage counts)
+  const rowH = 62, fit = Math.max(1, Math.floor((h - top - 8) / rowH)), more = rows.length > fit ? rows.length - (fit - 1) : 0, shown = rows.slice(0, more ? fit - 1 : fit);
   if (!rows.length) { g.textAlign = 'center'; g.fillStyle = '#7CFC9A'; g.font = `800 40px ${FONT}`; g.fillText('No open tasks · everyone roaming', w / 2, top + 150); }
   shown.forEach((r, i) => {
     const y = top + i * rowH, col = STAGE_COL[r.stage] || STAGE_COL.working;
@@ -520,8 +562,10 @@ export function createMonitors({ stations, onPick }) {
   const INBOX_STALE = 36 * 3600e3; // older feed than this: fall back to the task screen
   function draw(m, t) {
     if (m.s.id === NEEDS_ID) m.needs = needsList(mons, feedNeeds);
-    const fn = m.s.hero ? drawHero : m.s.id === NEEDS_ID ? drawNeeds : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? (m.work.pick ? drawPick : drawWork) : drawDesk;
-    fn(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false;
+    const fn = m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? (m.work.pick ? drawPick : drawWork) : drawDesk;
+    fn(m.g, m.s, m, t);
+    if (m.s.id === NEEDS_ID) needsPointer(m.g, m.needs, t);   // HQ #55: Toby just points at the conference board
+    m.tex.needsUpdate = true; m.last = t; m.dirty = false;
   }
   function animated(m, d, focused) {
     if (m.scroll > 0.5) return true;
@@ -531,7 +575,6 @@ export function createMonitors({ stations, onPick }) {
     if (liveWork(m) && (d < 7 || focused)) return true;
     if (m.pickSent?.state === 'sending') return true;                 // stage pulse / indeterminate bar
     if (m.s.hero) return d < 10 || focused; // status dots / cursor
-    if (m.s.id === NEEDS_ID) return (d < 7 || focused) && !!m.needs?.open.length; // amber rows pulse up close
     if (m.refresh?.state === 'asked' && (d < 7 || focused)) return true; // "ASKED GROK..." dots
     return m.busy && (d < 7 || focused);    // blinking cursor while working, only up close
   }
@@ -651,8 +694,8 @@ export function createMonitors({ stations, onPick }) {
       if (nsig !== needsSig) { needsSig = nsig; const nm = mons.get(NEEDS_ID); if (nm) nm.dirty = true; }
       if (board) {
         const rows = boardRows(mons), pm = boardPickM(mons), near = Math.hypot(board.x - pos.x, board.z - pos.z) < 9;
-        const sig = JSON.stringify([rows, nl.open.length, pm && [pm.psig, [...(pm.sel || [])], pm.pickSent, pm.work.pick.done, Object.values(pm.pickImgs || {}).filter(i => i?.complete).length, !!pm.pickSheet?.complete], board.hover]);
-        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now, pm, board.hover, nl.open.length); board.tex.needsUpdate = true; }
+        const sig = JSON.stringify([rows, nsig, pm && [pm.psig, [...(pm.sel || [])], pm.pickSent, pm.work.pick.done, Object.values(pm.pickImgs || {}).filter(i => i?.complete).length, !!pm.pickSheet?.complete], board.hover]);
+        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now, pm, board.hover, nl.open.length, nl); board.tex.needsUpdate = true; }
       }
       for (const m of mons.values()) {
         const focused = m.s.id === focusedId, d = Math.hypot(m.s.x - pos.x, m.s.z - pos.z), near = focused || d < NEAR;

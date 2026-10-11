@@ -272,12 +272,15 @@ but shows an Office character as `name`; `bot` is the real bot behind it, and HQ
 Layout `scranton-2`: conference room now shares a wall with Michael's office (whiteboard on that wall), west bullpen door is the
 emergency exit (the warehouse is downstairs, signed by the front door), supply closet front-west.
 
-## Needs you (HQ #53)
+## Needs you (HQ #53, moved to the Team Board in HQ #55)
 
-Toby's desk (**Profile & Settings**, HR annex) is the **Needs you** widget: one live list of everything waiting on Chris.
-Each row: what it is, who's asking, what to do ("Tap your favorite H–L on Kelly's desk or the conference TV, then SUBMIT"), and how long it's been waiting. Empty: "Nothing needs you right now." Asks handled in the last 3 h stay below, dimmed, under RECENTLY HANDLED.
+The **Needs you** list lives on the **conference-room Team Board TV**, right under the picks row (or under the stage counts when no pick panel is up): one live list of everything waiting on Chris.
+Each row: what it is, who's asking (+ how long it's been waiting), and what to do ("➜ Tap your favorite H–L on Kelly's desk or the conference TV, then SUBMIT"). Up to 3 rows fit; more shows "+N more" in the panel header. Empty: a green strip "✓ NEEDS YOU · nothing waiting on you right now" (with the last handled ask on the right when no pick strip is showing).
+Once a pick is submitted, the TV's pick cards fold into one green "✓ PICKS IN · … you picked H, I, K" strip (for 3 h) so Needs you and the task rows fit under it. Open picks still show the full tappable cards.
 
-One shared list (`needsList()` in `monitors.js`) feeds this widget **and** the Team Board's WAITING ON YOU count, so they never disagree. Sources:
+Toby's desk (**Profile & Settings**) is a normal desk screen again, with one line at the bottom: "⏳ N need you · see conference board" or "✓ Nothing needs you · list is on the conference board".
+
+One shared list (`needsList()` in `monitors.js`) feeds the board panel, the header's WAITING ON YOU count, and Toby's pointer, so they never disagree. Sources:
 - live work feeds waiting on Chris (`work-live.mjs waiting <bot> Chris`, an open pick card, or review/blocked with a step naming Chris)
 - `tasks.json` entries with `"waiting": "Chris"` (when that bot has no live feed)
 - anything else: `node tools/work-live.mjs need add <id> --title "Approve X" --who "Andy · Shop" --do "Reply yes in HQ chat (#44)" [--bot <station>] [--issue N]`, closed with `need done <id>` (`need list` shows the open ones). Stored in `~/.config/grok-bot-hq/needs-chris.jsonl` on the box, sent only inside the encrypted work feed.
