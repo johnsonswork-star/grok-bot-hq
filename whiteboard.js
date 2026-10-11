@@ -228,8 +228,9 @@ function draw(g, st) {
   } else {
     const usd = v => (v == null || isNaN(v)) ? '—' : (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const T = bank.totals || {};
-    text(g, fit(g, usd(T.cash), 54, bw - 40), bx + 22, by + 114, 54, INK.green, { tilt: -0.015 });
-    text(g, 'cash total', bx + 24, by + 142, 24, INK.grey);
+    const avT = T.cashAvailable != null ? T.cashAvailable : T.cash;
+    text(g, fit(g, usd(avT), 54, bw - 40), bx + 22, by + 114, 54, INK.green, { tilt: -0.015 });
+    text(g, T.cashAvailable != null ? `available · ${usd(T.cash)} posted` : 'cash total', bx + 24, by + 142, 24, INK.grey);
     let y = by + 178;
     const extra = [];
     if (T.credit) extra.push(['cards owe', T.credit.balance, INK.red]);
@@ -240,7 +241,9 @@ function draw(g, st) {
     for (const a of rows) { // two lines per account: name ··last4, then the balance
       const tail = a.last4 ? ' ··' + a.last4 : ''; g.font = `24px ${FONT}`; const tw4 = g.measureText(tail).width;
       text(g, fit(g, a.name, 24, bw - 44 - tw4) + tail, bx + 22, y, 24, INK.grey);
-      text(g, usd(a.bal), bx + bw - 18, y + 32, 32, a.cls === 'liability' ? INK.red : INK.black, { align: 'right' }); y += 62;
+      const showAv = a.cls !== 'liability' && a.avail != null;
+      if (showAv) text(g, 'avail', bx + 22, y + 32, 22, INK.grey);
+      text(g, usd(showAv ? a.avail : a.bal), bx + bw - 18, y + 32, 32, a.cls === 'liability' ? INK.red : INK.black, { align: 'right' }); y += 62;
     }
     y -= 4;
     for (const [label, v, c] of extra) { if (y > foot - 30) break; text(g, label, bx + 22, y, 24, INK.grey); text(g, usd(v), bx + bw - 18, y, 28, c, { align: 'right' }); y += 38; }
