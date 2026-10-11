@@ -17,6 +17,12 @@
 //   <cmd> | node tools/work-live.mjs pipe <bot>                 stream a command's output onto the monitor, line by line
 //   node tools/work-live.mjs image <bot> <path>                 newest image (thumbnail on the monitor)
 //   node tools/work-live.mjs clear <bot>                        drop that bot's live feed
+//   node tools/work-live.mjs pick <bot> --id ID [--issue N] [--title T] --opt "H|Title|sub|/path.png"... [--sheet /path.jpg]
+//        tap-to-pick cards on that bot's desk screen (HQ #50). Chris taps favorites + SUBMIT on the iPad; the bridge runs
+//        `picked` below, comments the picks on HQ issue N, pings Slack. Until then the boards show WAITING ON YOU.
+//   node tools/work-live.mjs picked <bot> <id> H,J               record picks (bridge): stage -> working, next step, log file updated
+//   node tools/work-live.mjs unpick <bot>                       drop the pick cards
+//   node tools/work-live.mjs waiting <bot> [who|off]            mark "waiting on Chris" (boards highlight it) without cards
 //   node tools/work-live.mjs show                               print the bundle (no thumbnails)
 //   node tools/work-live.mjs push [--force]                     publish now
 //   node tools/work-live.mjs watch                              background publisher: checks every 4 s, pushes on change
@@ -98,19 +104,19 @@ function scanLog(bot, w) {
 }
 
 // thumbnail: ~220 px JPEG on a backdrop that matches the ink (navy ink -> light shirt, cream ink -> navy shirt)
-function thumb(p) {
+function thumb(p, size = 220) {
   let st; try { st = fs.statSync(p); } catch { return null; }
-  const key = `${THUMBS}/${Buffer.from(p).toString('base64url').slice(-80)}-${Math.round(st.mtimeMs)}.jpg`;
+  const key = `${THUMBS}/${Buffer.from(p).toString('base64url').slice(-80)}-${Math.round(st.mtimeMs)}${size === 220 ? '' : '-' + size}.jpg`;
   if (!fs.existsSync(key)) {
     const bg = /cream|white/i.test(path.basename(p)) ? '#1B2A4A' : '#F3EFE6';
     try {
       execFileSync('python3', ['-c', `
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]); im.thumbnail((220, 220))
+im = Image.open(sys.argv[1]); n = int(sys.argv[4]); im.thumbnail((n, n))
 if im.mode in ('RGBA', 'LA', 'P'):
     im = im.convert('RGBA'); bg = Image.new('RGB', im.size, sys.argv[3]); bg.paste(im, mask=im.split()[-1]); im = bg
-im.convert('RGB').save(sys.argv[2], 'JPEG', quality=68, optimize=True)`, p, key, bg], { stdio: 'ignore', timeout: 30000 });
+im.convert('RGB').save(sys.argv[2], 'JPEG', quality=68, optimize=True)`, p, key, bg, String(size)], { stdio: 'ignore', timeout: 30000 });
     } catch { return null; }
   }
   try { return 'data:image/jpeg;base64,' + fs.readFileSync(key).toString('base64'); } catch { return null; }
@@ -126,6 +132,13 @@ function bundle(withThumbs = true) {
     b.stage = STAGES.includes(w.stage) ? w.stage : inferStage(w.step); if (w.stageAt) b.stageAt = w.stageAt;
     if (w.pct !== undefined) b.pct = w.pct; else if (b.stage === 'done') b.pct = 100;
     if (w.steps?.length) b.steps = w.steps.slice(0, 12).map(x => ({ t: x.t, s: x.s }));
+    if (w.pick?.options?.length) {
+      const pk = w.pick; b.pick = { id: pk.id, issue: pk.issue || null, title: clip(pk.title || 'Pick your favorites', 80), multi: pk.multi !== false, done: !!pk.done, picked: pk.picked || [], pickedAt: pk.pickedAt || null,
+        options: pk.options.map(o => ({ k: o.k, t: clip(o.t, 40), sub: clip(o.sub || '', 40), d: withThumbs ? thumb(o.p, 240) : null })) };
+      if (pk.sheet && withThumbs) b.pick.sheet = thumb(pk.sheet, 420);
+    }
+    const wait = w.waiting || (w.pick && !w.pick.done ? 'Chris' : '') || ((b.stage === 'review' || b.stage === 'blocked') && /\b(chris|you)\b/i.test(w.step || '') ? 'Chris' : '');
+    if (wait) b.waiting = wait;
     if (withThumbs) b.thumbs = imgs.slice(0, THUMBS_PER_BOT).map(p => ({ n: path.basename(p), d: thumb(p) })).filter(x => x.d);
     bots[bot] = b;
   }
@@ -202,7 +215,38 @@ if (cmd === 'set' && bot) {
   if (i >= 0) st[i].s = 'done'; const j = st.findIndex(x => x.s === 'todo');
   if (j >= 0) { st[j].s = 'now'; addLine(w, `step ${j + 1}/${st.length}: ${st[j].t}`); setStage(w, 'working'); } else { setStage(w, 'review'); addLine(w, 'all steps done → review'); }
   if (st.length) w.pct = pctOf(100 * st.filter(x => x.s === 'done').length / st.length); write(bot, w); console.log(bot, '->', w.stage, w.pct ?? '');
-} else if (cmd === 'log' && bot) { const w = read(bot); for (const l of rest) addLine(w, l); write(bot, w); }
+} else if (cmd === 'pick' && bot) {
+  const w = read(bot), pk = { id: '', issue: null, title: '', multi: true, options: [], done: false, picked: [] };
+  for (let i = 0; i < rest.length; i += 2) {
+    const k = rest[i], v = rest[i + 1]; if (v === undefined) break;
+    if (k === '--id') pk.id = v; else if (k === '--issue') pk.issue = +v || null; else if (k === '--title') pk.title = v; else if (k === '--single') pk.multi = v !== '1';
+    else if (k === '--sheet') { if (!fs.existsSync(v)) { console.error('missing sheet ' + v); process.exit(2); } pk.sheet = path.resolve(v); }
+    else if (k === '--opt') { const [key, t, sub, p] = v.split('|'); if (!p || !fs.existsSync(p)) { console.error('missing image for ' + key + ': ' + p); process.exit(2); } pk.options.push({ k: key.trim().toUpperCase(), t, sub, p: path.resolve(p) }); }
+  }
+  if (!pk.id || !pk.options.length) { console.error('need --id and at least one --opt'); process.exit(2); }
+  w.pick = pk; addLine(w, `${pk.options.length} options on the desk: tap your favorites (${pk.options.map(o => o.k).join(', ')})`); write(bot, w); console.log(bot, 'pick cards set', pk.options.map(o => o.k).join(','));
+} else if (cmd === 'picked' && bot && rest[0] && rest[1]) {
+  const w = read(bot); if (!w.pick || w.pick.id !== rest[0]) { console.error('no open pick ' + rest[0] + ' on ' + bot); process.exit(3); }
+  const keys = new Set(w.pick.options.map(o => o.k)), picks = [...new Set(rest[1].split(',').map(x => x.trim().toUpperCase()))].filter(k => keys.has(k));
+  if (!picks.length) { console.error('no valid picks'); process.exit(2); }
+  Object.assign(w.pick, { done: true, picked: picks, pickedAt: Date.now() }); delete w.waiting;
+  const names = picks.map(k => { const o = w.pick.options.find(x => x.k === k); return `${k} ${o.t}`; }).join(', ');
+  const st = w.steps || []; const i = st.findIndex(x => x.s === 'now'); if (i >= 0) st[i].s = 'done'; const j = st.findIndex(x => x.s === 'todo'); if (j >= 0) st[j].s = 'now';
+  if (st.length) w.pct = pctOf(100 * st.filter(x => x.s === 'done').length / st.length);
+  setStage(w, 'working'); w.step = `Chris picked ${picks.join(', ')}: prepping them`; addLine(w, `✓ Chris picked ${names} (tapped on the desk)`);
+  if (w.logFile && fs.existsSync(w.logFile)) { // the bot's own log drives the screen, so move it forward too (else scanLog snaps back to review)
+    const now = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'medium' }) + ' CT';
+    let t = fs.readFileSync(w.logFile, 'utf8');
+    t = t.replace(/^(\W*Stage:\**\s*)[a-z]+/im, '$1working').replace(/^(\W*Current step:\**\s*).+$/im, `$1Chris picked ${picks.join(', ')} on the desk; prep chosen badges`)
+         .replace(/^(\W*Status:\**\s*).+$/im, `$1Chris picked ${picks.join(', ')} (${now})`).replace(/^(\s*[-*]\s+\[)[>~\-](\])/m, '$1x$2').replace(/^(\s*[-*]\s+\[) (\])/m, '$1>$2');
+    const sec = `\n## Chris's picks (tapped on the desk, ${now})\n${picks.map(k => { const o = w.pick.options.find(x => x.k === k); return `- **${k}** ${o.t}: ${o.p}`; }).join('\n')}\n`;
+    t = /^## Last progress lines/m.test(t) ? t.replace(/^## Last progress lines.*$/m, m => sec.trimStart() + '\n' + m + `\n- ${now}: Chris picked ${picks.join(', ')} on the desk screen`) : t + sec;
+    fs.writeFileSync(w.logFile, t); delete w.logSeen;
+  }
+  write(bot, w); console.log(bot, 'picked', picks.join(','));
+} else if (cmd === 'unpick' && bot) { const w = read(bot); delete w.pick; write(bot, w); console.log(bot, 'pick cleared'); }
+else if (cmd === 'waiting' && bot) { const w = read(bot); if (!rest[0] || rest[0] === 'off') delete w.waiting; else w.waiting = rest[0]; write(bot, w); console.log(bot, 'waiting', w.waiting || 'off'); }
+else if (cmd === 'log' && bot) { const w = read(bot); for (const l of rest) addLine(w, l); write(bot, w); }
 else if (cmd === 'image' && bot && rest[0]) { const w = read(bot); addImage(w, rest[0]); addLine(w, `new image: ${path.basename(rest[0])}`); write(bot, w); }
 else if (cmd === 'pipe' && bot) {
   let buf = '', t = 0; const flush = () => { const w = read(bot); const ls = buf.split('\n'); buf = ls.pop(); for (const l of ls) if (l.trim()) { addLine(w, l); process.stdout.write(l + '\n'); } write(bot, w); };

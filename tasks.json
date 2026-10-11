@@ -21,9 +21,12 @@
       "until": "2026-10-11T05:20:18.982Z"
     },
     "designer": {
-      "task": "Atom Family designs: print check + badge options",
-      "since": "2026-10-11T02:20:18.884Z",
-      "until": "2026-10-11T06:20:18.885Z"
+      "task": "Badge options H–L: your pick",
+      "since": "2026-10-11T06:43:59.355Z",
+      "until": "2026-10-12T06:43:59.355Z",
+      "stage": "review",
+      "pct": 60,
+      "waiting": "Chris"
     },
     "assist": {
       "task": "Job apps / resume",

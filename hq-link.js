@@ -159,3 +159,17 @@ export async function fetchWorkFeed() {
     workId = m.id; return { id: m.id, feed: p };
   } catch (e) { return null; }
 }
+
+// Tap-to-pick (HQ #50): Chris taps his favorite options on a desk screen (e.g. Kelly's badge cards) and SUBMIT. Same
+// encrypted relay as chat / REFRESH; the bridge sees type:'pick', records it, moves that bot's live feed past
+// "waiting on Chris", comments the picks on the HQ issue and pings Slack. picks = ['H', 'J'].
+export async function requestPick({ bot, id, issue, picks }) {
+  try {
+    const d = await device();
+    const msg = { v: 2, type: 'pick', bot: String(bot).slice(0, 30), id: String(id).slice(0, 60), issue: issue || null,
+      picks: (picks || []).map(String).slice(0, 12), mid: 'pk' + randomId(9), ts: new Date().toISOString(),
+      device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
+    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    return r.ok;
+  } catch (e) { return false; }
+}

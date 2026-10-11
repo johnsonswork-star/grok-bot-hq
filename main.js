@@ -5,7 +5,7 @@ import { createWorkers } from './workers.js';
 import { createMonitors } from './monitors.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, requestRefresh } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, requestRefresh, requestPick } from './hq-link.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -504,7 +504,7 @@ for (const st of STATIONS) {
 const ST = id => STATIONS.find(s => s.id === id);
 
 // live desk monitors: Grok = HQ chat transcript, others = current task / idle (monitors.js)
-const monitors = createMonitors({ stations });
+const monitors = createMonitors({ stations, onPick: p => requestPick(p) });
 
 // ---------- props: little show-accurate touches (HQ #37), cheap boxes/cylinders so the iPad stays smooth ----------
 const gold = std('#d4af37', 0.3, 0.85);
@@ -837,7 +837,7 @@ const IDLE_SPOTS = [ // HQ #43: re-placed for the 22 x 15 m floor
 // worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
 const workers = createWorkers({ scene, stations, colliders, pois: IDLE_SPOTS, onStatus: (s, busy, task, meta = {}) => {
   const st = stations.find(x => x.id === s.id); if (!st) return;
-  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until, { stage: meta.stage, pct: meta.pct });
+  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until, { stage: meta.stage, pct: meta.pct, waiting: meta.waiting });
   if (panelOpen === st) showPanel(st);
 } });
 
@@ -872,7 +872,7 @@ function lockPointer() {
 }
 document.getElementById('menu').addEventListener('click', () => { setPaused(false); lockPointer(); });
 renderer.domElement.addEventListener('click', e => {
-  if (!paused && document.pointerLockElement && hoverKind) return refreshCtl.request(hoverKind); // reticle on a REFRESH button
+  if (!paused && document.pointerLockElement && hoverKind) return act(hoverKind); // reticle on a REFRESH button / pick card
   if (!paused && !document.pointerLockElement) { if (!CAN_LOCK && tapAt(e.clientX, e.clientY)) return; lockPointer(); }
 });
 document.addEventListener('pointerlockchange', () => {
@@ -1028,7 +1028,7 @@ function setFocus(s) {
 let lastDesk = null;
 function interact() {
   if (paused) return;
-  if (!panelOpen && hoverKind) return refreshCtl.request(hoverKind); // reticle on a REFRESH button: A / E refreshes
+  if (!panelOpen && hoverKind) return act(hoverKind); // reticle on a REFRESH button / pick card: A / E presses it
   if (panelOpen) return closePanel();
   if (!focused) return;
   panelOpen = focused; lastDesk = focused;
@@ -1042,6 +1042,7 @@ function showPanel(s) {
     <p>${s.role}</p><p>${status}</p>
     <div class="screenwrap"></div>
     ${REFRESH_KIND[s.id] ? `<button class="refreshbtn" type="button">⟳ REFRESH ${s.id === 'inbox' ? 'INBOX' : s.short} <span>(tap or X)</span></button>` : ''}
+    ${monitors.hasPick(s.id) ? `<p class="pickhint"><b style="color:#ffca28">⏳ Waiting on you:</b> tap the badges you like on the screen (or D-pad ←/→ + X), then <b>SUBMIT PICKS</b>. ${s.name.split(' ')[0]} gets them right away.</p>` : ''}
     <small>Hold View (or Enter) to message ${s.bot || 'this bot'} via Grok Bot + team. B / Q / A to close.</small>`;
   const rb = ui.panel.querySelector('.refreshbtn');
   if (rb) for (const ev of ['touchstart', 'click']) rb.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); if (ev === 'click' && e.pointerType === 'touch') return; refreshCtl.request(REFRESH_KIND[s.id]); }, { passive: false });
@@ -1137,17 +1138,37 @@ const inboxSt = stations.find(s => s.id === 'inbox');
 let hoverKind = null;
 function refreshHit() {
   const targets = [whiteboard.surface]; if (inboxSt) targets.push(inboxSt.screen);
+  for (const s of stations) if (!s.hero && monitors.hasPick(s.id)) targets.push(s.screen); // HQ #50 pick cards
   raycaster.far = 10;
   const h = raycaster.intersectObjects(targets, false)[0]; if (!h) return null;
   if (h.object === whiteboard.surface) return whiteboard.hitTest(h.uv);
-  return h.distance < 5 ? monitors.hitTest('inbox', h.uv) : null;
+  if (h.distance >= 5) return null;
+  if (inboxSt && h.object === inboxSt.screen) return monitors.hitTest('inbox', h.uv);
+  const ps = stations.find(s => s.screen === h.object); const k = ps && monitors.pickHit(ps.id, h.uv);
+  return k ? `pick:${ps.id}:${k}` : null;
 }
+// one place for "press this on-screen control": REFRESH kinds or HQ #50 pick cards ('pick:<bot>:<H|submit>')
+function act(kind) {
+  if (!kind) return;
+  if (!kind.startsWith('pick:')) return refreshCtl.request(kind);
+  const [, id, key] = kind.split(':'); pickAct(id, key);
+}
+function pickAct(id, key) { pickFeedback(id, monitors.pickTap(id, key)); }
+function pickFeedback(id, r) {
+  const who = stations.find(s => s.id === id)?.name.split(' ')[0] || 'the team';
+  if (r === 'empty') toast('Tap the badges you like first, then SUBMIT');
+  else if (r === 'submit') toast(`📌 Sending your picks to ${who}…`);
+  else if (r === 'already') toast(`${who} already has those picks`);
+  else if (r === 'locked') toast('Picks sent. Waiting for the desk to confirm');
+  if (r === 'submit') setTimeout(() => workPoll?.(), 20000);
+}
+let workPoll = null;
 function tapAt(x, y) {
   if (paused || chat.isOpen()) return false;
   const r = canvasEl.getBoundingClientRect();
   ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const k = refreshHit(); if (k) { refreshCtl.request(k); return true; }
+  const k = refreshHit(); if (k) { act(k); return true; }
   return false;
 }
 function updateHover() {
@@ -1155,8 +1176,11 @@ function updateHover() {
   if (!paused && !chat.isOpen() && !panelOpen) { camera.getWorldDirection(tmpV); raycaster.set(camera.position, tmpV); k = refreshHit(); }
   if (k === hoverKind) return;
   hoverKind = k;
+  const pk = k && k.startsWith('pick:') ? k.split(':') : null;
   whiteboard.setHover(k === 'bank'); monitors.setHover(k === 'inbox' ? 'inbox' : null, true);
-  if (k) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = `⟳ Refresh ${k === 'bank' ? 'bank balances' : 'Family Inbox'}  ·  A / E / tap`; }
+  if (!panelOpen) monitors.setPickHover(pk ? pk[1] : null, pk ? pk[2] : null);
+  if (pk) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = pk[2] === 'submit' ? '📌 Submit your picks  ·  A / E / tap' : `Pick / unpick ${pk[2]}  ·  A / E / tap`; }
+  else if (k) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = `⟳ Refresh ${k === 'bank' ? 'bank balances' : 'Family Inbox'}  ·  A / E / tap`; }
   else { const f = focused; focused = null; ui.reticle.classList.remove('hot'); ui.focus.classList.remove('show'); setFocus(f); }
 }
 const refreshCtl = (() => {
@@ -1235,9 +1259,17 @@ const refreshCtl = (() => {
     try { localStorage.setItem(KEY, JSON.stringify(r.feed)); } catch (e) {}
     monitors.setWork(r.feed);
   }
-  poll(); setInterval(poll, 12000);
+  workPoll = poll; poll(); setInterval(poll, 12000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 })();
+// HQ #50: taps on a desk screen shown full size in the open desk panel (same canvas as the 3D monitor)
+for (const s of stations) {
+  const cv = monitors.canvas(s.id); if (!cv || s.hero) continue;
+  const hit = (x, y) => { if (panelOpen !== s || !monitors.hasPick(s.id)) return false; const r = cv.getBoundingClientRect();
+    const k = monitors.pickHit(s.id, { x: (x - r.left) / r.width, y: 1 - (y - r.top) / r.height }); if (k) { monitors.setPickHover(s.id, k); pickAct(s.id, k); } return !!k; };
+  cv.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (t && hit(t.clientX, t.clientY)) { e.preventDefault(); e.stopPropagation(); } }, { passive: false });
+  cv.addEventListener('click', e => { if (e.pointerType === 'touch') return; if (hit(e.clientX, e.clientY)) e.stopPropagation(); });
+}
 const chat = createChat({ stations, snapshot, onLog: entries => monitors.setLog(entries), onOpenChange: o => {
   if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
 } });
@@ -1278,10 +1310,12 @@ function tick() {
     else if (paused && gp.A) setPaused(false);
     else if (!paused) {
       if (gp.A) interact();
+      const pickPanel = panelOpen && monitors.hasPick(panelOpen.id);
       if (gp.X && panelOpen && REFRESH_KIND[panelOpen.id]) refreshCtl.request(REFRESH_KIND[panelOpen.id]);
+      if (gp.X && pickPanel) pickFeedback(panelOpen.id, monitors.pickPress(panelOpen.id));
       if (gp.B) closePanel();
-      if (gp.Y || gp.dpad.right) nextStation(1);
-      if (gp.dpad.left) nextStation(-1);
+      if (pickPanel && (gp.dpad.left || gp.dpad.right)) monitors.pickMove(panelOpen.id, gp.dpad.right ? 1 : -1); // D-pad walks the pick cards
+      else { if (gp.Y || gp.dpad.right) nextStation(1); if (gp.dpad.left) nextStation(-1); }
     }
   }
   if (!paused && !chat.isOpen()) {

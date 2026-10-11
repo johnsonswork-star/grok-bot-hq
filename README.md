@@ -85,6 +85,15 @@ If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
 
 Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
+## Tap-to-pick on desk screens (HQ #50)
+
+When a bot is waiting on Chris to choose between options, its desk screen turns into **pick cards** (image + letter, 3 x 2 grid, last cell = contact sheet). First use: Kelly's (Atom Family Designer) badge options H–L.
+
+- **Pick:** tap a card on the 3D monitor (iPad), or aim the reticle at it and press A / E / click. In the open desk panel (A at the desk) tap the big screen, or D-pad ←/→ to move the highlight and X to press. Multi-select: tap again to unpick. Gold border + ✓ = selected (kept on the device until sent).
+- **Submit:** the SUBMIT PICKS button sends `{type:'pick', bot, id, issue, picks}` through the same encrypted HQ relay as chat / REFRESH (`hq-link.requestPick`). The bridge (`handlePick` in `tools/hq-bridge.mjs`) logs it to `~/.config/grok-bot-hq/picks.jsonl`, runs `work-live.mjs picked` (feed + the bot's desk log move from review to working, next step, "Chris's picks" section), comments the picks on the HQ issue (so `hq-inbox.sh pending` lists it and the note shows in Chris's chat), and pings Slack #hq-chat. Within ~30 s the screen flips to "✓ YOU PICKED …".
+- **Set up cards:** `node tools/work-live.mjs pick <bot> --id ID --issue N --title T --opt "H|Title|sub|/abs/path.png" ... [--sheet /abs/contact.jpg]` (real files only; missing paths are refused). `unpick <bot>` removes them.
+- **Waiting on Chris everywhere:** a feed with open pick cards, `work-live.mjs waiting <bot> Chris`, a review/blocked step that mentions Chris, or `"waiting": "Chris"` on a tasks.json entry shows an amber **⏳ WAITING ON YOU** banner on the desk and sorts first on the conference Team Board (amber row, YOUR CALL pill, header count).
+
 ## Layout: Dunder Mifflin Scranton, set-scale floor plan (HQ #30 / #36 / #38 / #42)
 
 North = the big window wall. You spawn at the south front door, facing Pam's reception. The floor plan follows The Office (Scranton branch); `LAYOUT` in `main.js` is bumped when it changes so a live reload drops you at the front door instead of inside a new wall.

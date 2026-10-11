@@ -7,6 +7,9 @@
 //   HQ #46 progress: every busy screen shows a stage track QUEUED → WORKING → REVIEW → DONE (or BLOCKED), a progress bar
 //   with % when known, and the step checklist (✓ done, ▶ now, ○ todo). Updates live as the 12 s feed poll lands: the bar
 //   eases to the new %, a stage change flashes, no page reload.
+//   HQ #50 tap-to-pick: a feed with `pick` (tools/work-live.mjs pick) turns the screen into option cards (image + letter).
+//   Tap cards to select (multi-select), then SUBMIT PICKS: onPick() sends them through the encrypted HQ relay. Boards and
+//   desks flag every feed that waits on Chris ("WAITING ON YOU").
 //   Family Inbox: a REFRESH button on the screen (HQ #29) asks Grok Bot for a fresh pull.
 // Data stays private: the transcript comes from this iPad's own HQ chat log (end-to-end encrypted relay), never a public file.
 // Perf (iPad): canvases redraw on change or at most ~3 fps for the cursor/scroll animation, and only for desks within
@@ -20,7 +23,9 @@ const REFRESHABLE = { inbox: 'inbox' }; // station id -> refresh kind (screen ge
 const WORK_FRESH = 3 * 3600e3;          // live work feed older than this: back to the plain task card
 // review / queued / blocked wait on people, so those feeds stay up (even when the bot is roaming) for longer
 const STAGE_FRESH = { review: 48 * 3600e3, queued: 48 * 3600e3, blocked: 24 * 3600e3 };
-const liveWork = m => m.work && (m.busy || STAGE_FRESH[m.work.stage]) && Date.now() - m.work.at < (STAGE_FRESH[m.work.stage] || WORK_FRESH);
+const liveWork = m => m.work && (m.busy || STAGE_FRESH[m.work.stage] || m.work.pick) && Date.now() - m.work.at < (STAGE_FRESH[m.work.stage] || WORK_FRESH);
+const WAIT_COL = '#ffca28';
+const waitingOn = wk => !!wk && (wk.waiting || (wk.pick && !wk.pick.done ? 'Chris' : ''));
 const STAGES = ['queued', 'working', 'review', 'done'];
 const STAGE_COL = { queued: '#90a4ae', working: '#ffb74d', review: '#64b5f6', done: '#66bb6a', blocked: '#ef5350' };
 const STAGE_LABEL = { queued: 'QUEUED', working: 'WORKING', review: 'REVIEW', done: 'DONE', blocked: 'BLOCKED' };
@@ -102,6 +107,63 @@ function stepList(g, x, y, w, rows, steps, t) {
   return shown.length * lh;
 }
 
+// "WAITING ON YOU" banner (HQ #50): amber, gently pulsing
+function waitBanner(g, x, y, w, h, text, t) {
+  rr(g, x, y, w, h, 8); g.globalAlpha = 0.85 + 0.15 * Math.sin(t / 300); g.fillStyle = WAIT_COL; g.fill(); g.globalAlpha = 1;
+  g.fillStyle = '#1a1206'; g.font = `900 ${Math.round(h * 0.55)}px ${FONT}`; g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.fillText(wrapOne(g, '⏳ ' + text, w - 20), x + 10, y + h / 2 + 1);
+}
+
+// ---------- HQ #50 tap-to-pick: option cards (3 x 2 grid: options + contact sheet), SUBMIT button ----------
+const PK = { top: 104, pad: 14, gap: 10, foot: 60 };
+function pickLayout(n) {
+  const cols = 3, rows = 2, cw = (W - PK.pad * 2 - PK.gap * (cols - 1)) / cols, ch = (H - PK.top - PK.foot - PK.gap * (rows - 1) - 4) / rows, cells = [];
+  for (let i = 0; i < cols * rows; i++) cells.push({ x: PK.pad + (i % cols) * (cw + PK.gap), y: PK.top + (i / cols | 0) * (ch + PK.gap), w: cw, h: ch });
+  return { cells: cells.slice(0, Math.min(6, n + 1)), submit: { x: W - PK.pad - 300, y: H - PK.foot + 6, w: 300, h: PK.foot - 14 } };
+}
+function drawPick(g, s, m, t) {
+  const w = W, h = H, hh = 58, wk = m.work, pk = wk.pick, done = pk.done, sel = done ? new Set(pk.picked) : m.sel, sent = m.pickSent, L = pickLayout(pk.options.length);
+  g.fillStyle = '#121620'; g.fillRect(0, 0, w, h);
+  header(g, w, s, true, (done ? 'PICKED · ' : 'YOUR PICK · ') + s.short, hh);
+  if (done) { rr(g, PK.pad, hh + 8, w - PK.pad * 2, 34, 8); g.fillStyle = STAGE_COL.done; g.fill(); g.fillStyle = '#0d1a10'; g.font = `900 19px ${FONT}`; g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText(wrapOne(g, `✓ YOU PICKED ${pk.picked.join(', ')} · ${s.name.split(' ')[0]} is on it${wk.step && !/^chris picked/i.test(wk.step) ? ' · ' + wk.step : ''}`, w - PK.pad * 2 - 20), PK.pad + 10, hh + 26); }
+  else waitBanner(g, PK.pad, hh + 8, w - PK.pad * 2, 34, `WAITING ON YOU · tap ${pk.multi ? 'your favorites' : 'one'}, then SUBMIT`, t);
+  pk.options.forEach((o, i) => {
+    const c = L.cells[i]; if (!c) return; const on = sel.has(o.k), hot = m.pickHover === o.k;
+    rr(g, c.x, c.y, c.w, c.h, 12); g.fillStyle = on ? 'rgba(232,163,61,.28)' : 'rgba(255,255,255,.06)'; g.fill();
+    g.lineWidth = on ? 5 : 2; g.strokeStyle = on ? '#e8a33d' : 'rgba(255,255,255,.18)'; g.stroke();
+    if (hot) { rr(g, c.x - 4, c.y - 4, c.w + 8, c.h + 8, 14); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke(); }
+    const isz = c.h - 16, ix = c.x + 8, iy = c.y + 8, img = m.pickImgs?.[o.k];
+    g.fillStyle = '#f3efe6'; rr(g, ix, iy, isz, isz, 8); g.fill();
+    if (img && img.complete && img.naturalWidth) { const ar = img.naturalWidth / img.naturalHeight, dw = ar > 1 ? isz - 8 : (isz - 8) * ar, dh = ar > 1 ? (isz - 8) / ar : isz - 8; g.drawImage(img, ix + (isz - dw) / 2, iy + (isz - dh) / 2, dw, dh); }
+    const tx = ix + isz + 10, tw = c.x + c.w - tx - 8;
+    g.textAlign = 'left'; g.textBaseline = 'top'; g.fillStyle = on ? '#ffcf86' : '#fff'; g.font = `900 44px Georgia,serif`; g.fillText(o.k, tx, c.y + 8);
+    g.font = `800 16px ${FONT}`; g.fillStyle = '#eef2f7'; wrap(g, o.t, tw, 2).forEach((l, k) => g.fillText(l, tx, c.y + 58 + k * 19));
+    g.font = `500 12px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.55)'; wrap(g, o.sub, tw, 2).forEach((l, k) => g.fillText(l, tx, c.y + 98 + k * 14));
+    // check badge
+    const bx = c.x + c.w - 20, by = c.y + 20; g.beginPath(); g.arc(bx, by, 13, 0, 7);
+    if (on) { g.fillStyle = '#e8a33d'; g.fill(); g.fillStyle = '#1a1206'; g.font = `900 17px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('✓', bx, by + 1); }
+    else { g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.35)'; g.stroke(); }
+  });
+  // contact sheet in the last cell (look only)
+  const sc = L.cells[pk.options.length], sh = m.pickSheet;
+  if (sc && sh && sh.complete && sh.naturalWidth) {
+    rr(g, sc.x, sc.y, sc.w, sc.h, 12); g.fillStyle = '#f3efe6'; g.fill();
+    const ar = sh.naturalWidth / sh.naturalHeight, dh = sc.h - 26, dw = Math.min(sc.w - 8, dh * ar), dh2 = dw / ar; g.drawImage(sh, sc.x + (sc.w - dw) / 2, sc.y + 4 + (dh - dh2) / 2, dw, dh2);
+    g.fillStyle = '#1B2A4A'; g.font = `700 13px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('CONTACT SHEET · all options', sc.x + sc.w / 2, sc.y + sc.h - 4);
+  }
+  // footer: picks + SUBMIT
+  const r = L.submit, n = sel.size, hot = m.pickHover === 'submit';
+  g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `700 19px ${FONT}`; g.fillStyle = n ? '#ffcf86' : 'rgba(255,255,255,.6)';
+  g.fillText(wrapOne(g, done ? `Sent ${hm(pk.pickedAt)} · ${s.name.split(' ')[0]} has them` : n ? `Picked: ${[...sel].sort().join(', ')}` : 'Tap the cards you like', r.x - PK.pad * 2), PK.pad, r.y + r.h / 2);
+  const st = done ? 'done' : sent?.state, dots = '.'.repeat(1 + (t / 450 | 0) % 3);
+  const bg = st === 'done' ? '#1f8a4c' : st === 'sent' ? '#1f8a4c' : st === 'sending' ? '#1d4fb8' : st === 'failed' ? '#b3261e' : n ? '#e8a33d' : 'rgba(255,255,255,.12)';
+  rr(g, r.x, r.y, r.w, r.h, 12); g.fillStyle = bg; g.fill(); if (hot && !done) { g.lineWidth = 5; g.strokeStyle = '#fff'; g.stroke(); }
+  g.fillStyle = !st && n ? '#1a1206' : !st ? 'rgba(255,255,255,.45)' : '#fff'; g.font = `900 21px ${FONT}`; g.textAlign = 'center';
+  g.fillText(st === 'done' ? '✓ PICKS IN' : st === 'sent' ? `SENT ✓ ${s.name.split(' ')[0].toUpperCase()} HAS THEM` : st === 'sending' ? 'SENDING' + dots : st === 'failed' ? 'NOT SENT · TAP AGAIN' : `SUBMIT PICKS${n ? ' (' + n + ')' : ''} ▶`, r.x + r.w / 2, r.y + r.h / 2 + 1);
+  scan(g, w, h);
+}
+
 // ---------- Grok Bot: live HQ chat ----------
 function drawHero(g, s, m, t) {
   const w = HERO_W, h = HERO_H, hh = 64, foot = 52, pad = 26, maxW = w - pad * 2 - 40;
@@ -157,7 +219,8 @@ function drawDesk(g, s, m, t) {
     stageTrack(g, pad, hh + 58, w - pad * 2, 34, stage, t, m.flashUntil > performance.now());
     const dp = m.deskPct;
     if (dp != null) progressBar(g, pad, hh + 102, w - pad * 2, 26, dp, stage, '', t);
-    const ty = dp != null ? hh + 140 : hh + 108;
+    let ty = dp != null ? hh + 140 : hh + 108;
+    if (m.waiting) { waitBanner(g, pad, ty, w - pad * 2, 30, 'WAITING ON YOU', t); ty += 40; }
     g.textBaseline = 'top'; g.textAlign = 'left';
     g.fillStyle = '#ffb74d'; g.font = `800 20px ${FONT}`; g.fillText('CURRENT TASK', pad, ty);
     g.fillStyle = '#fff'; g.font = `700 40px ${FONT}`;
@@ -208,6 +271,7 @@ function drawWork(g, s, m, t) {
   const ni = steps.findIndex(x => x.s === 'now'), stepTxt = ni >= 0 ? `Step ${ni + 1}/${steps.length} · ${steps[ni].t}` : (wk.step || (stage === 'review' ? 'Waiting for review' : 'Working…'));
   progressBar(g, pad, hh + 68, w - pad * 2, 30, m.pshow, stage, stepTxt, t);
   let y = hh + 106;
+  if (waitingOn(wk)) { waitBanner(g, pad, y, w - pad * 2, 30, `WAITING ON YOU · ${wk.step || 'needs your call'}`, t); y += 38; }
   if (ni >= 0 && wk.step) { g.fillStyle = '#fff'; g.font = `600 19px ${FONT}`; g.textBaseline = 'top'; g.fillText(wrapOne(g, wk.step, w - pad * 2), pad, y); y += 24; }
   if (wk.file) { g.textBaseline = 'top'; g.fillStyle = '#8fd3ff'; g.font = `600 17px ui-monospace,Menlo,monospace`; g.fillText('▸ ' + wrapOne(g, wk.file, w - pad * 2 - 30), pad, y); y += 24; }
   // thumbnails strip (newest first) on the right
@@ -285,9 +349,10 @@ function boardRows(mons) {
     const steps = wk?.steps || [], ni = steps.findIndex(x => x.s === 'now');
     const pct = wk ? (wk.pct != null ? wk.pct : steps.length ? 100 * steps.filter(x => x.s === 'done').length / steps.length : null) : m.deskPct;
     rows.push({ id: m.s.id, who: m.s.name, bot: m.s.bot || '', color: m.s.color, task: (wk && wk.task) || m.task || 'On a task', stage, pct: pct == null ? null : Math.round(pct),
-      sub: ni >= 0 ? `Step ${ni + 1}/${steps.length} · ${steps[ni].t}` : wk?.step || '', at: wk ? wk.stageAt || wk.at : m.since });
+      sub: ni >= 0 ? `Step ${ni + 1}/${steps.length} · ${steps[ni].t}` : wk?.step || '', at: wk ? wk.stageAt || wk.at : m.since,
+      wait: wk ? waitingOn(wk) : m.waiting || '', pick: wk?.pick && !wk.pick.done ? (ks => ks.length > 2 ? ks[0] + '–' + ks[ks.length - 1] : ks.join(', '))(wk.pick.options.map(o => o.k)) : '' });
   }
-  return rows.sort((a, b) => STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage] || (b.at || 0) - (a.at || 0));
+  return rows.sort((a, b) => !!b.wait - !!a.wait || STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage] || (b.at || 0) - (a.at || 0));
 }
 function drawBoard(g, rows, t) {
   const w = BOARD_W, h = BOARD_H, pad = 30, hh = 78;
@@ -298,8 +363,9 @@ function drawBoard(g, rows, t) {
   g.fillStyle = '#fff'; g.font = `800 24px ${FONT}`; g.fillText('LIVE', w - 220, hh / 2 + 1);
   g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.8)'; g.font = `600 24px ${FONT}`; g.fillText(clock(), w - pad, hh / 2 + 1);
   // stage counts
-  const cnt = k => rows.filter(r => r.stage === k).length;
+  const cnt = k => rows.filter(r => r.stage === k).length, nWait = rows.filter(r => r.wait).length;
   g.textAlign = 'left'; g.font = `800 19px ${FONT}`; let cx = pad;
+  if (nWait) { const lbl = `⏳ WAITING ON YOU ${nWait}`, tw = g.measureText(lbl).width + 26; rr(g, cx, hh + 4, tw, 30, 15); g.globalAlpha = 0.8 + 0.2 * Math.sin(t / 300); g.fillStyle = WAIT_COL; g.fill(); g.globalAlpha = 1; g.fillStyle = '#1a1206'; g.fillText(lbl, cx + 13, hh + 20); cx += tw + 10; }
   for (const k of ['working', 'blocked', 'review', 'queued', 'done']) { const n = cnt(k); if (!n && k === 'blocked') continue; const lbl = `${STAGE_LABEL[k]} ${n}`, tw = g.measureText(lbl).width + 26;
     rr(g, cx, hh + 4, tw, 30, 15); g.fillStyle = n ? STAGE_COL[k] : 'rgba(255,255,255,.08)'; g.fill(); g.fillStyle = n ? '#10141c' : 'rgba(255,255,255,.45)'; g.fillText(lbl, cx + 13, hh + 20); cx += tw + 10; }
   g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(pad, hh + 44, w - pad * 2, 2);
@@ -307,17 +373,19 @@ function drawBoard(g, rows, t) {
   if (!rows.length) { g.textAlign = 'center'; g.fillStyle = '#7CFC9A'; g.font = `800 40px ${FONT}`; g.fillText('No open tasks · everyone roaming', w / 2, top + 150); }
   shown.forEach((r, i) => {
     const y = top + i * rowH, col = STAGE_COL[r.stage] || STAGE_COL.working;
-    if (i % 2) { g.fillStyle = 'rgba(255,255,255,.035)'; g.fillRect(0, y, w, rowH); }
+    if (r.wait) { g.globalAlpha = 0.16 + 0.06 * Math.sin(t / 300); g.fillStyle = WAIT_COL; g.fillRect(0, y + 2, w, rowH - 4); g.globalAlpha = 1; }
+    else if (i % 2) { g.fillStyle = 'rgba(255,255,255,.035)'; g.fillRect(0, y, w, rowH); }
     g.fillStyle = r.color || '#888'; g.fillRect(pad - 14, y + 10, 6, rowH - 20);
     g.textAlign = 'left'; g.fillStyle = '#fff'; g.font = `800 22px ${FONT}`; g.fillText(wrapOne(g, r.who, 230), pad, y + 21);
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 16px ${FONT}`; g.fillText(wrapOne(g, r.bot, 230), pad, y + 45);
     const tx = pad + 245, tw = w - pad - 310 - tx - 16;
     g.fillStyle = '#eef2f7'; g.font = `700 22px ${FONT}`; g.fillText(wrapOne(g, r.task, tw), tx, y + 21);
-    g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 17px ${FONT}`; g.fillText(wrapOne(g, r.sub || (r.at ? `since ${hm(r.at)}` : ''), tw), tx, y + 45);
+    if (r.wait) { g.fillStyle = WAIT_COL; g.font = `800 17px ${FONT}`; g.fillText(wrapOne(g, r.pick ? `⏳ YOUR PICK · ${r.pick} on ${r.who.split(' ')[0]}'s desk` : `⏳ WAITING ON YOU · ${r.sub || 'needs your call'}`, tw), tx, y + 45); }
+    else { g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 17px ${FONT}`; g.fillText(wrapOne(g, r.sub || (r.at ? `since ${hm(r.at)}` : ''), tw), tx, y + 45); }
     // stage pill (current one pulses) + mini progress bar
     const px = w - pad - 310, pw = 140; rr(g, px, y + 9, pw, 28, 14);
-    g.globalAlpha = r.stage === 'done' ? 1 : 0.78 + 0.22 * Math.sin(t / 260 + i); g.fillStyle = col; g.fill(); g.globalAlpha = 1;
-    g.textAlign = 'center'; g.fillStyle = '#10141c'; g.font = `900 17px ${FONT}`; g.fillText(STAGE_LABEL[r.stage] || r.stage, px + pw / 2, y + 24);
+    g.globalAlpha = r.stage === 'done' ? 1 : 0.78 + 0.22 * Math.sin(t / 260 + i); g.fillStyle = r.wait ? WAIT_COL : col; g.fill(); g.globalAlpha = 1;
+    g.textAlign = 'center'; g.fillStyle = '#10141c'; g.font = `900 17px ${FONT}`; g.fillText(r.wait ? 'YOUR CALL' : STAGE_LABEL[r.stage] || r.stage, px + pw / 2, y + 24);
     const bx = px + pw + 14, bw = w - pad - bx; rr(g, bx, y + 14, bw, 18, 9); g.fillStyle = 'rgba(255,255,255,.1)'; g.fill();
     if (r.pct != null) { rr(g, bx, y + 14, Math.max(18, bw * r.pct / 100), 18, 9); g.fillStyle = col; g.fill(); g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `700 15px ${FONT}`; g.fillText(r.pct + '%', bx + bw, y + 46); }
     else if (r.stage === 'working') { g.save(); rr(g, bx, y + 14, bw, 18, 9); g.clip(); const sw = bw * 0.3; g.fillStyle = col + '99'; g.fillRect(bx - sw + ((t / 9 + i * 40) % (bw + sw)), y + 14, sw, 18); g.restore(); }
@@ -329,7 +397,7 @@ function setPct(m, p) {
   if (p == null || !Number.isFinite(p)) { m.ptarget = m.pshow = null; return; }
   m.ptarget = Math.max(0, Math.min(100, p)); if (m.pshow == null) m.pshow = m.ptarget; m.dirty = true;
 }
-export function createMonitors({ stations }) {
+export function createMonitors({ stations, onPick }) {
   const mons = new Map();
   for (const s of stations) {
     const c = document.createElement('canvas'); c.width = s.hero ? HERO_W : W; c.height = s.hero ? HERO_H : H;
@@ -340,7 +408,7 @@ export function createMonitors({ stations }) {
   }
   const INBOX_STALE = 36 * 3600e3; // older feed than this: fall back to the task screen
   function draw(m, t) {
-    const fn = m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? drawWork : drawDesk;
+    const fn = m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? (m.work.pick ? drawPick : drawWork) : drawDesk;
     fn(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false;
   }
   function animated(m, d, focused) {
@@ -348,7 +416,8 @@ export function createMonitors({ stations }) {
     if (m.wscroll > 0.5) return true;
     if (m.ptarget != null && m.pshow !== m.ptarget) return true;      // HQ #46 progress bar easing
     if (m.flashUntil > performance.now() + 0) return true;              // stage just changed
-    if (liveWork(m) && (d < 7 || focused)) return true;                 // stage pulse / indeterminate bar
+    if (liveWork(m) && (d < 7 || focused)) return true;
+    if (m.pickSent?.state === 'sending') return true;                 // stage pulse / indeterminate bar
     if (m.s.hero) return d < 10 || focused; // status dots / cursor
     if (m.refresh?.state === 'asked' && (d < 7 || focused)) return true; // "ASKED GROK..." dots
     return m.busy && (d < 7 || focused);    // blinking cursor while working, only up close
@@ -369,7 +438,7 @@ export function createMonitors({ stations }) {
       m.stage = st; m.deskPct = busy && extra.pct != null && Number.isFinite(+extra.pct) ? Math.max(0, Math.min(100, +extra.pct)) : null;
       if (busy && !m.busy) m.since = since ? Date.parse(since) || Date.now() : Date.now();
       if (busy && since) m.since = Date.parse(since) || m.since;
-      Object.assign(m, { busy, task: busy ? task : '', until: busy ? until || '' : '', dirty: true });
+      Object.assign(m, { busy, task: busy ? task : '', until: busy ? until || '' : '', waiting: busy && extra.waiting || '', dirty: true });
     },
     // Family Inbox desk: decrypted feed from hq-link.fetchInboxFeed()
     setInbox(id, feed) {
@@ -382,12 +451,20 @@ export function createMonitors({ stations }) {
       const bots = (feed && feed.bots) || {};
       for (const m of mons.values()) {
         if (m.s.hero) continue;
-        const wk = bots[m.s.id] || null, sig = wk ? JSON.stringify([wk.at, wk.step, wk.file, wk.lines, wk.stage, wk.pct, wk.steps, wk.task, (wk.thumbs || []).map(x => x.n)]) : '';
+        const wk = bots[m.s.id] || null, sig = wk ? JSON.stringify([wk.at, wk.step, wk.file, wk.lines, wk.stage, wk.pct, wk.steps, wk.task, wk.waiting, wk.pick && [wk.pick.id, wk.pick.done, wk.pick.picked], (wk.thumbs || []).map(x => x.n)]) : '';
         if (sig === m.wsig) continue;
         if (wk && m.work && wk.stage !== m.work.stage) m.flashUntil = performance.now() + 2500;   // stage changed: flash the pill
         setPct(m, wk ? (wk.pct != null ? wk.pct : wk.steps?.length ? 100 * wk.steps.filter(x => x.s === 'done').length / wk.steps.length : null) : null);
         const grew = wk && m.work && (wk.lines || []).length && JSON.stringify(wk.lines) !== JSON.stringify(m.work.lines);
         m.wsig = sig; m.work = wk; m.dirty = true; if (grew) m.wscroll = 44;
+        const pk = wk?.pick, psig = pk ? pk.id + '|' + pk.options.map(o => o.k + (o.d ? o.d.length : 0)).join(',') + '|' + (pk.sheet ? pk.sheet.length : 0) : '';
+        if (psig !== m.psig) {
+          m.psig = psig; m.pickImgs = {}; m.pickSheet = null; m.pickHover = null; m.pickCur = 0;
+          const ld = d => { if (!d) return null; const img = new Image(); img.onload = () => { m.dirty = true; }; img.src = d; return img; };
+          if (pk) { for (const o of pk.options) m.pickImgs[o.k] = ld(o.d); m.pickSheet = ld(pk.sheet); }
+          m.sel = new Set(); try { const sv = JSON.parse(localStorage.getItem('hq.pick.' + (pk?.id || '')) || 'null'); if (sv) { m.sel = new Set(sv.sel || []); m.pickSent = sv.sent || null; } else m.pickSent = null; } catch (e) { m.pickSent = null; }
+        }
+        if (pk?.done && m.pickSent) m.pickSent = null;
         const names = (wk?.thumbs || []).map(x => x.n).join('|');
         if (names !== m.tsig) {
           m.tsig = names;
@@ -401,6 +478,36 @@ export function createMonitors({ stations }) {
       const px = uv.x * W, py = (1 - uv.y) * H, r = btnRect(), k = 12;
       return px > r.x - k && px < r.x + r.w + k && py > r.y - k && py < r.y + r.h + k ? REFRESHABLE[id] : null;
     },
+    // HQ #50 tap-to-pick: uv on a desk screen -> option letter / 'submit' / null (only when that desk shows open cards)
+    pickHit(id, uv) {
+      const m = mons.get(id), pk = m && liveWork(m) && m.work.pick; if (!pk || pk.done || !uv) return null;
+      const px = uv.x * W, py = (1 - uv.y) * H, L = pickLayout(pk.options.length), inR = (r, k = 4) => px > r.x - k && px < r.x + r.w + k && py > r.y - k && py < r.y + r.h + k;
+      if (inR(L.submit, 10)) return 'submit';
+      const i = L.cells.findIndex(c => inR(c)); return i >= 0 && i < pk.options.length ? pk.options[i].k : null;
+    },
+    hasPick: id => { const m = mons.get(id); return !!(m && liveWork(m) && m.work.pick && !m.work.pick.done); },
+    pickInfo: id => { const m = mons.get(id); return m?.work?.pick ? { title: m.work.pick.title, n: m.sel?.size || 0, done: m.work.pick.done } : null; },
+    setPickHover(id, key) { for (const m of mons.values()) { const v = m.s.id === id ? key || null : null; if ((m.pickHover || null) !== v) { m.pickHover = v; m.dirty = true; } } },
+    // tap / A on a card toggles it; on SUBMIT sends the picks (onPick -> encrypted relay)
+    pickTap(id, key) {
+      const m = mons.get(id), pk = m?.work?.pick; if (!pk || pk.done || !key) return null;
+      const save = () => { try { localStorage.setItem('hq.pick.' + pk.id, JSON.stringify({ sel: [...m.sel], sent: m.pickSent })); } catch (e) {} };
+      if (key === 'submit') {
+        if (!m.sel.size) return 'empty';
+        if (m.pickSent?.state === 'sending' || (m.pickSent?.state === 'sent' && JSON.stringify(m.pickSent.picks) === JSON.stringify([...m.sel].sort()))) return 'already';
+        const picks = [...m.sel].sort(); m.pickSent = { state: 'sending', picks, at: Date.now() }; m.dirty = true; save();
+        Promise.resolve(onPick ? onPick({ bot: id, id: pk.id, issue: pk.issue, picks }) : false).then(ok => { m.pickSent = { state: ok ? 'sent' : 'failed', picks, at: Date.now() }; m.dirty = true; save(); });
+        return 'submit';
+      }
+      if (m.pickSent?.state === 'sent' || m.pickSent?.state === 'sending') return 'locked';
+      if (!pk.multi) m.sel = new Set(m.sel.has(key) ? [] : [key]); else if (m.sel.has(key)) m.sel.delete(key); else m.sel.add(key);
+      if (m.pickSent?.state === 'failed') m.pickSent = null;
+      m.dirty = true; save(); return m.sel.has(key) ? 'on' : 'off';
+    },
+    // gamepad in the desk panel: D-pad moves a highlight over the cards + SUBMIT, X presses it
+    pickMove(id, dir) { const m = mons.get(id), pk = m?.work?.pick; if (!pk || pk.done) return; const keys = [...pk.options.map(o => o.k), 'submit'];
+      m.pickCur = ((m.pickCur || 0) + dir + keys.length) % keys.length; m.pickHover = keys[m.pickCur]; m.dirty = true; },
+    pickPress(id) { const m = mons.get(id), pk = m?.work?.pick; if (!pk || pk.done) return null; const keys = [...pk.options.map(o => o.k), 'submit']; return this.pickTap(id, m.pickHover || keys[m.pickCur || 0]); },
     setHover(id, h) { for (const m of mons.values()) { const v = m.s.id === id && !!h; if (!!m.hover !== v) { m.hover = v; m.dirty = true; } } },
     setRefresh(id, r) { const m = mons.get(id); if (!m) return; const sig = JSON.stringify(r || null); if (sig !== m.rsig) { m.rsig = sig; m.refresh = r; m.dirty = true; } },
     // HQ chat log from chat.js (this device's own encrypted chat history)

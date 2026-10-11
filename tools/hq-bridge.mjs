@@ -151,6 +151,7 @@ async function handle(m, priv, st) {
   if (m.event !== 'message' || !(m.message || m.attachment?.url)) return;
   let p; try { p = await open(JSON.parse(await envelopeText(m)), priv); } catch { return log('skip undecryptable', m.id); }
   if (p.type === 'refresh') return handleRefresh(p, st);
+  if (p.type === 'pick') return handlePick(p, st);
   if (!p.mid || alreadyFiled(p.mid, st)) return;
   const shot = p.shot ? saveShot(p.mid, p.shot) : null;
   if (p.shot && shot) log('shot saved', shot.file);
@@ -199,6 +200,33 @@ async function handleRefresh(p, st) {
   const r = REFRESH[kind];
   await postSlack(`:arrows_counterclockwise: *HQ refresh request: ${kind.toUpperCase()}*. Chris tapped REFRESH on the ${r.what} (${chicago(p.ts)}).\n` +
     `Grok Bot: ${r.how}. No HQ chat reply needed; the ${kind === 'bank' ? 'board' : 'monitor'} flips to FRESH when the new feed lands.`, 'refresh ' + kind);
+}
+
+// Tap-to-pick (HQ #50): Chris tapped his favorite options on a desk screen (e.g. Kelly's badge cards H-L) and SUBMIT.
+// Record them (picks.jsonl), move the bot's live feed + desk log past "waiting on Chris" (work-live.mjs picked), comment the
+// picks on the HQ issue (so `hq-inbox.sh pending` lists it for Grok Bot, and the comment shows in Chris's chat), ping Slack.
+async function handlePick(p, st) {
+  if (!p.mid || st.done.includes(p.mid)) return;
+  st.done.push(p.mid); saveState(st);
+  const bot = String(p.bot || '').replace(/[^\w-]/g, ''), id = String(p.id || '').slice(0, 60);
+  const picks = (Array.isArray(p.picks) ? p.picks : []).map(x => String(x).toUpperCase()).filter(x => /^[A-Z0-9]{1,3}$/.test(x)).slice(0, 12);
+  if (!bot || !id || !picks.length) return log('bad pick', JSON.stringify({ bot, id, picks }));
+  const evt = { source: 'grok-bot-hq', event: 'pick', bot, id, picks, issue: p.issue || null, device: p.device?.id, ts: p.ts, at: new Date().toISOString() };
+  try { fs.appendFileSync(`${DIR}/picks.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
+  log('pick', bot, id, picks.join(','), 'from device', p.device?.id);
+  let wl = '';
+  try { wl = execFileSync('node', [new URL('./work-live.mjs', import.meta.url).pathname, 'picked', bot, id, picks.join(',')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim(); }
+  catch (e) { wl = 'work-live picked failed: ' + String(e.stderr || e.message).slice(0, 160); }
+  log(wl);
+  let opts = []; try { opts = JSON.parse(fs.readFileSync(`${DIR}/work/${bot}.json`, 'utf8')).pick?.options || []; } catch {}
+  const named = picks.map(k => { const o = opts.find(x => x.k === k); return o ? `**${k}** ${o.t}` : `**${k}**`; }).join(', ');
+  const issue = +p.issue || 0;
+  if (issue) {
+    try { gh('issue', 'comment', String(issue), '--repo', REPO, '--body', `📌 Picks from the desk screen (tapped by Chris, ${chicago(p.ts)}): ${named}\n\nThe desk now shows them as picked and the work moved on to prep. Grok Bot / the designer: continue with these.\n\n<!-- hq-pick ${JSON.stringify({ bot, id, picks })} -->`); log('pick comment on issue', issue); }
+    catch (e) { log('pick comment failed', String(e.stderr || e.message).slice(0, 160)); }
+  }
+  await postSlack(`:pushpin: *HQ pick: ${bot}* ${issue ? `(HQ #${issue}) ` : ''}Chris tapped ${picks.join(', ')} on the desk screen (${chicago(p.ts)}).\n` +
+    `Grok Bot: continue the ${bot} task with these picks (see ${DIR}/work/${bot}.json + its desk log). ${issue ? `Reply on #${issue} with tools/hq-inbox.sh reply ${issue}.` : ''}`, 'pick ' + bot);
 }
 
 // Tell the sending iPad its message was filed (issue #n), encrypted to that device only. The iPad's chat shows "#n"
@@ -278,6 +306,7 @@ if (cmd === 'watch') await watch();
 else if (cmd === 'webhook-test') { const w = loadWebhook(); log('webhook configured:', !!w.url, 'key:', !!w.key); await fireWebhook({ source: 'grok-bot-hq', event: 'hq-chat-test', issue: 0, url: '', to: 'Grok Bot', text: 'webhook test (ignore)', ts: new Date().toISOString(), test: true }); }
 else if (cmd === 'slack-test') { const s = loadSlack(); log('slack webhook:', !!s.SLACK_WEBHOOK_URL, 'token:', !!s.SLACK_BOT_TOKEN, 'channel:', s.SLACK_CHANNEL_ID || '-'); await fireSlack({ issue: 0, url: '', to: 'Grok Bot', text: a || 'Slack wake test from Bot HQ bridge (ignore)' }); }
 else if (cmd === 'once') await once(a);
+else if (cmd === 'pick-test') { const [, , , bt, pid, pk] = process.argv; await handlePick({ type: 'pick', bot: bt, id: pid, mid: 'pktest' + Date.now(), picks: String(pk || '').split(','), ts: new Date().toISOString(), device: { id: 'test' } }, state()); }
 else if (cmd === 'refresh-test') { await handleRefresh({ type: 'refresh', kind: a || 'bank', mid: 'rftest' + Date.now(), ts: new Date().toISOString(), device: { id: 'test' } }, state()); }
 else if (cmd === 'relay') {
   const body = gh('issue', 'view', a, '--repo', REPO, '--json', 'body', '-q', '.body');
@@ -286,4 +315,4 @@ else if (cmd === 'relay') {
 } else if (cmd === 'relay-event') {
   const ev = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   await relayComment(ev.issue.body, { ...ev.comment, issue: ev.issue.number });
-} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | refresh-test [bank|inbox] | once [since] | relay <issue> <commentId> | relay-event');
+} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | refresh-test [bank|inbox] | pick-test <bot> <id> <H,J> | once [since] | relay <issue> <commentId> | relay-event');
