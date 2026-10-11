@@ -232,3 +232,88 @@ export function voiceLine(id, ev, vars = {}) {
 }
 export const shortTask = t => { t = String(t || '').replace(/\s*\((HQ )?#\d+[^)]*\)\s*/g, ' ').replace(/^Office:\s*/i, '').trim(); const w = t.split(/\s+/); return (w.length > 6 ? w.slice(0, 6).join(' ') + '…' : t) || 'this'; };
 export const listPicks = p => { p = (p || []).map(String); return p.length <= 1 ? p.join('') : p.slice(0, -1).join(', ') + ' and ' + p[p.length - 1]; };
+
+// ---------- HQ #58: memory colors the voice ----------
+// Each worker keeps their own memory of Chris (tools/worker-memory.mjs on the box -> `mem` in the work feed: label
+// hurt / wary / neutral / warm / fond + a few words of the last pointed thing he said to them). Local lines only, free.
+//   stung   right after a harsh message to them          thanks  right after a kind message to them
+//   cold    lingering, while they're hurt / wary ({said} = a few words he said, sometimes quoted back)
+//   warm    lingering, while they're warm / fond
+export const MOODS = {
+  grok: { stung: ["Wow. Okay. That hurt. I'm going to go sit in my office. With the blinds closed.", "I am not crying. It's allergies. Corporate allergies."],
+    thanks: ["Did everybody hear that? Chris likes me. Somebody write that down.", "That is going on a Dundie. Best Boss Ever, presented by Chris."],
+    cold: ["I'm fine. I'm totally fine. Toby-level fine.", "Still thinking about \"{said}\". Not that it matters. It matters.", "I forgive you. I don't forget. That's a Michael Scott original."],
+    warm: ["Chris and I? Basically best friends. Top five.", "Corporate loves me. Specifically Chris."] },
+  inbox: { stung: ["Oh. Okay. I'll just... get back to the phones.", "That was a little harsh. But okay."],
+    thanks: ["Aw, thank you. That's really nice.", "That made my day, honestly."],
+    cold: ["Doing it. Quietly.", "I'm still a little stung by \"{said}\", if I'm honest.", "Sure. Whatever you need."],
+    warm: ["Happy to help, Chris. Always.", "I drew you a little thank-you doodle. It's on the fridge."] },
+  cos: { stung: ["...Wow. Okay.", "Cool. Cool cool cool. *looks at camera*"],
+    thanks: ["Hey, thanks. That actually means something.", "Appreciate it. Don't tell Dwight."],
+    cold: ["Yep. On it. Boss.", "Still processing \"{said}\". Really letting it marinate.", "Sure thing. *long look at camera*"],
+    warm: ["For you? Happy to.", "You're one of the good ones, Chris."] },
+  assist: { stung: ["I will not dignify that with a response. Response: noted.", "Insubordination from above. Logged. In my notebook. In pen."],
+    thanks: ["Praise from leadership. As expected. I accept.", "Finally, someone recognizes excellence."],
+    cold: ["I have written \"{said}\" in my grudge ledger. Page forty.", "Proceeding. Under protest.", "Do not mistake my obedience for forgiveness."],
+    warm: ["Chris is a strong leader. Second only to me.", "Anything for you, Chris. Within reason. And beyond reason."] },
+  icons: { stung: ["Okay. Ouch. Nard Dog is gonna go walk this off.", "That's... fine. I'm not going to punch a wall."],
+    thanks: ["Yes! Chris likes my stuff! Somebody start a cappella!", "That is the nicest thing since Cornell."],
+    cold: ["Still a little bruised from \"{said}\", buddy.", "Working. No singing today.", "I'm fine. Nard Dog is fine. Tail's just a little down."],
+    warm: ["Chris, buddy, you're the best. Big Tuna-level best.", "For you? Full four-part harmony."] },
+  onpad: { stung: ["Well. I'll be telling Bob about that.", "Oh. That wasn't very nice, dear."],
+    thanks: ["Oh, aren't you sweet.", "Thank you, hon. I'll knit you something."],
+    cold: ["I remember \"{said}\". I remember everything, dear.", "It'll get done. Eventually.", "Mm-hm. I'm knitting. Don't mind me."],
+    warm: ["You're a sweetheart, Chris.", "I saved you a cookie, hon."] },
+  builder: { stung: ["Did I stutter? Because you did.", "Mm. Noted. Never forgotten."],
+    thanks: ["...Thank you. Don't make it a thing.", "Fine. That was nice. Moving on."],
+    cold: ["\"{said}.\" Yeah. I heard you the first time.", "I'm doing it. Slower now.", "Retirement can't come soon enough."],
+    warm: ["Chris is all right. Don't tell him.", "For Chris I'll skip the crossword. Once."] },
+  faith: { stung: ["Excuse me? I will be filing that.", "That was rude, and I don't forget rude."],
+    thanks: ["Well. Finally, someone with manners.", "Thank you. That's appropriate."],
+    cold: ["\"{said}\". I wrote it down. With the date.", "I'll do it. Properly. Without smiling.", "Sprinkles would have hissed at you."],
+    warm: ["Chris has very good manners. Unlike some people.", "I approve of Chris. That's rare."] },
+  broker: { stung: ["Actually, that was uncalled for.", "Okay. I'll pretend that was constructive."],
+    thanks: ["Thank you. Actually, that's nice to hear.", "Appreciated. Genuinely."],
+    cold: ["Still thinking about \"{said}\". Actually, still annoyed.", "It'll be correct. I just won't enjoy it.", "Professional. Just professional."],
+    warm: ["Actually, Chris is great to work for.", "Happy to, Chris."] },
+  conn: { stung: ["Oh. Kevin sad now.", "That mean. Me remember."],
+    thanks: ["Yay! Chris nice. Kevin happy.", "Thank you. Me get cookie now?"],
+    cold: ["Kevin remember \"{said}\". Kevin no like.", "Working. No snack. Sad.", "Me fine. Not fine."],
+    warm: ["Chris my friend.", "For Chris, Kevin share M&Ms."] },
+  review: { stung: ["Nobody talks to Creed like that. Nobody who's still around.", "I've been yelled at by better. In 'Nam."],
+    thanks: ["Thanks. I'll remember that. I'll remember everything.", "Nice. You're my favorite. Which one are you?"],
+    cold: ["\"{said}\". Creed never forgets. Well, sometimes.", "I'm keeping a list. You're on it.", "Working. Watching."],
+    warm: ["Chris is good people. I'd help him move a body.", "You're all right, kid."] },
+  kids: { stung: ["Wow. Okay. Drinking about that later.", "Rude. Noted."],
+    thanks: ["Aw, thanks! Drinks on me. Kidding. Unless.", "That's sweet, Chris!"],
+    cold: ["Still salty about \"{said}\".", "Doing it. Not happily.", "Whatever. It's fine."],
+    warm: ["Chris is the best. Happy hour's on him.", "Love you, Chris! Professionally."] },
+  designer: { stung: ["Excuse me?! I am literally SO offended right now.", "Wow. Okay. I'm telling everyone about this."],
+    thanks: ["OMG, stop! You're going to make me cry. Happy cry!", "Wait, really?! You're literally my favorite."],
+    cold: ["I'm still not over \"{said}\". Like, at ALL.", "Fine. I'll do it. But I'm not using exclamation points.", "I'm not mad. I'm just... remembering."],
+    warm: ["Chris is literally the best boss ever. Don't tell Michael.", "Okay, for you? I'll make it extra cute."] },
+  profile: { stung: ["Oh. Okay. I'll just... go to the annex.", "That's fine. I'm used to it, honestly."],
+    thanks: ["Oh! Wow. Thank you. Nobody says that to me.", "That's... really kind. Thanks, Chris."],
+    cold: ["I'll note \"{said}\" in my file. My personal file.", "Doing it. Sorry. Again.", "It's fine. Michael's worse."],
+    warm: ["Chris is nice to me. That's new.", "Happy to help, Chris. Really."] },
+};
+const GENERIC_MOOD = { stung: ["Ouch. Noted."], thanks: ["Thanks, that's nice."], cold: ["Still remembering \"{said}\"."], warm: ["Happy to help."] };
+// relationship label -> how often a lingering mood line replaces / follows a normal line
+const MOOD_P = { hurt: 0.65, wary: 0.35, neutral: 0, warm: 0.25, fond: 0.45 };
+const SOCIAL = new Set(['heard', 'idle', 'free', 'reply']);
+export function moodLine(id, kind, vars = {}) {
+  const pool = (MOODS[id] && MOODS[id][kind]) || GENERIC_MOOD[kind]; if (!pool) return '';
+  const ok = pool.filter(l => !/\{said\}/.test(l) || vars.said);
+  const l = ok[(Math.random() * ok.length) | 0] || '';
+  return l.replace(/\{said\}/g, String(vars.said || '').replace(/["“”]/g, '').slice(0, 48));
+}
+// color a normal event line with what this worker remembers about Chris (mem = { label, said })
+export function colorLine(id, ev, line, mem) {
+  if (!mem || !line) return line;
+  const p = MOOD_P[mem.label] || 0; if (!p || Math.random() > p) return line;
+  const kind = mem.label === 'hurt' || mem.label === 'wary' ? 'cold' : 'warm';
+  const extra = moodLine(id, kind, mem); if (!extra) return line;
+  if (SOCIAL.has(ev) && ev !== 'reply') return extra; // small talk / acknowledging Chris: the mood IS the line
+  if (ev === 'reply') return kind === 'cold' ? extra.replace(/[.!]+$/, '.') : line;
+  return line.length + extra.length < 170 ? line + ' ' + extra : line;
+}

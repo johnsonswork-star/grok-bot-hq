@@ -3,6 +3,8 @@
 #   tools/hq-inbox.sh                 list open HQ chat messages (newest first)
 #   tools/hq-inbox.sh read <n>        show one message + its replies
 #   tools/hq-inbox.sh reply <n> "text" [Bot Name]   reply (pops up in Chris's HQ chat within ~15 s), default Grok Bot
+#   tools/hq-inbox.sh memory <bot>    HQ #58: that worker's own memory digest (what Chris said to them, mood, recent events)
+#        `read` prints the recipient's digest too, and `reply ... "Bot Name"` adds the reply to that worker's memory.
 #   tools/hq-inbox.sh shot <n>        path(s) of the 📸 screenshot(s) of Chris's 3D view sent with issue n (open with Read)
 #   tools/hq-inbox.sh done <n>        close after handling
 #   tools/hq-inbox.sh pending         open HQ messages with no bot reply yet (what Grok Bot must answer); also heals the bridge
@@ -43,14 +45,19 @@ for(const k of Object.keys(how)){const r=L.filter(x=>x.kind===k).pop();if(!r)con
  const at=Date.parse(r.at);if(at>m&&Date.now()-at<6*3600e3)console.log("REFRESH "+k+" requested "+new Date(at).toLocaleString("en-US",{timeZone:"America/Chicago",timeStyle:"short"})+" CT: "+how[k])}'; }
 autowatch() { [ -f "$CFG/watcher.off" ] || [ -n "$(watcher_pid)" ] || watcher start >/dev/null; }
 case "$1" in
-  read)   gh issue view "$2" --repo $REPO --json number,title,body,comments \
-            -q '"#\(.number) \(.title)\n\n\(.body)\n\n" + ([.comments[] | "[\(.createdAt)] \(.body)"] | join("\n\n"))' ;;
-  pending) bridge >/dev/null; worklive; banter; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1
+  read)   out=$(gh issue view "$2" --repo $REPO --json number,title,body,comments \
+            -q '"#\(.number) \(.title)\n\n\(.body)\n\n" + ([.comments[] | "[\(.createdAt)] \(.body)"] | join("\n\n"))') || exit 1
+          echo "$out"
+          to=$(printf '%s' "$out" | head -1 | sed -nE 's/^#[0-9]+ HQ chat → ([^:]+):.*/\1/p')
+          [ -n "$to" ] && { echo; echo "----- worker memory (HQ #58) -----"; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" digest "$to" 2>/dev/null; } ;;
+  memory) NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" digest "${2:-grok}" ;;
+  pending) bridge >/dev/null; worklive; banter; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1
           gh issue list --repo $REPO --label hq-chat --state open --limit 50 --json number,title,createdAt,comments \
            -q '.[] | select((.comments|length)==0 or ((.comments|last|.body) | test("^\\s*\\*\\*[^*]{1,40}:\\*\\*") | not)) | "#\(.number)  \(.createdAt)  \(.title)"'
           refreshes ;;
   refreshes) refreshes ;;
   reply)  url=$(gh issue comment "$2" --repo $REPO --body "**${4:-Grok Bot}:** $3") && echo "$url" &&
+          { NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" log "${4:-Grok Bot}" "I told Chris: $3" --kind reply --issue "$2" --src hq-reply >/dev/null 2>&1 || true; } &&
           NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" relay "$2" "${url##*issuecomment-}" ;;
   shot)   paths=$(gh issue view "$2" --repo $REPO --json body -q .body | grep -oE '[^` ]*/grok-bot-hq/shots/[A-Za-z0-9_-]+\.(jpg|png)' | sort -u)
           [ -z "$paths" ] && { echo "no screenshot on #$2"; exit 1; }

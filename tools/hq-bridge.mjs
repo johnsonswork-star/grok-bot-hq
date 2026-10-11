@@ -20,6 +20,8 @@ const state = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); }
 const uniq = (a = [], b = []) => [...new Set([...a, ...b])].slice(-500);
 const saveState = s => { try { fs.mkdirSync(DIR, { recursive: true }); const d = state();
   fs.writeFileSync(STATE, JSON.stringify({ ...d, ...s, done: uniq(d.done, s.done), relayed: uniq(d.relayed, s.relayed) })); } catch {} };
+// HQ #58: each worker remembers what Chris says to them (tools/worker-memory.mjs). Best effort: never blocks filing.
+let wm = null; const memory = async () => wm ||= await import(new URL('./worker-memory.mjs', import.meta.url)).catch(e => { log('worker-memory load failed', e.message); return null; });
 const chicago = iso => { try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' }) + ' CT'; } catch { return iso; } };
 
 // Instant wake: POST each newly filed HQ message to the Grok Bot webhook routine `hq-chat-instant-wake`.
@@ -171,6 +173,7 @@ async function handle(m, priv, st) {
   const evt = { source: 'grok-bot-hq', event: 'hq-chat', issue: +url.split('/').pop(), url, to, text, ts: p.ts, filedAt: new Date().toISOString(),
     ...(shot ? { shot: shot.file } : {}) };
   try { fs.appendFileSync(`${DIR}/queue.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
+  try { const W = await memory(); if (W) { const r = W.logHq({ issue: evt.issue, to, text, at: p.ts, src: 'hq' }); W.markSynced(evt.issue); log('memory: remembered by', r.join(', ') || '-'); } } catch (e) { log('memory error', e.message); }
   await sendAck(p, evt.issue);
   await fireWebhook(evt);
   await fireEmail(evt);
@@ -214,6 +217,7 @@ async function handlePick(p, st) {
   const evt = { source: 'grok-bot-hq', event: 'pick', bot, id, picks, issue: p.issue || null, device: p.device?.id, ts: p.ts, at: new Date().toISOString() };
   try { fs.appendFileSync(`${DIR}/picks.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
   log('pick', bot, id, picks.join(','), 'from device', p.device?.id);
+  try { (await memory())?.logEvent(bot, `Chris tapped his picks on my desk: ${picks.join(', ')} (${id})`, { issue: +p.issue || undefined, at: evt.at, src: 'pick' }); } catch {}
   let wl = '';
   try { wl = execFileSync('node', [new URL('./work-live.mjs', import.meta.url).pathname, 'picked', bot, id, picks.join(',')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim(); }
   catch (e) { wl = 'work-live picked failed: ' + String(e.stderr || e.message).slice(0, 160); }

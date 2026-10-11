@@ -7,3 +7,4 @@ tools/slack.env
 bank-live.json
 bank-snapshot.json
 .venv/
+worker-memory/

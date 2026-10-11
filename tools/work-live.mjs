@@ -30,6 +30,7 @@
 //   node tools/work-live.mjs need done <id>  |  need list       close one / show the open ones
 //   node tools/work-live.mjs say <bot> "line"                  HQ #54: that teammate says this line in a speech bubble (in character,
 //        written by the bot for a real event; shown once on each iPad if < 10 min old). Free: no AI call in the office.
+//   node tools/work-live.mjs memory <bot>                       HQ #58: that bot's memory digest (what Chris said to it, mood, recent events)
 //   node tools/work-live.mjs show                               print the bundle (no thumbnails)
 //   node tools/work-live.mjs push [--force]                     publish now
 //   node tools/work-live.mjs watch                              background publisher: checks every 4 s, pushes on change
@@ -67,9 +68,21 @@ function openNeeds() {
   return [...byId.values()].map(e => ({ id: e.id, title: clip(e.title || e.ask || 'Needs your call', 90), who: clip(e.who || (e.issue ? `HQ #${e.issue}` : ''), 40),
     do: clip(e.do || (e.issue ? `Answer in HQ chat (#${e.issue})` : ''), 120), bot: e.bot || '', issue: e.issue || null, at: e.at })).sort((a, b) => a.at - b.at).slice(0, 12);
 }
+// HQ #58: office events that involve a bot go into that bot's own memory (tools/worker-memory.mjs). Best effort.
+const WM = await import(new URL('./worker-memory.mjs', import.meta.url)).catch(() => null);
+const remember = (bot, text, o = {}) => { try { WM?.logEvent(bot, text, { src: 'work-live', ...o }); } catch {} };
+const memSig = () => { try { return Math.max(0, ...fs.readdirSync(WM.MEM).map(f => fs.statSync(`${WM.MEM}/${f}`).mtimeMs)); } catch { return 0; } };
 const fileOf = bot => `${WORK}/${String(bot).replace(/[^\w-]/g, '')}.json`;
 const read = bot => { try { return JSON.parse(fs.readFileSync(fileOf(bot), 'utf8')); } catch { return {}; } };
-const write = (bot, w) => { w.at = Date.now(); fs.writeFileSync(fileOf(bot), JSON.stringify(w, null, 1), { mode: 0o600 }); };
+const write = (bot, w) => {
+  const was = read(bot); w.at = Date.now(); fs.writeFileSync(fileOf(bot), JSON.stringify(w, null, 1), { mode: 0o600 });
+  // HQ #58: the bot remembers its own task moves (stage, new task, pick cards, waiting on Chris)
+  const t = clip(w.task || was.task || 'my task', 80);
+  if (w.task && w.task !== was.task) remember(bot, `New task: ${t}`);
+  if (w.stage && w.stage !== was.stage) remember(bot, `${t}: ${was.stage ? was.stage + ' → ' : ''}${w.stage}${w.pct !== undefined ? ` (${w.pct}%)` : ''}`);
+  if (w.pick && w.pick.id !== was.pick?.id) remember(bot, `Put up pick cards for Chris: ${clip(w.pick.title || w.pick.id, 60)} (${(w.pick.options || []).map(o => o.k).join(', ')})`, { issue: w.pick.issue || undefined });
+  if (w.waiting && w.waiting !== was.waiting) remember(bot, `Waiting on ${w.waiting} for ${t}`);
+};
 const clip = (s, n = 160) => { s = String(s ?? '').replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 const addLine = (w, l) => { w.lines = [...(w.lines || []), clip(l)].slice(-MAX_LINES); };
 const pctOf = v => { const n = parseFloat(String(v).replace('%', '')); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : undefined; };
@@ -163,7 +176,8 @@ function bundle(withThumbs = true) {
     if (withThumbs) b.thumbs = imgs.slice(0, THUMBS_PER_BOT).map(p => ({ n: path.basename(p), d: thumb(p) })).filter(x => x.d);
     bots[bot] = b;
   }
-  return { type: 'work', v: 1, at: Date.now(), bots, needs: openNeeds(), says: recentSays() };
+  let mem = {}; try { mem = WM ? WM.moodFeed() : {}; } catch {}
+  return { type: 'work', v: 1, at: Date.now(), bots, needs: openNeeds(), says: recentSays(), mem };
 }
 
 let devCache = null, devAt = 0;
@@ -200,7 +214,7 @@ function sig() {
   let files = []; try { files = fs.readdirSync(WORK).filter(f => f.endsWith('.json')); } catch {}
   let nm = 0; try { nm = fs.statSync(NEEDS).mtimeMs; } catch {}
   let sm = 0; try { sm = fs.statSync(SAYS).mtimeMs; } catch {}
-  return files.map(f => { try { return f + ':' + fs.statSync(`${WORK}/${f}`).mtimeMs; } catch { return f; } }).join('|') + '|needs:' + nm + '|says:' + sm;
+  return files.map(f => { try { return f + ':' + fs.statSync(`${WORK}/${f}`).mtimeMs; } catch { return f; } }).join('|') + '|needs:' + nm + '|says:' + sm + '|mem:' + memSig();
 }
 async function watch() {
   log('work-live watcher up');
@@ -285,9 +299,12 @@ else if (cmd === 'need') {
     else for (let i = 1; i < rest.length; i += 2) { const k = rest[i].replace(/^--/, ''), v = rest[i + 1]; if (v === undefined) break; if (['title', 'who', 'do', 'bot'].includes(k)) e[k] = v; else if (k === 'issue') e.issue = +v || null; }
     if (sub === 'add' && !e.title) { console.error('need --title'); process.exit(2); }
     fs.appendFileSync(NEEDS, JSON.stringify(e) + '\n', { mode: 0o600 }); console.log('need', sub, id);
+    const nb = e.bot || openNeeds().find(x => x.id === id)?.bot; if (nb && WM?.botId(nb)) remember(WM.botId(nb), sub === 'done' ? `Needs-you item cleared: ${id}` : `Asked Chris (Needs you): ${e.title}`, { issue: e.issue || undefined });
   } else { console.error('usage: need add <id> --title T [--who W] [--do D] [--bot B] [--issue N] | need done <id> | need list'); process.exit(2); }
 }
-else if (cmd === 'say' && bot && rest[0]) { const e = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), bot, text: clip(rest.join(' '), 200), at: Date.now() }; fs.appendFileSync(SAYS, JSON.stringify(e) + '\n', { mode: 0o600 }); console.log(bot, 'says:', e.text); }
+else if (cmd === 'say' && bot && rest[0]) { const e = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), bot, text: clip(rest.join(' '), 200), at: Date.now() }; fs.appendFileSync(SAYS, JSON.stringify(e) + '\n', { mode: 0o600 }); remember(bot, `I said out loud: "${e.text}"`, { kind: 'note' }); console.log(bot, 'says:', e.text);
+  try { const d = WM?.digest(bot, { json: true }); if (d) console.log(`memory: ${d.name} feels ${d.mood.label} toward Chris (${d.mood.rel}). ${d.feel}${d.mood.last ? ` Last pointed thing he said: "${d.mood.last.text}"` : ''}  (full: node tools/worker-memory.mjs digest ${bot})`); } catch {} }
+else if (cmd === 'memory' && bot) console.log(WM ? WM.digest(bot) : 'worker-memory unavailable');
 else if (cmd === 'show') console.log(JSON.stringify(bundle(rest.includes('--thumbs') || bot === '--thumbs'), null, 1));
 else if (cmd === 'push') process.exit((await push()) ? 0 : 1);
 else if (cmd === 'watch') await watch();

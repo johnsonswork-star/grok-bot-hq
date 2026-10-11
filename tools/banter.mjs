@@ -30,6 +30,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)), ROOT = path.resolve(H
 const DIR = `${os.homedir()}/.config/grok-bot-hq`, SAYS = `${DIR}/says.jsonl`, LOG = `${DIR}/banter.log`, STATE = `${DIR}/banter-state.json`, OFF = `${DIR}/banter.off`;
 const MIN_GAP = 3 * 60e3, MAX_GAP = 6 * 60e3, MAX_LINES = 4, LINE_MAX = 110;
 const { STATIONS } = await import(new URL('../stations.js', import.meta.url));
+// HQ #58: per-worker memory. Banter only ever reads each worker's mood label toward Chris (never his words), and writes
+// "I chatted with X" into both workers' own memory.
+const WM = await import(new URL('./worker-memory.mjs', import.meta.url)).catch(() => null);
+const { moodLine } = await import(new URL('../voices.js', import.meta.url));
+const moodOf = id => { try { return WM ? WM.mood(id) : null; } catch { return null; } };
+const sore = m => m && (m.label === 'hurt' || m.label === 'wary'), glad = m => m && (m.label === 'fond' || m.label === 'warm');
 
 // ---------- config / keys (only free providers are ever read) ----------
 function loadEnv() {
@@ -96,8 +102,26 @@ function prompt(a, b, n) {
   return `Write a short, PG, light-hearted ${n}-line exchange between two Dunder Mifflin Scranton coworkers (The Office, US) chatting at the office, starting with ${first(a)}. Topic: ${topic}.
 ${BIO[a.id]}
 ${BIO[b.id]}
-Rules: lines alternate speakers starting with ${first(a)}; each line under 15 words, in character, funny but kind; no real people outside the show, no mention of Chris, AI, bots, or customers' private info.
+${moodHint(a)}${moodHint(b)}Rules: lines alternate speakers starting with ${first(a)}; each line under 15 words, in character, funny but kind; no real people outside the show, no mention of Chris, AI, bots, or customers' private info.
 Reply ONLY with JSON: [{"who":"${a.id}","text":"..."},{"who":"${b.id}","text":"..."}...]`;
+}
+function moodHint(s) {
+  const m = moodOf(s.id); if (!m) return '';
+  if (m.label === 'hurt') return `${first(s)} is still stung because the boss was harsh with them recently; let it show a little (grumbling or defensive), still PG.\n`;
+  if (m.label === 'wary') return `${first(s)} is a bit guarded after the boss was short with them lately.\n`;
+  if (m.label === 'fond') return `${first(s)} is in a great mood because the boss praised them recently.\n`;
+  if (m.label === 'warm') return `${first(s)} is in a good mood; the boss has been nice to them.\n`;
+  return '';
+}
+// lightly color a finished exchange: a worker with a strong memory of Chris swaps one of their lines for a mood line
+function colorBanter(lines) {
+  const done = new Set();
+  return lines.map((l, i) => {
+    const m = moodOf(l.who); if (done.has(l.who) || i === 0 || !(sore(m) || glad(m))) return l;
+    const p = m.label === 'hurt' || m.label === 'fond' ? 0.6 : 0.3; if (Math.random() > p) return l;
+    const t = moodLine(l.who, sore(m) ? 'cold' : 'warm', {}).replace(/\bChris\b/g, 'the boss'); if (!t) return l;
+    done.add(l.who); return { ...l, text: t.slice(0, LINE_MAX), mood: m.label };
+  });
 }
 function parseLines(txt, a, b, n) {
   const m = String(txt).match(/\[[\s\S]*\]/); if (!m) throw new Error('no JSON in reply');
@@ -171,7 +195,7 @@ async function write(a, b) {
     try { return p === 'openrouter' ? await viaOpenRouter(a, b, n) : await viaGemini(a, b, n); }
     catch (e) { log(`${p} failed, using local lines:`, e.message); }
   }
-  return viaLocal(a, b, n);
+  const r = viaLocal(a, b, n); return { ...r, lines: colorBanter(r.lines) };
 }
 
 // ---------- one exchange ----------
@@ -189,6 +213,7 @@ async function once({ force = false, dry = false } = {}) {
   fs.appendFileSync(SAYS, out.map(e => JSON.stringify(e)).join('\n') + '\n', { mode: 0o600 });
   s.last = Date.now(); s.count++; if (!via.startsWith('local')) s.calls++; s.lastVia = via; s.lastPair = `${a.id}+${b.id}`;
   fs.writeFileSync(STATE, JSON.stringify(s), { mode: 0o600 });
+  try { for (const [x, y] of [[a, b], [b, a]]) WM?.logEvent(x.id, `Chatted with ${first(y)} at the office: "${lines.find(l => l.who === x.id)?.text || lines[0].text}"`, { kind: 'banter', with: y.id, src: 'banter' }); } catch {}
   log(`banter ${gid} ${first(a)} + ${first(b)} via ${via}: ` + lines.map(l => `${l.who}: ${l.text}`).join(' | '));
 }
 

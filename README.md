@@ -336,3 +336,28 @@ See `~/.config/grok-bot-hq/llm.env.example`. xAI / OpenAI / paid keys are never 
 
 **Run it (box):** `tools/banter.sh start | stop | restart | status | once [--force] | dry | off | on`. `hq-inbox.sh bridge` / `pending` also start it (idempotent). `off` pauses (loop keeps running but skips). Log: `~/.config/grok-bot-hq/banter.log`; state: `banter-state.json`.
 Test on a device without waiting: open the office with `?banter=now` (skips the 3-min warm-up), then `tools/banter.sh once --force`.
+
+## Every worker remembers you (HQ #58)
+
+Each teammate keeps their **own** memory: everything you say to them in HQ chat and what happens around them. Be mean to Kelly and she remembers; thank her and she warms up.
+
+**Store (private, on Grok Bot's box, never in this public repo):** `~/.config/grok-bot-hq/worker-memory/<botId>.jsonl`, one file per stations.js id, append-only JSON lines:
+`{ at, kind, text, src, issue?, tone?, score?, with?, about? }`
+- `chris`: you said this TO them (the HQ message's recipient), with a local tone check (`tone.js`: kind / neutral / harsh, score -1..1, plain word lists + shouting, no AI)
+- `mention`: you talked ABOUT them to someone else ("tell Kelly…"); counts half
+- `reply`: what was answered to you as them (`hq-inbox.sh reply N "…" "Kelly Kapoor"`)
+- `event`: their own office goings-on: new task, stage moves (queued → working → review → done), pick cards up, your picks, waiting on you, Needs-you items, lines they said
+- `banter`: who they chatted with + their line
+- `_shared.jsonl`: the only cross-worker file, for office-wide facts explicitly marked shared (`log shared "…"`). Nobody reads another worker's file.
+
+**Relationship** is worked out on read: decayed sum of the tone of your messages to them. Harsh words count 1.5x and fade over ~10 days, kind words fade over ~4 days (grudges outlast compliments). Labels: hurt / wary / neutral / warm / fond.
+
+**How your messages get in:** the bridge (`hq-bridge.mjs`) appends every new HQ message to the recipient's memory the moment it files the issue (+ anyone you name in it as a mention), and logs desk picks. `worker-memory.mjs sync` (run by `hq-inbox.sh pending` / `read` / `memory`) catches up from `queue.jsonl` + `picks.jsonl`, idempotent. `work-live.mjs` logs a bot's stage / task / pick / waiting / needs / `say` changes to that bot.
+
+**How it changes their voice (free, local):**
+- iPad: the work feed carries only `mem` = `{ rel, label, said }` per worker (a few words, encrypted like the rest of the feed). `voices.js` `MOODS` has per-character `stung` / `thanks` / `cold` / `warm` lines; `colorLine()` swaps or tags their normal event lines by mood (hurt ~65 %, wary ~35 %, warm ~25 %, fond ~45 %). Cold lines sometimes quote back what you said ("I'm still not over 'this is trash'. Like, at ALL.").
+- The moment you send someone a harsh or kind message, the office tone-checks it locally and they react right away (Kelly: "Excuse me?! I am literally SO offended right now."), and their mood shifts on your device until the box memory confirms it.
+- Banter: only the mood label is used (never your words). The model prompt gets a one-line mood hint; local lines swap one of a sore/glad worker's lines for a mood line ("the boss" instead of your name).
+- Replies as a bot: `hq-inbox.sh read N` prints the recipient's digest under the message; `hq-inbox.sh memory <bot>` / `work-live.mjs memory <bot>` print it; `work-live.mjs say <bot> "…"` prints a one-line mood hint after saying it.
+
+**Tool:** `node tools/worker-memory.mjs log <bot|shared> "text" [--kind] [--issue N] | chris <bot> "text" | hq <issue> "<To>" "text" | recall <bot> [n] | digest <bot> [--json] | mood | list | sync | who <name>`.

@@ -7,7 +7,11 @@
 // Words are local templates in voices.js (free). Custom lines a bot writes itself ride in the work feed as `says`
 // (tools/work-live.mjs say <bot> "line"). No AI calls happen in the office, ever. Rare idle one-liners only near you.
 import * as THREE from './vendor/three.module.js';
-import { voiceLine, shortTask, listPicks } from './voices.js';
+import { voiceLine, shortTask, listPicks, moodLine, colorLine } from './voices.js';
+import { scoreTone, relLabel } from './tone.js';
+// HQ #58: each teammate remembers how Chris treats them. The box keeps the real per-worker memory
+// (tools/worker-memory.mjs); the work feed carries only a mood label + a few words per worker (`mem`), cached here.
+// A message you send is also tone-checked right here so the reaction is instant (no AI, local word lists).
 
 const BANTER_WARM = /[?&]banter=now/.test(location.search) ? 0 : 3 * 60e3, BANTER_STALE = 4 * 60e3; // HQ #56: no banter in the first 3 min after load; drop exchanges older than 4 min
 const MAX_LIVE = 3, BOT_GAP = 25e3, IDLE_MIN = 4 * 60e3, IDLE_MAX = 8 * 60e3, FRESH = 10 * 60e3, WARMUP = 6000;
@@ -26,6 +30,8 @@ export function createTalk({ scene, workers, stations, camera }) {
   const t0 = performance.now(), ready = () => performance.now() - t0 > WARMUP;
   const byId = id => stations.find(s => s.id === id);
   const queue = [], live = new Map(), lastSaid = new Map(), recent = new Map(); // live: id -> bubble
+  const mood = new Map(Object.entries((() => { try { return JSON.parse(localStorage.getItem('hq.mem') || '{}'); } catch (e) { return {}; } })()));
+  const saveMood = () => { try { localStorage.setItem('hq.mem', JSON.stringify(Object.fromEntries(mood))); } catch (e) {} };
   let nextIdle = performance.now() + IDLE_MIN + Math.random() * (IDLE_MAX - IDLE_MIN);
   // HQ #56: random banter written on the box (tools/banter.mjs, free model). One exchange plays at a time:
   // the pair meets up, then lines alternate as bubbles. Never while you have a pick open or something needs you, never with ?quiet=1.
@@ -77,7 +83,7 @@ export function createTalk({ scene, workers, stations, camera }) {
   function react(id, ev, vars = {}, opt = {}) {
     if (!ready() && !opt.force) return false;
     const now = performance.now(); if (!opt.force && now - (lastSaid.get(id) || -1e9) < BOT_GAP) return false;
-    const line = voiceLine(id, ev, { ...vars, task: vars.task ? shortTask(vars.task) : '', picks: vars.picks ? listPicks(vars.picks) : '' });
+    const line = colorLine(id, ev, voiceLine(id, ev, { ...vars, task: vars.task ? shortTask(vars.task) : '', picks: vars.picks ? listPicks(vars.picks) : '' }), mood.get(id));
     if (say(id, line, opt)) { lastSaid.set(id, now); return true; } return false;
   }
 
@@ -148,6 +154,10 @@ export function createTalk({ scene, workers, stations, camera }) {
   const workMem = new Map(); let workSeeded = false; const saysSeen = new Set(JSON.parse(localStorage.getItem('hq.saysSeen') || '[]'));
   function onWork(feed) {
     const bots = feed?.bots || {};
+    if (feed?.mem && typeof feed.mem === 'object') { // box memory is the truth; keep a local nudge only if it's newer than the feed
+      for (const [id, m] of Object.entries(feed.mem)) { const loc = mood.get(id); if (!loc || !loc.localAt || loc.localAt < (feed.at || 0)) mood.set(id, m); }
+      saveMood();
+    }
     for (const [id, wk] of Object.entries(bots)) {
       const p = workMem.get(id), pk = wk.pick, n = { stage: wk.stage, pick: pk ? pk.id + (pk.done ? ':done' : '') : '', waiting: wk.waiting || '', task: wk.task || '' };
       workMem.set(id, n); if (!p || !workSeeded) continue;
@@ -188,7 +198,19 @@ export function createTalk({ scene, workers, stations, camera }) {
     for (const e of entries) {
       const k = e.kind === 'bot' ? 'b' + e.id : 'm' + e.at; if (chatSeen.has(k)) continue; chatSeen.add(k);
       if (Date.now() - (Date.parse(e.at) || +e.at || 0) > FRESH) continue;
-      if (e.kind === 'me') { const id = idFromWho(e.to) || 'grok'; react(id, 'heard', {}, { force: true }); }
+      if (e.kind === 'me') {
+        const id = idFromWho(e.to) || 'grok', t = scoreTone(e.text);
+        // HQ #58: they remember it. Nudge their mood now (the box memory confirms it on the next feed).
+        if (t.tone !== 'neutral') {
+          const m = { ...(mood.get(id) || { rel: 0 }) }, w = t.score < 0 ? 1.5 : 1, r = Math.max(-0.99, Math.min(0.99, m.rel || 0));
+          m.rel = Math.round(Math.tanh(Math.atanh(r) + t.score * w * 0.4) * 100) / 100; m.label = relLabel(m.rel);
+          m.lastTone = t.tone; m.said = String(e.text).replace(/\s+/g, ' ').trim().slice(0, 48); m.saidAt = Date.now(); m.localAt = Date.now();
+          mood.set(id, m); saveMood();
+          const line = moodLine(id, t.tone === 'harsh' ? 'stung' : 'thanks');
+          if (say(id, line, { force: true, prio: 2 })) { lastSaid.set(id, performance.now()); continue; }
+        }
+        react(id, 'heard', {}, { force: true });
+      }
       else if (e.kind === 'bot' && e.text) {
         const id = idFromWho(e.from) || 'grok', body = String(e.text).replace(/\s+/g, ' ').trim();
         const bit = body.length > 120 ? body.slice(0, 117).replace(/\s+\S*$/, '') + '…' : body;
@@ -199,5 +221,5 @@ export function createTalk({ scene, workers, stations, camera }) {
   }
   function onPickSent(id, picks) { pickSaid.set(id, Date.now()); react(id, 'picked', { picks }, { force: true, prio: 2 }); }
 
-  return { say, react, update, onStatus, onWork, onNeeds, onChat, onPickSent, live, queue, quiet, get banter() { return banter; }, banterQ };
+  return { mood, say, react, update, onStatus, onWork, onNeeds, onChat, onPickSent, live, queue, quiet, get banter() { return banter; }, banterQ };
 }
