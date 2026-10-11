@@ -223,6 +223,24 @@ While a bot is busy (tasks.json) and has a live feed under 3 h old, its monitor 
 - Publisher: `node tools/work-live.mjs watch` (started by `tools/hq-inbox.sh bridge` / `pending`, log `~/.config/grok-bot-hq/work-live.log`). It's plain node with no AI. It checks every 4 s and pushes on change, at most every 15 s, plus a keep-alive every 2.5 h. The bundle (thumbnails are ~220 px JPEGs) is **encrypted to each HQ device** and posted to `<device topic>_work`, the same privacy model as the inbox and bank feeds. Nothing goes in this public repo. Feeds over 4 KB ride as an ntfy attachment (CORS-open, about 3 h). The iPad reads only `since=latest`, keeps its last copy, and polls every 12 s.
 - Wired now: **Atom Family Designer** follows `atom-family-clothing-co/DESIGNER_DESK_LOG.md` and watches `designs/mascot/desk-options-oct10/` (badge options + contact sheet). **App Builder** gets a line on every `./deploy.sh`.
 
+## Live progress stages on desk screens (HQ #46)
+Every busy desk screen now shows **how far along** the work is, live (12 s feed poll, no page reload):
+- A stage track **QUEUED → WORKING → REVIEW → DONE** (BLOCKED turns the WORKING pill red). The current stage pulses, and a stage change flashes white for ~2 s.
+- A progress bar with % when known (it eases to the new value). The label is the current step ("Step 4/5 · Chris reviews…"), else the free-text step. With no %, a stripe sweeps while working.
+- A step checklist (✓ done, ▶ now, ○ todo) showing a window around the current step, above the output terminal and thumbnails.
+- `review`, `queued` and `blocked` feeds stay on the screen for up to 48 h (24 h for blocked) even while the character roams, because they wait on people. `working` feeds still need the bot busy in tasks.json and expire after 3 h.
+- Plain busy desks with no feed show the track as WORKING. tasks.json entries may also carry `"stage"` and `"pct"`.
+
+How a teammate sets it (`tools/work-live.mjs`, the running watcher publishes within ~15 s):
+```
+node tools/work-live.mjs set <bot> --task "Badge set v2" --steps "Sketch|Vector|Print check|Review" --now 1   # starts WORKING, step 1
+node tools/work-live.mjs next <bot>                     # tick current step, move on (after the last step -> REVIEW)
+node tools/work-live.mjs stage <bot> working 40 "vectoring badge M"   # stage + optional % + optional note line
+node tools/work-live.mjs stage <bot> review | done | blocked | queued
+node tools/work-live.mjs set <bot> --pct 75             # just the %
+```
+Bots that keep a markdown log (Atom Family Designer: `atom-family-clothing-co/DESIGNER_DESK_LOG.md`) can set it from the log instead: `**Stage:** working`, optional `**Progress:** 40%` (or `3/5`), and a `## Steps` checklist (`- [x]` done, `- [>]` now, `- [ ]` todo). The % comes from the checklist when there's no Progress line. With no Stage line, the stage is guessed from Status / Current step ("awaiting review" → REVIEW, "done" → DONE, etc.).
+
 ## The Office cast at Dunder Mifflin (HQ #37 / #39 / #40)
 Company branding is **Dunder Mifflin** (HQ #40 replaced the HQ #39 Johnson Co · Bot HQ branding: page title, logo board, reception sign, whiteboard, meeting TV, softball sign, sticky note, welcome toast). People keep The Office character names. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
 but shows an Office character as `name`; `bot` is the real bot behind it, and HQ chat still routes to `bot` (Grok Bot answers as Grok Bot).

@@ -842,7 +842,7 @@ const IDLE_SPOTS = [ // HQ #43: re-placed for the 22 x 15 m floor
 // worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
 const workers = createWorkers({ scene, stations, colliders, pois: IDLE_SPOTS, onStatus: (s, busy, task, meta = {}) => {
   const st = stations.find(x => x.id === s.id); if (!st) return;
-  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until);
+  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until, { stage: meta.stage, pct: meta.pct });
   if (panelOpen === st) showPanel(st);
 } });
 

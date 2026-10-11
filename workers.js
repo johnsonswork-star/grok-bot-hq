@@ -187,7 +187,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
       let busy = false, task = '', meta = {};
       if (entry) {
         if (typeof entry === 'string') { busy = true; task = entry; }
-        else if (typeof entry === 'object') { busy = entry.busy !== false && !(entry.until && Date.parse(entry.until) < now); task = entry.task || ''; meta = { since: entry.since, until: entry.until }; }
+        else if (typeof entry === 'object') { busy = entry.busy !== false && !(entry.until && Date.parse(entry.until) < now); task = entry.task || ''; meta = { since: entry.since, until: entry.until, stage: entry.stage, pct: entry.pct }; }
         else busy = !!entry;
       }
       const mk = JSON.stringify(meta);

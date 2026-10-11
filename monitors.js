@@ -4,6 +4,9 @@
 //   Every other bot: its current task from tasks.json (busy) or a clear idle / roaming screen. No made-up activity.
 //   Busy + live work feed (HQ #31, tools/work-live.mjs): LIVE view = current step + file, the last output lines scrolling
 //   like a terminal, and thumbnails of the newest images (e.g. Atom Family Designer's design PNGs).
+//   HQ #46 progress: every busy screen shows a stage track QUEUED → WORKING → REVIEW → DONE (or BLOCKED), a progress bar
+//   with % when known, and the step checklist (✓ done, ▶ now, ○ todo). Updates live as the 12 s feed poll lands: the bar
+//   eases to the new %, a stage change flashes, no page reload.
 //   Family Inbox: a REFRESH button on the screen (HQ #29) asks Grok Bot for a fresh pull.
 // Data stays private: the transcript comes from this iPad's own HQ chat log (end-to-end encrypted relay), never a public file.
 // Perf (iPad): canvases redraw on change or at most ~3 fps for the cursor/scroll animation, and only for desks within
@@ -15,7 +18,12 @@ const HERO_W = 1024, HERO_H = 600, W = 768, H = 450;   // same 512:300 aspect as
 const NEAR = 16, FRAME_MS = 330;
 const REFRESHABLE = { inbox: 'inbox' }; // station id -> refresh kind (screen gets a REFRESH button)
 const WORK_FRESH = 3 * 3600e3;          // live work feed older than this: back to the plain task card
-const liveWork = m => m.busy && m.work && Date.now() - m.work.at < WORK_FRESH;
+// review / queued / blocked wait on people, so those feeds stay up (even when the bot is roaming) for longer
+const STAGE_FRESH = { review: 48 * 3600e3, queued: 48 * 3600e3, blocked: 24 * 3600e3 };
+const liveWork = m => m.work && (m.busy || STAGE_FRESH[m.work.stage]) && Date.now() - m.work.at < (STAGE_FRESH[m.work.stage] || WORK_FRESH);
+const STAGES = ['queued', 'working', 'review', 'done'];
+const STAGE_COL = { queued: '#90a4ae', working: '#ffb74d', review: '#64b5f6', done: '#66bb6a', blocked: '#ef5350' };
+const STAGE_LABEL = { queued: 'QUEUED', working: 'WORKING', review: 'REVIEW', done: 'DONE', blocked: 'BLOCKED' };
 const clock = () => new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 const hm = t => { try { return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } };
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
@@ -50,6 +58,49 @@ function header(g, w, st, busy, label, hh) {
   g.textAlign = 'right'; g.font = `600 ${Math.round(hh * 0.36)}px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.85)'; g.fillText(clock(), w - hh * 0.35, hh / 2 + 1);
 }
 function scan(g, w, h) { g.fillStyle = 'rgba(255,255,255,.035)'; for (let y = 0; y < h; y += 5) g.fillRect(0, y, w, 1); }
+
+// ---------- HQ #46 progress: stage track + bar + step checklist ----------
+// stage track: four pills, past ones dim-filled with ✓, the current one solid + pulsing; BLOCKED replaces the WORKING pill in red
+function stageTrack(g, x, y, w, h, stage, t, flash) {
+  const blocked = stage === 'blocked', cur = blocked ? 1 : Math.max(0, STAGES.indexOf(stage)), gap = 18, pw = (w - gap * 3) / 4;
+  for (let i = 0; i < 4; i++) {
+    const px = x + i * (pw + gap), key = i === 1 && blocked ? 'blocked' : STAGES[i], col = STAGE_COL[key], past = i < cur, now = i === cur;
+    if (i) { g.fillStyle = past || now ? col : 'rgba(255,255,255,.18)'; g.beginPath(); g.moveTo(px - gap + 3, y + h / 2 - 6); g.lineTo(px - 3, y + h / 2); g.lineTo(px - gap + 3, y + h / 2 + 6); g.fill(); }
+    rr(g, px, y, pw, h, h / 2);
+    if (now) { const pulse = 0.75 + 0.25 * Math.sin(t / 260); g.globalAlpha = flash ? 1 : pulse; g.fillStyle = col; g.fill(); g.globalAlpha = 1; if (flash) { g.lineWidth = 4; g.strokeStyle = '#fff'; g.stroke(); } }
+    else if (past) { g.fillStyle = col + '44'; g.fill(); g.lineWidth = 2; g.strokeStyle = col; g.stroke(); }
+    else { g.fillStyle = 'rgba(255,255,255,.05)'; g.fill(); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.18)'; g.stroke(); }
+    g.fillStyle = now ? '#10141c' : past ? col : 'rgba(255,255,255,.4)'; g.font = `900 ${Math.round(h * 0.5)}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText((past ? '✓ ' : '') + STAGE_LABEL[key], px + pw / 2, y + h / 2 + 1);
+  }
+}
+// progress bar: eased % (m.pshow) + label; no % known -> an indeterminate stripe sweeping while working
+function progressBar(g, x, y, w, h, pct, stage, label, t) {
+  const col = STAGE_COL[stage] || STAGE_COL.working;
+  rr(g, x, y, w, h, h / 2); g.fillStyle = 'rgba(255,255,255,.08)'; g.fill();
+  if (pct != null) { if (pct > 0) { rr(g, x, y, Math.max(h, w * pct / 100), h, h / 2); g.fillStyle = col; g.fill(); } }
+  else if (stage === 'working' || stage === 'queued') { g.save(); rr(g, x, y, w, h, h / 2); g.clip(); const sw = w * 0.22, sx = x - sw + ((t / 9) % (w + sw)); g.fillStyle = col + '99'; g.fillRect(sx, y, sw, h); g.restore(); }
+  g.textBaseline = 'middle'; g.font = `800 ${Math.round(h * 0.62)}px ${FONT}`;
+  const txt = (pct != null ? Math.round(pct) + '%  ' : '') + (label || '');
+  // two-tone label: dark over the filled part, white over the empty track
+  const lbl = wrapOne(g, txt, w - 24), fx = pct != null ? x + Math.max(h, w * pct / 100) : x; g.textAlign = 'left';
+  g.save(); g.beginPath(); g.rect(x, y, fx - x, h); g.clip(); g.fillStyle = '#10141c'; g.fillText(lbl, x + 12, y + h / 2 + 1); g.restore();
+  g.save(); g.beginPath(); g.rect(fx, y, x + w - fx, h); g.clip(); g.fillStyle = '#fff'; g.fillText(lbl, x + 12, y + h / 2 + 1); g.restore();
+}
+const wrapOne = (g, s, maxW) => wrap(g, s, maxW, 1)[0] || '';
+// checklist: a window of rows around the current step
+function stepList(g, x, y, w, rows, steps, t) {
+  const lh = 24, i0 = Math.max(0, Math.min(steps.findIndex(s => s.s === 'now') - 1, steps.length - rows)), shown = steps.slice(Math.max(0, i0), Math.max(0, i0) + rows);
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  shown.forEach((st, k) => {
+    const yy = y + k * lh + lh / 2, idx = Math.max(0, i0) + k + 1;
+    g.font = `800 17px ${FONT}`; g.fillStyle = st.s === 'done' ? STAGE_COL.done : st.s === 'now' ? STAGE_COL.working : 'rgba(255,255,255,.35)';
+    g.fillText(st.s === 'done' ? '✓' : st.s === 'now' ? ((t / 500 | 0) % 2 ? '▶' : '▷') : '○', x, yy);
+    g.font = `${st.s === 'now' ? 800 : 500} 17px ${FONT}`; g.fillStyle = st.s === 'done' ? 'rgba(255,255,255,.5)' : st.s === 'now' ? '#fff' : 'rgba(255,255,255,.6)';
+    g.fillText(wrapOne(g, `${idx}. ${st.t}`, w - 26), x + 24, yy);
+  });
+  return shown.length * lh;
+}
 
 // ---------- Grok Bot: live HQ chat ----------
 function drawHero(g, s, m, t) {
@@ -102,12 +153,18 @@ function drawDesk(g, s, m, t) {
   g.textAlign = 'left'; g.textBaseline = 'top';
   g.fillStyle = 'rgba(255,255,255,.8)'; g.font = `600 28px ${FONT}`; g.fillText(s.bot ? `${s.name} · ${s.bot}` : s.name, pad, hh + 16);
   if (m.busy) {
-    g.fillStyle = '#ffb74d'; g.font = `800 20px ${FONT}`; g.fillText('CURRENT TASK', pad, hh + 62);
-    g.fillStyle = '#fff'; g.font = `700 44px ${FONT}`;
-    const lines = wrap(g, m.task || 'On a task', w - pad * 2 - 30, 5);
-    lines.forEach((l, k) => g.fillText(l, pad, hh + 92 + k * 54));
+    const stage = m.stage || 'working';
+    stageTrack(g, pad, hh + 58, w - pad * 2, 34, stage, t, m.flashUntil > performance.now());
+    const dp = m.deskPct;
+    if (dp != null) progressBar(g, pad, hh + 102, w - pad * 2, 26, dp, stage, '', t);
+    const ty = dp != null ? hh + 140 : hh + 108;
+    g.textBaseline = 'top'; g.textAlign = 'left';
+    g.fillStyle = '#ffb74d'; g.font = `800 20px ${FONT}`; g.fillText('CURRENT TASK', pad, ty);
+    g.fillStyle = '#fff'; g.font = `700 40px ${FONT}`;
+    const lines = wrap(g, m.task || 'On a task', w - pad * 2 - 30, dp != null ? 3 : 4);
+    lines.forEach((l, k) => g.fillText(l, pad, ty + 28 + k * 48));
     // blinking cursor after the last line
-    if ((t / 530 | 0) % 2) { const lw = g.measureText(lines[lines.length - 1]).width; g.fillStyle = '#ffb74d'; g.fillRect(pad + lw + 8, hh + 96 + (lines.length - 1) * 54, 18, 42); }
+    if ((t / 530 | 0) % 2) { const lw = g.measureText(lines[lines.length - 1]).width; g.fillStyle = '#ffb74d'; g.fillRect(pad + lw + 8, ty + 32 + (lines.length - 1) * 48, 16, 38); }
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 22px ${FONT}`; g.textBaseline = 'bottom';
     const bits = [m.since ? `At desk ${ago(m.since)}` : 'At desk'];
     if (m.until) bits.push(`until ${hm(m.until)}`);
@@ -140,14 +197,19 @@ function refreshBtn(g, m, t) {
 function drawWork(g, s, m, t) {
   const w = W, h = H, hh = 58, pad = 22, wk = m.work, thumbs = (m.thumbs || []).filter(x => x.img.complete && x.img.naturalWidth);
   g.fillStyle = '#0d1117'; g.fillRect(0, 0, w, h);
-  header(g, w, s, true, 'LIVE · ' + s.short, hh);
+  const stage = wk.stage || 'working', steps = wk.steps || [];
+  header(g, w, s, stage !== 'done', 'LIVE · ' + s.short, hh);
   // pulsing LIVE dot
   g.fillStyle = (t / 600 | 0) % 2 ? '#ff5252' : '#ff8a80'; g.beginPath(); g.arc(w - 120, hh / 2, 7, 0, 7); g.fill();
   g.textBaseline = 'top'; g.textAlign = 'left';
-  g.fillStyle = '#ffb74d'; g.font = `800 17px ${FONT}`; g.fillText((m.task || 'ON A TASK').toUpperCase().slice(0, 60), pad, hh + 10);
-  g.fillStyle = '#fff'; g.font = `700 27px ${FONT}`; g.fillText(wrap(g, wk.step || 'Working…', w - pad * 2, 1)[0], pad, hh + 32);
-  let y = hh + 66;
-  if (wk.file) { g.fillStyle = '#8fd3ff'; g.font = `600 19px ui-monospace,Menlo,monospace`; g.fillText('▸ ' + wrap(g, wk.file, w - pad * 2 - 30, 1)[0], pad, y); y += 28; }
+  g.fillStyle = STAGE_COL[stage] || '#ffb74d'; g.font = `800 17px ${FONT}`; g.fillText(wrapOne(g, (wk.task || m.task || 'ON A TASK').toUpperCase(), w - pad * 2), pad, hh + 8);
+  stageTrack(g, pad, hh + 30, w - pad * 2, 30, stage, t, m.flashUntil > performance.now());
+  // bar label: the current step ("Step 3/5 · Print check") else the free-text step
+  const ni = steps.findIndex(x => x.s === 'now'), stepTxt = ni >= 0 ? `Step ${ni + 1}/${steps.length} · ${steps[ni].t}` : (wk.step || (stage === 'review' ? 'Waiting for review' : 'Working…'));
+  progressBar(g, pad, hh + 68, w - pad * 2, 30, m.pshow, stage, stepTxt, t);
+  let y = hh + 106;
+  if (ni >= 0 && wk.step) { g.fillStyle = '#fff'; g.font = `600 19px ${FONT}`; g.textBaseline = 'top'; g.fillText(wrapOne(g, wk.step, w - pad * 2), pad, y); y += 24; }
+  if (wk.file) { g.textBaseline = 'top'; g.fillStyle = '#8fd3ff'; g.font = `600 17px ui-monospace,Menlo,monospace`; g.fillText('▸ ' + wrapOne(g, wk.file, w - pad * 2 - 30), pad, y); y += 24; }
   // thumbnails strip (newest first) on the right
   const tw = thumbs.length ? 224 : 0, tGap = 8, colX = w - pad - tw;
   if (thumbs.length) {
@@ -162,8 +224,11 @@ function drawWork(g, s, m, t) {
       g.fillText(wrap(g, th.n.replace(/\.(png|jpe?g|webp)$/i, ''), cw, 1)[0], cx, cy + ch + 4);
     }
   }
+  // step checklist (if the bot set steps), then the terminal below it
+  const leftW = (thumbs.length ? colX - 14 : w - pad) - pad;
+  if (steps.length) y += stepList(g, pad, y + 2, leftW, Math.min(steps.length, 4), steps, t) + 6;
   // terminal: last output lines, newest at the bottom, sliding up as lines arrive
-  const tx = pad, tW = (thumbs.length ? colX - 14 : w - pad) - tx, ty = y + 2, tH = h - 32 - ty;
+  const tx = pad, tW = leftW, ty = y + 2, tH = Math.max(40, h - 32 - ty);
   rr(g, tx, ty, tW, tH, 8); g.fillStyle = '#05080c'; g.fill(); g.strokeStyle = '#1f2a37'; g.lineWidth = 2; g.stroke();
   g.save(); g.beginPath(); g.rect(tx, ty, tW, tH); g.clip();
   g.font = `500 17px ui-monospace,Menlo,monospace`; g.textBaseline = 'alphabetic';
@@ -176,7 +241,7 @@ function drawWork(g, s, m, t) {
   }
   g.restore();
   g.textBaseline = 'bottom'; g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 17px ${FONT}`;
-  const bits = [`updated ${ago(wk.at)}${ago(wk.at) === 'just now' ? '' : ' ago'}`]; if (m.since) bits.push(`at desk ${ago(m.since)}`);
+  const bits = [`updated ${ago(wk.at)}${ago(wk.at) === 'just now' ? '' : ' ago'}`]; if (wk.stageAt) bits.push(`${STAGE_LABEL[stage] || stage} for ${ago(wk.stageAt)}`); if (m.busy && m.since) bits.push(`at desk ${ago(m.since)}`);
   if (wk.images) bits.push(`${wk.images} image${wk.images === 1 ? '' : 's'}`);
   g.fillText(bits.join('  ·  '), pad, h - 8);
   scan(g, w, h);
@@ -209,6 +274,10 @@ function drawInbox(g, s, m, t) {
   refreshBtn(g, m, t);
 }
 
+function setPct(m, p) {
+  if (p == null || !Number.isFinite(p)) { m.ptarget = m.pshow = null; return; }
+  m.ptarget = Math.max(0, Math.min(100, p)); if (m.pshow == null) m.pshow = m.ptarget; m.dirty = true;
+}
 export function createMonitors({ stations }) {
   const mons = new Map();
   for (const s of stations) {
@@ -226,6 +295,9 @@ export function createMonitors({ stations }) {
   function animated(m, d, focused) {
     if (m.scroll > 0.5) return true;
     if (m.wscroll > 0.5) return true;
+    if (m.ptarget != null && m.pshow !== m.ptarget) return true;      // HQ #46 progress bar easing
+    if (m.flashUntil > performance.now() + 0) return true;              // stage just changed
+    if (liveWork(m) && (d < 7 || focused)) return true;                 // stage pulse / indeterminate bar
     if (m.s.hero) return d < 10 || focused; // status dots / cursor
     if (m.refresh?.state === 'asked' && (d < 7 || focused)) return true; // "ASKED GROK..." dots
     return m.busy && (d < 7 || focused);    // blinking cursor while working, only up close
@@ -233,8 +305,11 @@ export function createMonitors({ stations }) {
   let lastMinute = -1, nextAt = 0;
   return {
     canvas: id => mons.get(id)?.c,
-    setStatus(id, busy, task, since, until) {
+    setStatus(id, busy, task, since, until, extra = {}) {
       const m = mons.get(id); if (!m) return;
+      const st = busy ? extra.stage || 'working' : '';
+      if (st && m.stage && st !== m.stage && !liveWork(m)) m.flashUntil = performance.now() + 2500;
+      m.stage = st; m.deskPct = busy && extra.pct != null && Number.isFinite(+extra.pct) ? Math.max(0, Math.min(100, +extra.pct)) : null;
       if (busy && !m.busy) m.since = since ? Date.parse(since) || Date.now() : Date.now();
       if (busy && since) m.since = Date.parse(since) || m.since;
       Object.assign(m, { busy, task: busy ? task : '', until: busy ? until || '' : '', dirty: true });
@@ -250,8 +325,10 @@ export function createMonitors({ stations }) {
       const bots = (feed && feed.bots) || {};
       for (const m of mons.values()) {
         if (m.s.hero) continue;
-        const wk = bots[m.s.id] || null, sig = wk ? JSON.stringify([wk.at, wk.step, wk.file, wk.lines, (wk.thumbs || []).map(x => x.n)]) : '';
+        const wk = bots[m.s.id] || null, sig = wk ? JSON.stringify([wk.at, wk.step, wk.file, wk.lines, wk.stage, wk.pct, wk.steps, wk.task, (wk.thumbs || []).map(x => x.n)]) : '';
         if (sig === m.wsig) continue;
+        if (wk && m.work && wk.stage !== m.work.stage) m.flashUntil = performance.now() + 2500;   // stage changed: flash the pill
+        setPct(m, wk ? (wk.pct != null ? wk.pct : wk.steps?.length ? 100 * wk.steps.filter(x => x.s === 'done').length / wk.steps.length : null) : null);
         const grew = wk && m.work && (wk.lines || []).length && JSON.stringify(wk.lines) !== JSON.stringify(m.work.lines);
         m.wsig = sig; m.work = wk; m.dirty = true; if (grew) m.wscroll = 44;
         const names = (wk?.thumbs || []).map(x => x.n).join('|');
@@ -287,6 +364,7 @@ export function createMonitors({ stations }) {
         if (!near) continue;
         if (m.scroll > 0.5) m.scroll *= 0.45; else m.scroll = 0;
         if (m.wscroll > 0.5) m.wscroll *= 0.5; else m.wscroll = 0;
+        if (m.ptarget != null && m.pshow !== m.ptarget) { m.pshow += (m.ptarget - m.pshow) * 0.35; if (Math.abs(m.ptarget - m.pshow) < 0.6) m.pshow = m.ptarget; }
         if (m.dirty || animated(m, d, focused)) draw(m, now);
       }
     },

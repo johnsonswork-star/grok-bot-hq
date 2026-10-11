@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Live work on the desk monitors (HQ #31). Each bot's progress lives in ~/.config/grok-bot-hq/work/<botId>.json on this box:
-//   { task, step, file, lines: [last output lines], images: [paths, newest first], watchDir, at }
+//   { task, step, file, lines: [last output lines], images: [paths, newest first], watchDir, at,
+//     stage: queued|working|review|done|blocked, pct: 0-100, steps: [{ t, s: done|now|todo }], stageAt }   (HQ #46)
 // The publisher bundles every fresh bot (updated < 6 h), makes small JPEG thumbnails of the newest images, ENCRYPTS the
 // bundle to each HQ device key and posts it to that device's private ntfy topic `<topic>_work` (same privacy model as the
 // inbox / bank feeds: nothing goes in the public repo; big bundles ride as a ~3 h ntfy attachment, the iPad keeps its copy).
@@ -9,6 +10,9 @@
 //   node tools/work-live.mjs set <bot> [--task T] [--step S] [--file F] [--line L]... [--image PATH]... [--dir DIR] [--log-file MD] [--clear-lines]
 //        --dir: watch a folder (recursive) for new images. --log-file: follow a bot's markdown progress log (Current step:,
 //        watching folder:, bullets under "## Last progress lines"), e.g. atom-family-clothing-co/DESIGNER_DESK_LOG.md
+//        progress (HQ #46): [--stage queued|working|review|done|blocked] [--pct 0-100] [--steps "A|B|C"] [--now N|name]
+//   node tools/work-live.mjs stage <bot> <stage> [pct] ["note"]  set the progress stage (note becomes an output line)
+//   node tools/work-live.mjs next <bot>                         tick the current step done, move to the next (last -> review)
 //   node tools/work-live.mjs log <bot> "output line"          append one line (keeps the last 12)
 //   <cmd> | node tools/work-live.mjs pipe <bot>                 stream a command's output onto the monitor, line by line
 //   node tools/work-live.mjs image <bot> <path>                 newest image (thumbnail on the monitor)
@@ -29,6 +33,10 @@ const RELAY = 'https://ntfy.sh', REPO = 'johnsonswork-star/grok-bot-hq-inbox';
 const DIR = `${os.homedir()}/.config/grok-bot-hq`, WORK = `${DIR}/work`, THUMBS = `${WORK}/.thumbs`, DEVICES = `${DIR}/devices.json`;
 const MAX_LINES = 12, MAX_IMAGES = 8, THUMBS_PER_BOT = 4, FRESH_MS = 6 * 3600e3, MIN_PUSH_MS = 15000, KEEPALIVE_MS = 2.5 * 3600e3;
 const IMG = /\.(png|jpe?g|webp)$/i;
+const STAGES = ['queued', 'working', 'review', 'done', 'blocked'];
+// how long a feed stays on the monitor after its last update, by stage (review / queued wait on people, so they linger)
+const FRESH_BY_STAGE = { queued: 48 * 3600e3, review: 48 * 3600e3, blocked: 24 * 3600e3, done: 3 * 3600e3 };
+const freshMs = w => FRESH_BY_STAGE[w.stage] || FRESH_MS;
 const log = (...a) => console.log(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }), ...a);
 fs.mkdirSync(THUMBS, { recursive: true, mode: 0o700 });
 
@@ -37,6 +45,12 @@ const read = bot => { try { return JSON.parse(fs.readFileSync(fileOf(bot), 'utf8
 const write = (bot, w) => { w.at = Date.now(); fs.writeFileSync(fileOf(bot), JSON.stringify(w, null, 1), { mode: 0o600 }); };
 const clip = (s, n = 160) => { s = String(s ?? '').replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 const addLine = (w, l) => { w.lines = [...(w.lines || []), clip(l)].slice(-MAX_LINES); };
+const pctOf = v => { const n = parseFloat(String(v).replace('%', '')); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : undefined; };
+function setStage(w, st) { st = String(st || '').toLowerCase().trim(); if (!STAGES.includes(st)) return false; if (w.stage !== st) { w.stage = st; w.stageAt = Date.now(); } if (st === 'done') { w.pct = 100; (w.steps || []).forEach(x => x.s = 'done'); } return true; }
+function setSteps(w, list) { const names = String(list).split('|').map(x => x.trim()).filter(Boolean); const old = new Map((w.steps || []).map(x => [x.t, x.s])); w.steps = names.map(t => ({ t: clip(t, 60), s: old.get(clip(t, 60)) || 'todo' })); if (!w.steps.some(x => x.s !== 'todo')) setNow(w, 1); }
+function setNow(w, n) { const st = w.steps || []; let i = /^\d+$/.test(String(n)) ? +n - 1 : st.findIndex(x => x.t.toLowerCase() === String(n).toLowerCase()); if (i < 0 || i >= st.length) return; st.forEach((x, k) => x.s = k < i ? 'done' : k === i ? 'now' : 'todo'); if (!w.stage || w.stage === 'queued') setStage(w, 'working'); }
+// stage when nobody set one: guess from the step / status text so old feeds still read right
+function inferStage(txt) { const t = String(txt || ''); if (/\b(blocked|stuck|waiting on|needs? (chris|you))\b/i.test(t)) return /review/i.test(t) ? 'review' : 'blocked'; if (/\b(review|awaiting|approve|check(ing)? with chris)/i.test(t)) return 'review'; if (/\b(queued|up next|not started|to do)\b/i.test(t)) return 'queued'; if (/\b(done|complete[d]?|finished|shipped|deployed)\b/i.test(t) && !/\d+\s*\/\s*\d+/.test(t)) return 'done'; return 'working'; }
 const addImage = (w, p) => { p = path.resolve(p); w.images = [p, ...(w.images || []).filter(x => x !== p)].slice(0, MAX_IMAGES); };
 
 function listImages(dir, out = [], depth = 0) {
@@ -68,6 +82,15 @@ function scanLog(bot, w) {
   if (m === w.logSeen) return false;
   const txt = fs.readFileSync(w.logFile, 'utf8'), strip = x => x.replace(/\*\*/g, '').trim();
   const step = txt.match(/Current step:\**\s*(.+)/i); if (step) w.step = strip(step[1]);
+  // HQ #46 progress: "**Stage:** working", "**Progress:** 40%" (or 3/5), and a "## Steps" checklist: - [x] done, - [>] now, - [ ] todo
+  const stg = txt.match(/^\W*Stage:\**\s*([a-z]+)/im), status = txt.match(/^\W*Status:\**\s*(.+)/im);
+  if (!(stg && setStage(w, stg[1]))) { const g = inferStage((status ? strip(status[1]) + ' ' : '') + (w.step || '')); if (g !== w.stage) { w.stage = g; w.stageAt = Date.now(); } w.stageGuess = true; } else delete w.stageGuess;
+  const pr = txt.match(/^\W*Progress:\**\s*(\d+)\s*(%|\/\s*(\d+))/im);
+  if (pr) w.pct = pr[3] ? pctOf(100 * pr[1] / pr[3]) : pctOf(pr[1]);
+  const ss = txt.split(/^##\s*Steps.*$/im)[1];
+  if (ss) { const st = []; for (const l of ss.split(/^##\s/m)[0].split('\n')) { const b = l.match(/^\s*[-*]\s+\[([ xX>~\-])\]\s+(.+)/); if (b) st.push({ t: clip(strip(b[2]), 60), s: /x/i.test(b[1]) ? 'done' : b[1] === ' ' ? 'todo' : 'now' }); } if (st.length) w.steps = st; }
+  if (!pr && w.steps?.length) w.pct = pctOf(100 * w.steps.filter(x => x.s === 'done').length / w.steps.length);
+  if (w.stage === 'done' || w.stage === 'review') { if (w.stage === 'done') w.pct = 100; (w.steps || []).forEach(x => { if (x.s === 'now' && w.stage === 'done') x.s = 'done'; }); }
   const dir = txt.match(/watching folder:\s*([^\s*]+)/i); if (dir && fs.existsSync(dir[1]) && path.resolve(dir[1]) !== w.watchDir) { w.watchDir = path.resolve(dir[1]); delete w.dirSeen; }
   const sec = txt.split(/^##\s*Last progress lines.*$/im)[1];
   if (sec) for (const l of sec.split(/^##\s/m)[0].split('\n')) { const b = l.match(/^\s*[-*]\s+(.+)/); if (b && !(w.lines || []).includes(clip(strip(b[1])))) addLine(w, strip(b[1])); }
@@ -96,10 +119,13 @@ im.convert('RGB').save(sys.argv[2], 'JPEG', quality=68, optimize=True)`, p, key,
 function bundle(withThumbs = true) {
   const bots = {}; let files = []; try { files = fs.readdirSync(WORK).filter(f => f.endsWith('.json')); } catch {}
   for (const f of files) {
-    const bot = f.slice(0, -5), w = read(bot); if (!w.at || Date.now() - w.at > FRESH_MS) continue;
+    const bot = f.slice(0, -5), w = read(bot); if (!w.at || Date.now() - w.at > freshMs(w)) continue;
     const imgs = (w.images || []).filter(p => fs.existsSync(p));
     const b = { step: clip(w.step || '', 90), file: clip(w.file || '', 90), lines: (w.lines || []).slice(-MAX_LINES), images: imgs.length, at: w.at };
     if (w.task) b.task = clip(w.task, 80);
+    b.stage = STAGES.includes(w.stage) ? w.stage : inferStage(w.step); if (w.stageAt) b.stageAt = w.stageAt;
+    if (w.pct !== undefined) b.pct = w.pct; else if (b.stage === 'done') b.pct = 100;
+    if (w.steps?.length) b.steps = w.steps.slice(0, 12).map(x => ({ t: x.t, s: x.s }));
     if (withThumbs) b.thumbs = imgs.slice(0, THUMBS_PER_BOT).map(p => ({ n: path.basename(p), d: thumb(p) })).filter(x => x.d);
     bots[bot] = b;
   }
@@ -159,12 +185,23 @@ if (cmd === 'set' && bot) {
     const k = rest[i], v = rest[i + 1];
     if (k === '--clear-lines') { w.lines = []; continue; }
     if (v === undefined) break; i++;
-    if (k === '--task') w.task = v; else if (k === '--step') w.step = v; else if (k === '--file') w.file = v;
+    if (k === '--stage') { if (!setStage(w, v)) console.error('stage must be one of ' + STAGES.join('|')); }
+    else if (k === '--pct') w.pct = pctOf(v); else if (k === '--steps') setSteps(w, v); else if (k === '--now') setNow(w, v);
+    else if (k === '--task') w.task = v; else if (k === '--step') w.step = v; else if (k === '--file') w.file = v;
     else if (k === '--line') addLine(w, v); else if (k === '--image') addImage(w, v);
     else if (k === '--dir') { w.watchDir = path.resolve(v); delete w.dirSeen; }
     else if (k === '--log-file') { w.logFile = path.resolve(v); delete w.logSeen; }
   }
   write(bot, w); if (w.logFile) scanLog(bot, read(bot)); if (read(bot).watchDir) scanDir(bot, read(bot)); console.log(bot, 'updated');
+} else if (cmd === 'stage' && bot && rest[0]) {
+  const w = read(bot); if (!setStage(w, rest[0])) { console.error('stage must be one of ' + STAGES.join('|')); process.exit(2); }
+  if (rest[1] !== undefined && pctOf(rest[1]) !== undefined) w.pct = pctOf(rest[1]); const note = rest.find((x, i) => i && pctOf(x) === undefined);
+  if (note) addLine(w, note); write(bot, w); console.log(bot, '->', w.stage, w.pct ?? '');
+} else if (cmd === 'next' && bot) {
+  const w = read(bot), st = w.steps || []; const i = st.findIndex(x => x.s === 'now');
+  if (i >= 0) st[i].s = 'done'; const j = st.findIndex(x => x.s === 'todo');
+  if (j >= 0) { st[j].s = 'now'; addLine(w, `step ${j + 1}/${st.length}: ${st[j].t}`); setStage(w, 'working'); } else { setStage(w, 'review'); addLine(w, 'all steps done → review'); }
+  if (st.length) w.pct = pctOf(100 * st.filter(x => x.s === 'done').length / st.length); write(bot, w); console.log(bot, '->', w.stage, w.pct ?? '');
 } else if (cmd === 'log' && bot) { const w = read(bot); for (const l of rest) addLine(w, l); write(bot, w); }
 else if (cmd === 'image' && bot && rest[0]) { const w = read(bot); addImage(w, rest[0]); addLine(w, `new image: ${path.basename(rest[0])}`); write(bot, w); }
 else if (cmd === 'pipe' && bot) {
@@ -175,4 +212,4 @@ else if (cmd === 'pipe' && bot) {
 else if (cmd === 'show') console.log(JSON.stringify(bundle(rest.includes('--thumbs') || bot === '--thumbs'), null, 1));
 else if (cmd === 'push') process.exit((await push()) ? 0 : 1);
 else if (cmd === 'watch') await watch();
-else console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 21).map(l => l.replace(/^\/\/ ?/, '')).join('\n'));
+else console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 25).map(l => l.replace(/^\/\/ ?/, '')).join('\n'));
