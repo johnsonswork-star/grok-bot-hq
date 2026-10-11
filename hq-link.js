@@ -83,3 +83,23 @@ export async function fetchReplies() {
   } catch (e) {}
   return out;
 }
+
+// Family Inbox desk feed: newest email headers (sender label, subject, time; lead/job mail already filtered out),
+// encrypted on the box to THIS device's key and posted to its private ntfy topic `<topic>_inbox`
+// (tools/refresh-inbox-feed.mjs). Never on the public site. Returns the newest feed or null.
+export async function fetchInboxFeed() {
+  try {
+    const d = await device();
+    const r = await fetch(`${RELAY}/${d.topic}_inbox/json?poll=1&since=all`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const lines = (await r.text()).split('\n').filter(l => l.trim()).reverse();
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
+        const p = await open(JSON.parse(m.message), d.priv);
+        if (p.type === 'inbox' && Array.isArray(p.items)) return p;
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return null;
+}

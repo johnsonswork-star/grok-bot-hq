@@ -165,3 +165,20 @@ Mark bots from the box: `tools/set-busy.sh builder "Ship login fix" [minutes]`, 
 - Other bots: `tools/set-busy.sh <id> "task" [minutes]` (now also records `since`) → their monitor flips to WORKING within ~1–2 min.
 - iPad perf: screens redraw only on change or ≤3 fps (cursor/scroll), and only for desks within ~16 m of you.
 - Limitation: transcript is per device (another device shows its own HQ history).
+
+## Family Inbox desk (real inbox, encrypted)
+The Family Inbox (FI) desk monitor shows Chris's newest emails: sender, subject, time, unread dot. Lead-generation and
+job-alert mail (Thumbtack, Jobrapido, Indeed, ZipRecruiter, Glassdoor, LinkedIn jobs, Angi/HomeAdvisor, "your resume
+stood out", "new leads", etc.) is filtered out, and the footer counts how many were hidden.
+
+Privacy: nothing about the mail is on the public GitHub Pages site or in this repo. `tools/refresh-inbox-feed.mjs`
+trims each email to sender label (brand/name, no address), subject (codes and long numbers masked, 70 chars), time, and
+unread flag; no bodies, snippets, links or ids. It then encrypts that list to each HQ device's own key (the same key
+the iPad uses for HQ chat replies) and posts it to that device's private ntfy topic `<device topic>_inbox`. ntfy only
+sees ciphertext and drops it after ~12 h; the iPad keeps its last decrypted copy locally, polls every 60 s, and the
+screen falls back to the normal task/idle view when there is no feed or it's older than 36 h.
+
+Refreshing (Gmail lives in Grok Bot's Gmail connector, not on the box, so there's no idle cron burning AI allowance):
+1. Grok Bot: Gmail `search_threads` `{query:"in:inbox -category:promotions -category:social", pageSize:40}` saved to a file.
+2. `node tools/refresh-inbox-feed.mjs <file>` (`--dry` to preview). Local copy: `~/.config/grok-bot-hq/inbox-live.json`.
+Do it whenever Grok Bot is already awake for HQ chat or a Gmail check, or when Chris asks.

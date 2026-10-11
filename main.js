@@ -5,6 +5,7 @@ import { createWorkers } from './workers.js';
 import { createMonitors } from './monitors.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
+import { fetchInboxFeed } from './hq-link.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -737,6 +738,22 @@ function snapshot(maxW = 1280, q = 0.7) {
     return /^data:image\/jpeg;base64,/.test(url) && url.length > 2000 ? url : null;
   } catch (e) { return null; }
 }
+// Family Inbox desk monitor: real inbox headers, encrypted to this iPad (tools/refresh-inbox-feed.mjs). Last copy kept
+// on this device so the screen survives the relay's 12 h expiry; falls back to the task screen when there's none.
+(function inboxFeed() {
+  const KEY = 'hq.inboxFeed';
+  try { const f = JSON.parse(localStorage.getItem(KEY) || 'null'); if (f) monitors.setInbox('inbox', f); } catch (e) {}
+  async function poll() {
+    if (document.hidden) return;
+    const f = await fetchInboxFeed(); if (!f) return;
+    let old = null; try { old = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+    if (old && old.at >= f.at) return;
+    try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) {}
+    monitors.setInbox('inbox', f);
+  }
+  poll(); setInterval(poll, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+})();
 const chat = createChat({ stations, snapshot, onLog: entries => monitors.setLog(entries), onOpenChange: o => {
   if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
 } });

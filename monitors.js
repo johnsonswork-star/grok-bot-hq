@@ -1,5 +1,6 @@
 // Live desk monitors. Each bot's screen shows what that bot is actually doing:
 //   Grok Bot (hero desk): the live HQ chat transcript (your messages + replies as they land), auto-scrolling.
+//   Family Inbox: Chris's newest emails (sender, subject, time; lead/job alerts filtered) from an encrypted per-device feed.
 //   Every other bot: its current task from tasks.json (busy) or a clear idle / roaming screen. No made-up activity.
 // Data stays private: the transcript comes from this iPad's own HQ chat log (end-to-end encrypted relay), never a public file.
 // Perf (iPad): canvases redraw on change or at most ~3 fps for the cursor/scroll animation, and only for desks within
@@ -114,6 +115,33 @@ function drawDesk(g, s, m, t) {
   scan(g, w, h);
 }
 
+// ---------- Family Inbox: Chris's real inbox (headers only, lead/job mail filtered; encrypted feed) ----------
+function drawInbox(g, s, m, t) {
+  const w = W, h = H, hh = 58, pad = 22, foot = 40, f = m.inbox;
+  g.fillStyle = '#121620'; g.fillRect(0, 0, w, h);
+  header(g, w, s, m.busy, 'INBOX LIVE · ' + s.short, hh);
+  const items = f.items || [], rowH = 50, top = hh + 6, rows = Math.min(items.length, Math.floor((h - top - foot) / rowH));
+  g.textBaseline = 'middle';
+  if (!items.length) { g.textAlign = 'center'; g.fillStyle = '#7CFC9A'; g.font = `800 40px ${FONT}`; g.fillText('Inbox clear', w / 2, h / 2); }
+  for (let i = 0; i < rows; i++) {
+    const e = items[i], y = top + i * rowH;
+    if (i % 2) { g.fillStyle = 'rgba(255,255,255,.035)'; g.fillRect(0, y, w, rowH); }
+    if (e.u) { g.fillStyle = s.color; g.beginPath(); g.arc(pad - 8, y + rowH / 2, 5, 0, 7); g.fill(); }
+    const when = Date.now() - e.t < 20 * 3600e3 ? hm(e.t) : new Date(e.t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 19px ${FONT}`; g.fillText(when, w - pad, y + 15);
+    g.textAlign = 'left'; g.fillStyle = e.u ? '#fff' : 'rgba(255,255,255,.75)'; g.font = `${e.u ? 800 : 600} 20px ${FONT}`;
+    g.fillText(wrap(g, e.f, w - pad * 2 - 120, 1)[0], pad + 4, y + 15);
+    g.fillStyle = e.u ? '#dfe6ee' : 'rgba(255,255,255,.6)'; g.font = `500 20px ${FONT}`;
+    g.fillText(wrap(g, e.s, w - pad * 2 - 6, 1)[0], pad + 4, y + 36);
+  }
+  g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(0, h - foot, w, foot);
+  g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 18px ${FONT}`;
+  const unread = items.filter(e => e.u).length;
+  g.fillText(`${unread} unread · ${f.leads || 0} lead/job alerts hidden · updated ${ago(f.at)}${ago(f.at) === 'just now' ? '' : ' ago'}`, pad, h - foot / 2);
+  if (m.busy && m.task) { g.textAlign = 'right'; g.fillStyle = '#ffb74d'; g.font = `600 18px ${FONT}`; g.fillText(wrap(g, m.task, 220, 1)[0], w - pad, h - foot / 2); }
+  scan(g, w, h);
+}
+
 export function createMonitors({ stations }) {
   const mons = new Map();
   for (const s of stations) {
@@ -123,7 +151,8 @@ export function createMonitors({ stations }) {
     const m = { s, c, g: c.getContext('2d'), tex, busy: false, task: '', since: 0, until: '', log: [], dirty: true, last: 0, scroll: 0, sig: '' };
     mons.set(s.id, m); draw(m, performance.now());
   }
-  function draw(m, t) { (m.s.hero ? drawHero : drawDesk)(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false; }
+  const INBOX_STALE = 36 * 3600e3; // older feed than this: fall back to the task screen
+  function draw(m, t) { (m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : drawDesk)(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false; }
   function animated(m, d, focused) {
     if (m.scroll > 0.5) return true;
     if (m.s.hero) return d < 10 || focused; // status dots / cursor
@@ -137,6 +166,12 @@ export function createMonitors({ stations }) {
       if (busy && !m.busy) m.since = since ? Date.parse(since) || Date.now() : Date.now();
       if (busy && since) m.since = Date.parse(since) || m.since;
       Object.assign(m, { busy, task: busy ? task : '', until: busy ? until || '' : '', dirty: true });
+    },
+    // Family Inbox desk: decrypted feed from hq-link.fetchInboxFeed()
+    setInbox(id, feed) {
+      const m = mons.get(id); if (!m || !feed) return;
+      const sig = JSON.stringify([feed.at, feed.items]); if (sig === m.isig) return;
+      m.isig = sig; m.inbox = feed; m.dirty = true;
     },
     // HQ chat log from chat.js (this device's own encrypted chat history)
     setLog(entries) {
