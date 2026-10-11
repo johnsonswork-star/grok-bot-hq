@@ -241,6 +241,9 @@ node tools/work-live.mjs set <bot> --pct 75             # just the %
 ```
 Bots that keep a markdown log (Atom Family Designer: `atom-family-clothing-co/DESIGNER_DESK_LOG.md`) can set it from the log instead: `**Stage:** working`, optional `**Progress:** 40%` (or `3/5`), and a `## Steps` checklist (`- [x]` done, `- [>]` now, `- [ ]` todo). The % comes from the checklist when there's no Progress line. With no Stage line, the stage is guessed from Status / Current step ("awaiting review" → REVIEW, "done" → DONE, etc.).
 
+## Conference-room TV = live Team Board (HQ #48)
+The north-wall TV in the conference room (it was a static "All-staff meeting" slide) is now **Dunder Mifflin · Team Board · LIVE**. It lists every open task: who owns it (character + real bot), the task, the current step or "since" time, a stage pill (BLOCKED / WORKING / REVIEW / QUEUED / DONE) and a % bar. Counts per stage are at the top. It reads the same data as the desk screens (tasks.json busy entries plus the encrypted work-live feed), so it updates within the same 12–20 s polls with no reload. It redraws when anything changes, and animates only while you're within ~9 m. Rows are sorted blocked → working → review → queued → done, newest first. Over 7 rows, the last line says "+ N more".
+
 ## The Office cast at Dunder Mifflin (HQ #37 / #39 / #40)
 Company branding is **Dunder Mifflin** (HQ #40 replaced the HQ #39 Johnson Co · Bot HQ branding: page title, logo board, reception sign, whiteboard, meeting TV, softball sign, sticky note, welcome toast). People keep The Office character names. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
 but shows an Office character as `name`; `bot` is the real bot behind it, and HQ chat still routes to `bot` (Grok Bot answers as Grok Bot).

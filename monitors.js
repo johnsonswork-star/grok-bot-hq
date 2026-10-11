@@ -274,6 +274,57 @@ function drawInbox(g, s, m, t) {
   refreshBtn(g, m, t);
 }
 
+// ---------- HQ #48: conference-room TV = live team board (same data as the desk stage tracks) ----------
+const BOARD_W = 1024, BOARD_H = 580, STAGE_ORDER = { blocked: 0, working: 1, review: 2, queued: 3, done: 4 };
+function boardRows(mons) {
+  const rows = [];
+  for (const m of mons.values()) {
+    const lw = !m.s.hero && liveWork(m), wk = lw ? m.work : null;
+    if (!m.busy && !wk) continue;
+    const stage = wk ? wk.stage || 'working' : m.stage || 'working';
+    const steps = wk?.steps || [], ni = steps.findIndex(x => x.s === 'now');
+    const pct = wk ? (wk.pct != null ? wk.pct : steps.length ? 100 * steps.filter(x => x.s === 'done').length / steps.length : null) : m.deskPct;
+    rows.push({ id: m.s.id, who: m.s.name, bot: m.s.bot || '', color: m.s.color, task: (wk && wk.task) || m.task || 'On a task', stage, pct: pct == null ? null : Math.round(pct),
+      sub: ni >= 0 ? `Step ${ni + 1}/${steps.length} · ${steps[ni].t}` : wk?.step || '', at: wk ? wk.stageAt || wk.at : m.since });
+  }
+  return rows.sort((a, b) => STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage] || (b.at || 0) - (a.at || 0));
+}
+function drawBoard(g, rows, t) {
+  const w = BOARD_W, h = BOARD_H, pad = 30, hh = 78;
+  const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#16202b'); grd.addColorStop(1, '#2c2118'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.fillStyle = '#e8a33d'; g.font = '800 44px Georgia,serif'; g.fillText('Dunder Mifflin · Team Board', pad, hh / 2 + 2);
+  g.fillStyle = (t / 600 | 0) % 2 ? '#ff5252' : '#ff8a80'; g.beginPath(); g.arc(w - 236, hh / 2, 8, 0, 7); g.fill();
+  g.fillStyle = '#fff'; g.font = `800 24px ${FONT}`; g.fillText('LIVE', w - 220, hh / 2 + 1);
+  g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.8)'; g.font = `600 24px ${FONT}`; g.fillText(clock(), w - pad, hh / 2 + 1);
+  // stage counts
+  const cnt = k => rows.filter(r => r.stage === k).length;
+  g.textAlign = 'left'; g.font = `800 19px ${FONT}`; let cx = pad;
+  for (const k of ['working', 'blocked', 'review', 'queued', 'done']) { const n = cnt(k); if (!n && k === 'blocked') continue; const lbl = `${STAGE_LABEL[k]} ${n}`, tw = g.measureText(lbl).width + 26;
+    rr(g, cx, hh + 4, tw, 30, 15); g.fillStyle = n ? STAGE_COL[k] : 'rgba(255,255,255,.08)'; g.fill(); g.fillStyle = n ? '#10141c' : 'rgba(255,255,255,.45)'; g.fillText(lbl, cx + 13, hh + 20); cx += tw + 10; }
+  g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(pad, hh + 44, w - pad * 2, 2);
+  const top = hh + 52, rowH = 62, fit = Math.floor((h - top - 8) / rowH), more = rows.length > fit ? rows.length - (fit - 1) : 0, shown = rows.slice(0, more ? fit - 1 : fit);
+  if (!rows.length) { g.textAlign = 'center'; g.fillStyle = '#7CFC9A'; g.font = `800 40px ${FONT}`; g.fillText('No open tasks · everyone roaming', w / 2, top + 150); }
+  shown.forEach((r, i) => {
+    const y = top + i * rowH, col = STAGE_COL[r.stage] || STAGE_COL.working;
+    if (i % 2) { g.fillStyle = 'rgba(255,255,255,.035)'; g.fillRect(0, y, w, rowH); }
+    g.fillStyle = r.color || '#888'; g.fillRect(pad - 14, y + 10, 6, rowH - 20);
+    g.textAlign = 'left'; g.fillStyle = '#fff'; g.font = `800 22px ${FONT}`; g.fillText(wrapOne(g, r.who, 230), pad, y + 21);
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 16px ${FONT}`; g.fillText(wrapOne(g, r.bot, 230), pad, y + 45);
+    const tx = pad + 245, tw = w - pad - 310 - tx - 16;
+    g.fillStyle = '#eef2f7'; g.font = `700 22px ${FONT}`; g.fillText(wrapOne(g, r.task, tw), tx, y + 21);
+    g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 17px ${FONT}`; g.fillText(wrapOne(g, r.sub || (r.at ? `since ${hm(r.at)}` : ''), tw), tx, y + 45);
+    // stage pill (current one pulses) + mini progress bar
+    const px = w - pad - 310, pw = 140; rr(g, px, y + 9, pw, 28, 14);
+    g.globalAlpha = r.stage === 'done' ? 1 : 0.78 + 0.22 * Math.sin(t / 260 + i); g.fillStyle = col; g.fill(); g.globalAlpha = 1;
+    g.textAlign = 'center'; g.fillStyle = '#10141c'; g.font = `900 17px ${FONT}`; g.fillText(STAGE_LABEL[r.stage] || r.stage, px + pw / 2, y + 24);
+    const bx = px + pw + 14, bw = w - pad - bx; rr(g, bx, y + 14, bw, 18, 9); g.fillStyle = 'rgba(255,255,255,.1)'; g.fill();
+    if (r.pct != null) { rr(g, bx, y + 14, Math.max(18, bw * r.pct / 100), 18, 9); g.fillStyle = col; g.fill(); g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `700 15px ${FONT}`; g.fillText(r.pct + '%', bx + bw, y + 46); }
+    else if (r.stage === 'working') { g.save(); rr(g, bx, y + 14, bw, 18, 9); g.clip(); const sw = bw * 0.3; g.fillStyle = col + '99'; g.fillRect(bx - sw + ((t / 9 + i * 40) % (bw + sw)), y + 14, sw, 18); g.restore(); }
+  });
+  if (more) { g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `600 20px ${FONT}`; g.fillText(`+ ${more} more on the floor`, w / 2, top + (fit - 1) * rowH + rowH / 2); }
+}
+
 function setPct(m, p) {
   if (p == null || !Number.isFinite(p)) { m.ptarget = m.pshow = null; return; }
   m.ptarget = Math.max(0, Math.min(100, p)); if (m.pshow == null) m.pshow = m.ptarget; m.dirty = true;
@@ -302,8 +353,14 @@ export function createMonitors({ stations }) {
     if (m.refresh?.state === 'asked' && (d < 7 || focused)) return true; // "ASKED GROK..." dots
     return m.busy && (d < 7 || focused);    // blinking cursor while working, only up close
   }
-  let lastMinute = -1, nextAt = 0;
+  let lastMinute = -1, nextAt = 0, board = null;
   return {
+    // HQ #48: conference TV texture, redrawn when anyone's task / stage / % changes (and animated while you're near it)
+    board({ x, z }) {
+      const c = document.createElement('canvas'); c.width = BOARD_W; c.height = BOARD_H;
+      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      board = { c, g: c.getContext('2d'), tex, x, z, sig: '' }; return tex;
+    },
     canvas: id => mons.get(id)?.c,
     setStatus(id, busy, task, since, until, extra = {}) {
       const m = mons.get(id); if (!m) return;
@@ -358,6 +415,10 @@ export function createMonitors({ stations }) {
     tick(now, pos, focusedId) {
       if (now < nextAt) return; nextAt = now + FRAME_MS;
       const min = new Date().getMinutes(); const minuteTick = min !== lastMinute; lastMinute = min;
+      if (board) {
+        const rows = boardRows(mons), sig = JSON.stringify(rows), near = Math.hypot(board.x - pos.x, board.z - pos.z) < 9;
+        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now); board.tex.needsUpdate = true; }
+      }
       for (const m of mons.values()) {
         const focused = m.s.id === focusedId, d = Math.hypot(m.s.x - pos.x, m.s.z - pos.z), near = focused || d < NEAR;
         if (minuteTick) m.dirty = true; // header clock / "at desk N min"

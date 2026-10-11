@@ -627,13 +627,8 @@ moved(2, 1.5, () => {
   for (let i = 0; i < 3; i++) box(0.21, 0.01, 0.29, std('#f5e97a', 0.9), tx - 0.8 + i * 0.8, 0.785, tz + (i % 2 ? -0.35 : 0.35), scene, false);
   // wall TV on the north wall
   box(1.6, 0.92, 0.08, M.bezel, tx, 1.65, -2.38);
-  const brief = canvasTex(1024, 580, (g, w, h) => {
-    const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#1d2733'); grd.addColorStop(1, '#3b2a1c'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#e8a33d'; g.font = '800 84px Georgia,serif'; g.fillText('Dunder Mifflin', 60, 140);
-    g.fillStyle = '#bbb'; g.font = '600 38px system-ui,Arial'; g.fillText('Scranton Branch · All-staff meeting', 64, 200);
-    g.fillStyle = '#ddd'; g.font = '500 40px system-ui,Arial';
-    ['14 staff, 14 desks', 'Idle staff roam, busy staff sit + type', 'Hold View to message Michael (Grok Bot)'].forEach((t, i) => g.fillText('• ' + t, 70, 300 + i * 78));
-  });
+  // HQ #48: live team board (open tasks, owner, stage, %) from the same feeds as the desk screens (monitors.js)
+  const brief = monitors.board({ x: tx, z: -2.38 });
   const bs = new THREE.Mesh(new THREE.PlaneGeometry(1.52, 0.86), new THREE.MeshBasicMaterial({ map: brief, toneMapped: false }));
   bs.position.set(tx, 1.65, -2.335); scene.add(bs);
   // HQ #42: CONFERENCE ROOM door plate beside the door (Icon Shop art) + a matching one over the door
