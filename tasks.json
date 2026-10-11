@@ -4,6 +4,11 @@
     "grok": {
       "task": "HQ chat on duty",
       "since": "2026-10-11T00:57:22.045Z"
+    },
+    "cos": {
+      "task": "Team / HQ coordination",
+      "since": "2026-10-11T01:48:04.087Z",
+      "until": "2026-10-11T03:48:04.088Z"
     }
   }
 }
