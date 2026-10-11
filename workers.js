@@ -295,8 +295,26 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     return best;
   }
 
+  // HQ #56 banter: the pair walk toward each other (meet halfway), face each other and chat for `secs`. Returns "both there?".
+  function meet(idA, idB, secs = 20) {
+    const A = workers.find(w => w.st.id === idA), B = workers.find(w => w.st.id === idB);
+    if (!A || !B || A.busy || B.busy || A.state === 'work' || B.state === 'work' || A.free || B.free) return null;
+    release(A); release(B);
+    const d = Math.hypot(B.x - A.x, B.z - A.z) || 1, ux = (B.x - A.x) / d, uz = (B.z - A.z) / d;
+    let mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
+    if (blockedAt(mx - ux * 0.48, mz - uz * 0.48) || blockedAt(mx + ux * 0.48, mz + uz * 0.48)) { mx = A.x + ux * 0.95; mz = A.z + uz * 0.95; if (d < 1.4 || blockedAt(mx, mz)) { mx = B.x - ux * 0.48; mz = B.z - uz * 0.48; } }
+    const half = d < 1.4 ? 0 : 0.48, pa = [mx - ux * half, mz - uz * half], pb = [mx + ux * half, mz + uz * half];
+    if (half === 0) { pa[0] = A.x; pa[1] = A.z; pb[0] = A.x + ux * 0.95; pb[1] = A.z + uz * 0.95; if (blockedAt(pb[0], pb[1])) { pb[0] = B.x; pb[1] = B.z; } }
+    A.chatWith = B; B.chatWith = A;
+    const face = (w, o) => Math.atan2(-(o.x - w.x), -(o.z - w.z));
+    const arrive = (w, o) => () => { w.state = 'act'; w.act = 'chat'; w.actYaw = face(w, o); w.timer = secs + 20; w.there = true; if (o.there) { w.timer = o.timer = secs; o.actYaw = face(o, w); } };
+    A.there = B.there = false;
+    goTo(A, pa[0], pa[1], arrive(A, B)); goTo(B, pb[0], pb[1], arrive(B, A));
+    return () => A.there && B.there && A.chatWith === B;
+  }
+
   return {
-    workers, update, pick, poll,
+    workers, update, pick, poll, meet,
     get: id => workers.find(w => w.st.id === id),
     setBusy(id, task) { override.set(id, task === false || task == null ? false : task || 'On a task'); resolve(); },
     clear(id) { id ? override.delete(id) : override.clear(); resolve(); },

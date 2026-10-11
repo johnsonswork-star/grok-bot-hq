@@ -313,3 +313,26 @@ The office makes no AI calls. We deliberately did NOT wire the llm.env API key i
 writes while it's already working on the real event (`work-live.mjs say`), so no extra allowance is ever spent and an idle office costs nothing.
 Turn bubbles off on a device: add `?quiet=1` to the URL or `localStorage.setItem('hq.talk','off')` (HQ chat replies still show).
 Console: `__office.talk.say('designer', 'Hi!')`, `__office.talk.react('assist', 'done', { task: 'resume' }, { force: true })`.
+
+## Random office banter (HQ #56 / #57)
+
+Teammates who are free now and then wander over to each other and have a short in-character chat (2–4 lines) as speech bubbles.
+
+**Who writes the lines:** a FREE model, called from the box (never from the iPad). `tools/banter.mjs` picks the first provider it has a key for:
+1. **OpenRouter free models** (`OPENROUTER_API_KEY` in `~/.config/grok-bot-hq/llm.env`): `openrouter/free` (OpenRouter's free-model router), then `google/gemma-4-31b-it:free`. Override with `BANTER_MODEL`; any id that isn't `:free` / `openrouter/free` is refused, so it can't spend money.
+2. **Gemini Flash free tier** (`GEMINI_API_KEY` or `GOOGLE_API_KEY`): `gemini-flash-lite-latest` (override `GEMINI_MODEL`).
+3. **No key:** a local writer (per-character openers / comebacks / sign-offs for all 14 cast members + hand-written pair scenes: Jim/Dwight stapler, Kevin/Angela granola, Stanley/Phyllis pretzel day, Toby/Meredith "fruit drink"…). Free, offline. If a model call fails it falls back to this too.
+See `~/.config/grok-bot-hq/llm.env.example`. xAI / OpenAI / paid keys are never read by the banter script.
+
+**Your messages are untouched:** HQ chat to anyone still goes to the real Grok Bot (Slack wake). Banter only reads `tasks.json` + the work feed and writes `says.jsonl`; it never sees or answers HQ chat.
+
+**Rate limits (hard):**
+- one exchange every 3–6 min at most (random), with a 3-min floor saved to disk so restarts can't double up; 2–4 lines, each ≤ 110 chars; ≤ 120 exchanges/day (`BANTER_DAILY_MAX`); one model call per exchange, ~300 output tokens max
+- only between two IDLE people (not busy in tasks.json, no live working/review feed), preferring desk neighbours
+- skipped while anything needs you (Needs you list), while a pick card is open (you mid-pick), or someone is waiting on you; optional quiet hours `BANTER_QUIET=23-7`
+- on the iPad: nothing in the first 3 min after load, exchanges older than 4 min are dropped, one exchange at a time, not while the HQ chat panel is open or a pick/needs item is up, and none with `?quiet=1` / `hq.talk=off`
+
+**On screen:** the pair walk toward each other, stop and face each other (chat pose), then the lines alternate as bubbles (captions at the bottom if they're out of view). Rides the existing encrypted work feed (`says` with a `banter` group id), so it shows up live, no reload.
+
+**Run it (box):** `tools/banter.sh start | stop | restart | status | once [--force] | dry | off | on`. `hq-inbox.sh bridge` / `pending` also start it (idempotent). `off` pauses (loop keeps running but skips). Log: `~/.config/grok-bot-hq/banter.log`; state: `banter-state.json`.
+Test on a device without waiting: open the office with `?banter=now` (skips the 3-min warm-up), then `tools/banter.sh once --force`.

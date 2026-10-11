@@ -22,6 +22,7 @@ worklive() { # live desk-monitor publisher (tools/work-live.mjs watch): plain no
   pgrep -f "work-live.mjs watch" >/dev/null && return
   NODE_NO_WARNINGS=1 nohup node "$DIR/work-live.mjs" watch >> "$HOME/.config/grok-bot-hq/work-live.log" 2>&1 < /dev/null &
 }
+banter() { "$DIR/banter.sh" start >/dev/null 2>&1; } # HQ #56 free-model office banter loop (idempotent; banter.sh off pauses it)
 CFG="$HOME/.config/grok-bot-hq"
 watcher_pid() { pgrep -f "node $DIR/hq-watcher.mjs$" | head -1; }
 watcher() {
@@ -44,7 +45,7 @@ autowatch() { [ -f "$CFG/watcher.off" ] || [ -n "$(watcher_pid)" ] || watcher st
 case "$1" in
   read)   gh issue view "$2" --repo $REPO --json number,title,body,comments \
             -q '"#\(.number) \(.title)\n\n\(.body)\n\n" + ([.comments[] | "[\(.createdAt)] \(.body)"] | join("\n\n"))' ;;
-  pending) bridge >/dev/null; worklive; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1
+  pending) bridge >/dev/null; worklive; banter; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1
           gh issue list --repo $REPO --label hq-chat --state open --limit 50 --json number,title,createdAt,comments \
            -q '.[] | select((.comments|length)==0 or ((.comments|last|.body) | test("^\\s*\\*\\*[^*]{1,40}:\\*\\*") | not)) | "#\(.number)  \(.createdAt)  \(.title)"'
           refreshes ;;
@@ -58,7 +59,7 @@ case "$1" in
             echo "$f"
           done ;;
   done)   gh issue close "$2" --repo $REPO ;;
-  bridge) bridge; worklive; autowatch ;;
+  bridge) bridge; worklive; banter; autowatch ;;
   watcher) watcher "$2" "$3" ;;
   *)      bridge >/dev/null; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1
           gh issue list --repo $REPO --state open --limit 30 --json number,title,createdAt \

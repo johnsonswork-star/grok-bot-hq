@@ -9,6 +9,7 @@
 import * as THREE from './vendor/three.module.js';
 import { voiceLine, shortTask, listPicks } from './voices.js';
 
+const BANTER_WARM = /[?&]banter=now/.test(location.search) ? 0 : 3 * 60e3, BANTER_STALE = 4 * 60e3; // HQ #56: no banter in the first 3 min after load; drop exchanges older than 4 min
 const MAX_LIVE = 3, BOT_GAP = 25e3, IDLE_MIN = 4 * 60e3, IDLE_MAX = 8 * 60e3, FRESH = 10 * 60e3, WARMUP = 6000;
 const FONT = '"Segoe UI",system-ui,Arial,sans-serif';
 const quiet = /[?&]quiet=1/.test(location.search) || (() => { try { return localStorage.getItem('hq.talk') === 'off'; } catch (e) { return false; } })();
@@ -26,6 +27,10 @@ export function createTalk({ scene, workers, stations, camera }) {
   const byId = id => stations.find(s => s.id === id);
   const queue = [], live = new Map(), lastSaid = new Map(), recent = new Map(); // live: id -> bubble
   let nextIdle = performance.now() + IDLE_MIN + Math.random() * (IDLE_MAX - IDLE_MIN);
+  // HQ #56: random banter written on the box (tools/banter.mjs, free model). One exchange plays at a time:
+  // the pair meets up, then lines alternate as bubbles. Never while you have a pick open or something needs you, never with ?quiet=1.
+  const banterQ = []; let banter = null;
+  const chrisBusy = () => (needsMem && needsMem.size > 0) || [...workMem.values()].some(n => n.pick && !n.pick.endsWith(':done')) || document.documentElement.classList.contains('chatting');
 
   // caption strip for speakers you can't see
   const cap = document.createElement('div'); cap.id = 'talkcap';
@@ -105,7 +110,22 @@ export function createTalk({ scene, workers, stations, camera }) {
         if (d > 12 || !fr.containsPoint(v)) caption(b.q.st, b.q.text, b.q.ttl);
       }
     }
-    // rare idle small talk, only from someone idle near you (local lines, free). #56 will own real banter.
+    // HQ #56 banter playback
+    if (!banter && banterQ.length) {
+      const g = banterQ.shift(), ids = [...new Set(g.map(x => x.bot))];
+      const ok = !quiet && now - t0 > BANTER_WARM && Date.now() - g[0].at < BANTER_STALE && !chrisBusy() && ids.length === 2 && ids.every(id => { const w = workers.get(id); return w && !w.busy; });
+      if (ok) { const arrived = workers.meet?.(ids[0], ids[1], 6 + g.length * 6) || (() => true); banter = { lines: g, i: 0, arrived, since: now, next: 0 }; }
+    }
+    if (banter) {
+      const b = banter, ready2 = b.arrived() || now - b.since > 25e3;
+      if (ready2 && now >= b.next) {
+        const l = b.lines[b.i++], ttl = Math.max(3200, Math.min(6500, 1800 + l.text.length * 55));
+        say(l.bot, l.text, { ttl, prio: 1 }); b.next = now + ttl + 500;
+        if (b.i >= b.lines.length) banter = null;
+      }
+      if (banter && now - b.since > 90e3) banter = null;
+    }
+    // rare idle small talk, only from someone idle near you (local lines, free). Pair banter is HQ #56 above.
     if (!quiet && now > nextIdle) {
       nextIdle = now + IDLE_MIN + Math.random() * (IDLE_MAX - IDLE_MIN);
       const near = workers.workers.filter(w => !w.busy && !live.has(w.st.id) && Math.hypot(player.pos.x - w.x, player.pos.z - w.z) < 9);
@@ -140,6 +160,7 @@ export function createTalk({ scene, workers, stations, camera }) {
     // lines a bot wrote itself for a real event (work-live.mjs say): shown once per device, only while fresh
     for (const s of feed?.says || []) {
       if (!s || !s.id || saysSeen.has(s.id)) continue; saysSeen.add(s.id);
+      if (s.banter) { const g = banterQ.find(x => x[0].banter === s.banter); if (g) { g.push(s); g.sort((a, b) => a.n - b.n); } else if (banterQ.length < 2) banterQ.push([s]); continue; }
       if (Date.now() - (s.at || 0) < FRESH) say(s.bot, s.text, { prio: 2, force: true });
     }
     try { localStorage.setItem('hq.saysSeen', JSON.stringify([...saysSeen].slice(-80))); } catch (e) {}
@@ -178,5 +199,5 @@ export function createTalk({ scene, workers, stations, camera }) {
   }
   function onPickSent(id, picks) { pickSaid.set(id, Date.now()); react(id, 'picked', { picks }, { force: true, prio: 2 }); }
 
-  return { say, react, update, onStatus, onWork, onNeeds, onChat, onPickSent, live, queue, quiet };
+  return { say, react, update, onStatus, onWork, onNeeds, onChat, onPickSent, live, queue, quiet, get banter() { return banter; }, banterQ };
 }
