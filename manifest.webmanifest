@@ -1,6 +1,6 @@
 {
-  "name": "Bot Office HQ",
-  "short_name": "Bot HQ",
+  "name": "Dunder Mifflin Scranton",
+  "short_name": "Dunder Mifflin",
   "description": "3D office home base for the Grok Bot team. Walk it with a controller.",
   "start_url": "./",
   "scope": "./",

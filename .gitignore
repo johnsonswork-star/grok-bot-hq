@@ -6,3 +6,4 @@ tools/slack.env
 *.bak
 bank-live.json
 bank-snapshot.json
+.venv/

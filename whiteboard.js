@@ -127,7 +127,7 @@ function draw(g, st) {
   g.globalAlpha = 1;
 
   // title
-  text(g, fit(g, 'JOHNSON CO', 42, 420), 46, 88, 42, INK.black, { tilt: -0.015 });
+  text(g, fit(g, 'DUNDER MIFFLIN', 42, 420), 46, 88, 42, INK.black, { tilt: -0.015 });
   pen(g, INK.red, 7); line(g, 44, 112, 400, 106, 'title-ul', 4);
 
   // ---- clock (CT) ----

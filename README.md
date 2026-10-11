@@ -23,7 +23,7 @@ Use Chrome or Edge for the best gamepad support. Plug in or pair the controller,
 
 1. **Pair the controller:** iPad Settings > Bluetooth. Put the pad in pairing mode (Xbox: hold the small pair button on top until the X flashes fast. PS5 DualSense: hold Create + PS until the light bar blinks. PS4: Share + PS). Tap it under Other Devices.
 2. **Open the office:** Safari > https://johnsonswork-star.github.io/grok-bot-hq/
-3. **Add to Home Screen:** Share button > Add to Home Screen > Add. Launch it from the "Bot HQ" icon so it opens full screen, with no Safari bars. Turn the iPad sideways (landscape).
+3. **Add to Home Screen:** Share button > Add to Home Screen > Add. Launch it from the "Dunder Mifflin" icon so it opens full screen, with no Safari bars. Turn the iPad sideways (landscape).
 4. **Press any button on the controller.** Safari only reveals a controller after a button press. The orange "Press any button on your controller" banner disappears and the bottom-right badge turns green. Then press **A** (Cross) to enter.
 
 On iPad, mouse look and pointer lock are turned off. **Look uses the right stick only.**
@@ -85,7 +85,7 @@ If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
 
 Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
-## Layout: Johnson Co Bot HQ, Scranton-style floor plan (HQ #30 / #36 / #38)
+## Layout: Dunder Mifflin Scranton, set-scale floor plan (HQ #30 / #36 / #38 / #42)
 
 North = the big window wall. You spawn at the south front door, facing Pam's reception. The floor plan follows The Office (Scranton branch); `LAYOUT` in `main.js` is bumped when it changes so a live reload drops you at the front door instead of inside a new wall.
 
@@ -104,7 +104,9 @@ North = the big window wall. You spawn at the south front door, facing Pam's rec
 
 Rooms: conference room west of reception (glass + blinds, long table, HQ Briefing TV on the west wall, live whiteboard on the south wall with clock / weather / markets / TEAM ON IT / BANK + REFRESH); kitchen + break room in the back west corner (counter, fridge, microwave, coffee, snack + soda machines, round tables); the annex in the back east corner with Ryan's closet; copier by reception; filing cabinets; water cooler on the west wall just outside the kitchen (the only place workers drink); warehouse = a labeled door on the west wall with pallets of paper (no downstairs floor, to keep iPad frame rate up).
 
-Layout `scranton-3-compact` (HQ #38): floor shrunk from 40 x 28 m to 26 x 18 m and desks packed like the show's bullpen. Jim/Dwight face-to-face right outside Michael's door, Phyllis/Stanley right behind them, accounting (Angela + Oscar side by side, Kevin facing) packed under the sign, Creed/Meredith by the back windows, reception about 3 m inside the front door. Every desk's stand spot and every worker idle spot is checked to be reachable from the front door. Pressing Y picks the first clear spot behind each desk (`freeStand`).
+Layout `scranton-5-set` (HQ #42): floor shrunk again to 18 x 12 m with a 3 m drop ceiling (was 26 x 18). Michael's glass office 4.5 x 4 m in the south-east corner, conference room 4.5 x 4 m right behind it, the annex (Kelly, Toby, Ryan's closet) past that, kitchen + break room crammed into the back west corner, reception about 2 m inside the front door. Desks touch like the TV set: Jim/Dwight and Phyllis/Stanley face-to-face pairs, Angela + Oscar side by side with Kevin facing, Creed + Meredith side by side at the back windows. Signs are show-style plaques: Icon Shop's PNGs in `assets/signs/png` (reception counter, company sign on the front wall + hung over reception, CONFERENCE ROOM door plate, SALES over Jim/Dwight) and `plate()` door plates in the same cream/brown/green style (MICHAEL SCOTT · REGIONAL MANAGER, CONFERENCE ROOM, THE ANNEX, KITCHEN, BREAK ROOM, SUPPLY CLOSET, ACCOUNTING, WAREHOUSE ↓ STAIRS, RYAN HOWARD · TEMP). Every desk's stand spot and every worker idle spot is checked to be reachable from the front door.
+
+Previous: Layout `scranton-3-compact` (HQ #38): floor shrunk from 40 x 28 m to 26 x 18 m and desks packed like the show's bullpen. Jim/Dwight face-to-face right outside Michael's door, Phyllis/Stanley right behind them, accounting (Angela + Oscar side by side, Kevin facing) packed under the sign, Creed/Meredith by the back windows, reception about 3 m inside the front door. Every desk's stand spot and every worker idle spot is checked to be reachable from the front door. Pressing Y picks the first clear spot behind each desk (`freeStand`).
 
 Shots: `shots/s38/*.png` (compact), older `shots/scranton-*.png`.
 
@@ -219,8 +221,8 @@ While a bot is busy (tasks.json) and has a live feed under 3 h old, its monitor 
 - Publisher: `node tools/work-live.mjs watch` (started by `tools/hq-inbox.sh bridge` / `pending`, log `~/.config/grok-bot-hq/work-live.log`). It's plain node with no AI. It checks every 4 s and pushes on change, at most every 15 s, plus a keep-alive every 2.5 h. The bundle (thumbnails are ~220 px JPEGs) is **encrypted to each HQ device** and posted to `<device topic>_work`, the same privacy model as the inbox and bank feeds. Nothing goes in this public repo. Feeds over 4 KB ride as an ntfy attachment (CORS-open, about 3 h). The iPad reads only `since=latest`, keeps its last copy, and polls every 12 s.
 - Wired now: **Atom Family Designer** follows `atom-family-clothing-co/DESIGNER_DESK_LOG.md` and watches `designs/mascot/desk-options-oct10/` (badge options + contact sheet). **App Builder** gets a line on every `./deploy.sh`.
 
-## The Office cast at Johnson Co (HQ #37 / #39)
-Company branding is **Johnson Co · Bot HQ** (HQ #39: page title, logo board, reception sign, whiteboard, meeting TV, softball sign, sticky note, welcome toast). People keep The Office character names. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
+## The Office cast at Dunder Mifflin (HQ #37 / #39 / #40)
+Company branding is **Dunder Mifflin** (HQ #40 replaced the HQ #39 Johnson Co · Bot HQ branding: page title, logo board, reception sign, whiteboard, meeting TV, softball sign, sticky note, welcome toast). People keep The Office character names. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
 but shows an Office character as `name`; `bot` is the real bot behind it, and HQ chat still routes to `bot` (Grok Bot answers as Grok Bot).
 
 | id | character | bot |
