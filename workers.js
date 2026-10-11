@@ -1,5 +1,5 @@
 // Worker characters: one low-poly person per bot station.
-// Idle  -> wanders the floor (coffee, windows, phone, chatting, thinking).
+// Idle  -> wanders the floor (water cooler, windows, phone, chatting, thinking).
 // Busy  -> walks to its own desk, sits, and types until the task clears.
 // "Busy" comes from tasks.json (polled), ?busy=id,id URL override, or window.__office.workers.setBusy(id, task).
 import * as THREE from './vendor/three.module.js';
@@ -126,7 +126,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
   // ---------- places to hang out when idle ----------
   const P = (x, z, yaw, act) => { const [i, j] = nearestFree(x, z); return { x: cx(i), z: cz(j), yaw, act }; };
   const POIS = [
-    P(-18.5, 7.6, Math.PI / 2, 'coffee'), P(-18.5, 8.2, Math.PI / 2, 'coffee'), // coffee machine only; no sink stops (Chris, HQ #20)
+    // drinks happen ONLY at the water cooler (west wall, below). No sink / kitchen counter stops (Chris, HQ #20).
     P(-6, -13.1, 0, 'window'), P(6, -13.1, 0, 'window'), P(-15, -13.1, 0, 'window'), P(15, -13.1, 0, 'window'), P(-2.5, -13.1, 0.1, 'window'),
     P(19.1, -6, -Math.PI / 2, 'window'), P(19.1, -2, -Math.PI / 2, 'window'),
     P(-12.8, 11.7, Math.PI, 'phone'), P(-14.6, 10, -Math.PI / 2, 'think'), P(-11, 9.6, Math.PI * 0.75, 'phone'),
@@ -134,7 +134,8 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     P(-3.6, 9.2, Math.PI, 'think'), P(-5.5, 6.8, 0, 'phone'), P(4, 6, 0.5, 'phone'), P(-2, 4.5, -2.4, 'think'),
     P(3.5, -4, 2.2, 'phone'), P(-8, -5, 1.6, 'think'), P(8, -5, -1.6, 'think'), P(0, -8.5, 0, 'phone'), P(-16.5, -1, 1.2, 'phone'),
     // water cooler on the west wall (-19.45, -5.2): stand in front, face the cooler
-    P(-18.6, -5.2, Math.PI / 2, 'coffee'), P(-18.6, -4.2, Math.atan2(0.85, 1.0), 'coffee'), P(-18.6, -6.2, Math.atan2(0.85, -1.0), 'coffee'),
+    P(-18.6, -5.2, Math.PI / 2, 'water'), P(-18.6, -4.2, Math.atan2(0.85, 1.0), 'water'), P(-18.6, -6.2, Math.atan2(0.85, -1.0), 'water'),
+    P(-17.7, -5.2, Math.PI / 2, 'water'), // waiting in line for the cooler
     P(15, -1.5, -0.6, 'think'), P(-9, 1.5, -2.6, 'phone'), P(10, 2.5, -2.2, 'phone'),
   ];
 
@@ -288,7 +289,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
       w.cup.visible = false; w.phone.visible = false;
       if (w.state === 'act' && !moving) {
         const a = w.act;
-        if (a === 'coffee') { w.cup.visible = true; const sip = Math.max(0, Math.sin(t * 0.9 + w.phase)) ** 6; aRx = 0.9 + sip * 1.1; aRz = -0.15; hx = -sip * 0.3; }
+        if (a === 'water') { w.cup.visible = true; const sip = Math.max(0, Math.sin(t * 0.9 + w.phase)) ** 6; aRx = 0.9 + sip * 1.1; aRz = -0.15; hx = -sip * 0.3; }
         else if (a === 'phone') { w.phone.visible = true; aRx = 1.25 + Math.sin(t * 3 + w.phase) * 0.04; aRz = -0.32; hx = 0.45; hy = 0.15; }
         else if (a === 'think') { aRx = 1.7; aRz = -0.55; aLx = 0.5; aLz = 0.45; hx = -0.1 + Math.sin(t * 0.6) * 0.05; hy = Math.sin(t * 0.4 + w.phase) * 0.35; }
         else if (a === 'window') { aLx = 0.1; aRx = 0.1; aLz = 0.28; aRz = -0.28; hy = Math.sin(t * 0.3 + w.phase) * 0.6; hx = -0.08; }

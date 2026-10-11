@@ -3,6 +3,7 @@ import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
 import { createWorkers } from './workers.js';
 import { createMonitors } from './monitors.js';
+import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
 
 // ---------- device detection ----------
@@ -358,8 +359,10 @@ box(15, 0.006, 3.4, M.carpet, 0, 0.003, -11.3, scene, false);
   });
   const bs = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.12), new THREE.MeshBasicMaterial({ map: brief, toneMapped: false }));
   bs.rotation.y = -Math.PI / 2; bs.position.set(18.85, 1.55, tz); scene.add(bs);
-  plant(19.2, 4.6, 1.1); plant(9, 13.2, 1);
+  plant(19.2, 4.6, 1.1); plant(9, 4.7, 1); // (corner plant moved off the south wall so the whiteboard has the whole wall)
 }
+// full-wall hand-drawn whiteboard on the conference room's south wall = live widget screen (HQ #21): weather + bank placeholder
+const whiteboard = createWhiteboard({ scene, x0: 8.3, x1: 19.7, y0: 0.5, y1: 3.05, z: 13.86, std, box });
 
 // ---------- reception + logo wall (south, by the door) ----------
 {
@@ -847,7 +850,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors };
+window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
