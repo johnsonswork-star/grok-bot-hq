@@ -192,3 +192,22 @@ device's private ntfy topic `<topic>_bank`. The iPad decrypts, keeps the last go
 Refresh after each Finance pull (see the script header):
 `node tools/refresh-bank-feed.mjs <accounts-file> <connections-file>` (or no args = reuse `~/.config/grok-bot-hq/bank-snapshot.json`).
 Shape: `tools/bank-live.json.example` (fake numbers).
+
+## Tap-to-refresh (HQ #29): BANK panel + Family Inbox monitor
+Both screens have a big **⟳ REFRESH** button: a red marker box at the bottom of the whiteboard BANK panel, and an orange button at the bottom-right of the Family Inbox monitor.
+- **iPad touch:** tap the button in the 3D view. **Controller:** aim the reticle at it (the hint reads "⟳ Refresh …  ·  A / E / tap") and press **A**. In the Family Inbox desk panel, use the REFRESH button or press **X**. **Keyboard/mouse:** E or click while aiming.
+- What it does: `hq-link.requestRefresh(kind)` seals `{type:'refresh', kind:'bank'|'inbox'}` to the HQ inbox key and posts it on the normal HQ relay. The bridge (`tools/hq-bridge.mjs`) sees `type:'refresh'`. It files **no** GitHub issue and puts no bubble in chat. It appends the request to `~/.config/grok-bot-hq/refresh-requests.jsonl` and posts to Slack `#hq-chat` (":arrows_counterclockwise: HQ refresh request: BANK …" with the exact steps). That wakes Grok Bot through the Slack routine. At most one ping per kind every 3 min; old catch-up requests (over 30 min) don't ping.
+- Grok Bot then pulls with its connector and pushes the feed. Bank: Finance `finance_list_accounts` + `finance_list_connections` → `node tools/refresh-bank-feed.mjs <a> <c>`. Inbox: Gmail `search_threads` → `node tools/refresh-inbox-feed.mjs <file>`.
+- **When Grok Bot is already awake:** `tools/hq-inbox.sh pending` (or `refreshes`) lists any open requests (newer than the last `bank-live.json` / `inbox-live.json` push) with the command to run.
+- iPad side: the button shows **ASKED GROK…**. The feed is polled every 15 s for 10 min and the button flips to **FRESH ✓** when a newer feed lands (or **NOT SENT · TAP** with no signal). There is a 60 s cooldown, so double taps don't spam.
+- No timer routines are needed. Test without Slack: `SLACK_WEBHOOK_URL=http://localhost:9/x node tools/hq-bridge.mjs refresh-test bank`.
+- Fix shipped with this: the bank poll URL had `&t=<timestamp>`, which ntfy reads as a filter, so it always came back empty ("bank feed offline"). Never add `t=` to ntfy poll URLs.
+
+## Live work on desk screens (HQ #31)
+While a bot is busy (tasks.json) and has a live feed under 3 h old, its monitor switches to **LIVE · <bot>**. It shows the task, the current step, the file (▸), a terminal of the last output lines that scroll up as new ones arrive with a blinking cursor, and up to 4 thumbnails of its newest images (the newest is outlined in gold). Without a feed it shows the old CURRENT TASK card.
+- Source: `~/.config/grok-bot-hq/work/<botId>.json` on the box, written by `tools/work-live.mjs`:
+  - `set <bot> --task T --step S --file F --line L --image P --dir DIR --log-file MD --clear-lines`
+  - `log <bot> "line"`, `<cmd> | node tools/work-live.mjs pipe <bot>` (streams a command's output onto the monitor), `image <bot> <png>`, `clear <bot>`, `show [--thumbs]`, `push`
+  - `--dir` watches a folder (recursive) and new images become thumbnails plus a "new image:" line. `--log-file` follows a bot's markdown progress log ("Current step:", "watching folder:", and the bullets under "## Last progress lines").
+- Publisher: `node tools/work-live.mjs watch` (started by `tools/hq-inbox.sh bridge` / `pending`, log `~/.config/grok-bot-hq/work-live.log`). It's plain node with no AI. It checks every 4 s and pushes on change, at most every 15 s, plus a keep-alive every 2.5 h. The bundle (thumbnails are ~220 px JPEGs) is **encrypted to each HQ device** and posted to `<device topic>_work`, the same privacy model as the inbox and bank feeds. Nothing goes in this public repo. Feeds over 4 KB ride as an ntfy attachment (CORS-open, about 3 h). The iPad reads only `since=latest`, keeps its last copy, and polls every 12 s.
+- Wired now: **Atom Family Designer** follows `atom-family-clothing-co/DESIGNER_DESK_LOG.md` and watches `designs/mascot/desk-options-oct10/` (badge options + contact sheet). **App Builder** gets a line on every `./deploy.sh`.

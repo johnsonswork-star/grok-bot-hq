@@ -6,7 +6,9 @@
 // inbox / bank feeds: nothing goes in the public repo; big bundles ride as a ~3 h ntfy attachment, the iPad keeps its copy).
 // A desk monitor shows the LIVE view only while that bot is busy in tasks.json (tools/set-busy.sh).
 //
-//   node tools/work-live.mjs set <bot> [--task T] [--step S] [--file F] [--line L]... [--image PATH]... [--dir DIR] [--clear-lines]
+//   node tools/work-live.mjs set <bot> [--task T] [--step S] [--file F] [--line L]... [--image PATH]... [--dir DIR] [--log-file MD] [--clear-lines]
+//        --dir: watch a folder (recursive) for new images. --log-file: follow a bot's markdown progress log (Current step:,
+//        watching folder:, bullets under "## Last progress lines"), e.g. atom-family-clothing-co/DESIGNER_DESK_LOG.md
 //   node tools/work-live.mjs log <bot> "output line"          append one line (keeps the last 12)
 //   <cmd> | node tools/work-live.mjs pipe <bot>                 stream a command's output onto the monitor, line by line
 //   node tools/work-live.mjs image <bot> <path>                 newest image (thumbnail on the monitor)
@@ -56,6 +58,20 @@ function scanDir(bot, w) {
   if (!w.dirSeen) { for (const x of imgs.slice(0, MAX_IMAGES).reverse()) addImage(w, x.p); } // first look: just the newest few
   else for (const x of fresh) { addImage(w, x.p); addLine(w, `new image: ${path.relative(w.watchDir, x.p)}`); }
   w.dirSeen = imgs[0].m; write(bot, w); return true;
+}
+
+// a bot's own progress log (markdown, e.g. Atom Family Designer's DESIGNER_DESK_LOG.md): on change, take
+// "Current step:" -> step, "watching folder: <dir>" -> watchDir, and the bullets under "Last progress lines" -> output lines
+function scanLog(bot, w) {
+  if (!w.logFile) return false;
+  let m; try { m = fs.statSync(w.logFile).mtimeMs; } catch { return false; }
+  if (m === w.logSeen) return false;
+  const txt = fs.readFileSync(w.logFile, 'utf8'), strip = x => x.replace(/\*\*/g, '').trim();
+  const step = txt.match(/Current step:\**\s*(.+)/i); if (step) w.step = strip(step[1]);
+  const dir = txt.match(/watching folder:\s*([^\s*]+)/i); if (dir && fs.existsSync(dir[1]) && path.resolve(dir[1]) !== w.watchDir) { w.watchDir = path.resolve(dir[1]); delete w.dirSeen; }
+  const sec = txt.split(/^##\s*Last progress lines.*$/im)[1];
+  if (sec) for (const l of sec.split(/^##\s/m)[0].split('\n')) { const b = l.match(/^\s*[-*]\s+(.+)/); if (b && !(w.lines || []).includes(clip(strip(b[1])))) addLine(w, strip(b[1])); }
+  w.file = w.file || path.basename(w.logFile); w.logSeen = m; write(bot, w); return true;
 }
 
 // thumbnail: ~220 px JPEG on a backdrop that matches the ink (navy ink -> light shirt, cream ink -> navy shirt)
@@ -128,7 +144,7 @@ async function watch() {
   log('work-live watcher up');
   let last = '', lastPush = 0;
   for (;;) {
-    for (const f of fs.readdirSync(WORK).filter(f => f.endsWith('.json'))) { const bot = f.slice(0, -5), w = read(bot); if (w.watchDir) scanDir(bot, w); }
+    for (const f of fs.readdirSync(WORK).filter(f => f.endsWith('.json'))) { const bot = f.slice(0, -5); let w = read(bot); if (w.logFile && scanLog(bot, w)) w = read(bot); if (w.watchDir) scanDir(bot, w); }
     const s = sig(), fresh = Object.keys(bundle(false).bots).length > 0;
     const due = (s !== last && Date.now() - lastPush >= MIN_PUSH_MS) || (fresh && Date.now() - lastPush > KEEPALIVE_MS);
     if (due) { if (await push()) { last = s; lastPush = Date.now(); } else lastPush = Date.now() - MIN_PUSH_MS + 60000; }
@@ -146,8 +162,9 @@ if (cmd === 'set' && bot) {
     if (k === '--task') w.task = v; else if (k === '--step') w.step = v; else if (k === '--file') w.file = v;
     else if (k === '--line') addLine(w, v); else if (k === '--image') addImage(w, v);
     else if (k === '--dir') { w.watchDir = path.resolve(v); delete w.dirSeen; }
+    else if (k === '--log-file') { w.logFile = path.resolve(v); delete w.logSeen; }
   }
-  write(bot, w); if (w.watchDir) scanDir(bot, read(bot)); console.log(bot, 'updated');
+  write(bot, w); if (w.logFile) scanLog(bot, read(bot)); if (read(bot).watchDir) scanDir(bot, read(bot)); console.log(bot, 'updated');
 } else if (cmd === 'log' && bot) { const w = read(bot); for (const l of rest) addLine(w, l); write(bot, w); }
 else if (cmd === 'image' && bot && rest[0]) { const w = read(bot); addImage(w, rest[0]); addLine(w, `new image: ${path.basename(rest[0])}`); write(bot, w); }
 else if (cmd === 'pipe' && bot) {
