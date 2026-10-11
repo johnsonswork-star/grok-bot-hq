@@ -23,6 +23,11 @@
 //   node tools/work-live.mjs picked <bot> <id> H,J               record picks (bridge): stage -> working, next step, log file updated
 //   node tools/work-live.mjs unpick <bot>                       drop the pick cards
 //   node tools/work-live.mjs waiting <bot> [who|off]            mark "waiting on Chris" (boards highlight it) without cards
+//   node tools/work-live.mjs need add <id> --title T [--who W] [--do "what Chris should do"] [--bot B] [--issue N]
+//        HQ #53 "Needs you": anything else waiting on Chris (approvals, logins, answers). One line in needs-chris.jsonl;
+//        rides in this feed as `needs` and shows on Toby's Profile & Settings screen (+ the Team Board count). Feeds that
+//        wait on Chris (waiting / open pick / review naming Chris) are listed there automatically, no `need` needed.
+//   node tools/work-live.mjs need done <id>  |  need list       close one / show the open ones
 //   node tools/work-live.mjs show                               print the bundle (no thumbnails)
 //   node tools/work-live.mjs push [--force]                     publish now
 //   node tools/work-live.mjs watch                              background publisher: checks every 4 s, pushes on change
@@ -46,6 +51,18 @@ const freshMs = w => FRESH_BY_STAGE[w.stage] || FRESH_MS;
 const log = (...a) => console.log(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }), ...a);
 fs.mkdirSync(THUMBS, { recursive: true, mode: 0o700 });
 
+// HQ #53: open "needs Chris" items. JSONL, newest line per id wins; { id, done: true } closes one.
+// Legacy hq-watcher lines { ts, issue, ask, status } count too (id issue-N).
+const NEEDS = `${DIR}/needs-chris.jsonl`;
+function openNeeds() {
+  const byId = new Map(); let txt = ''; try { txt = fs.readFileSync(NEEDS, 'utf8'); } catch { return []; }
+  for (const l of txt.split('\n')) { let e; try { e = JSON.parse(l); } catch { continue; }
+    const id = String(e.id || (e.issue ? 'issue-' + e.issue : '') || ''); if (!id) continue;
+    if (e.done) { byId.delete(id); continue; }
+    const prev = byId.get(id) || {}; byId.set(id, { ...prev, ...e, id, at: prev.at || Date.parse(e.at || e.ts) || Date.now() }); }
+  return [...byId.values()].map(e => ({ id: e.id, title: clip(e.title || e.ask || 'Needs your call', 90), who: clip(e.who || (e.issue ? `HQ #${e.issue}` : ''), 40),
+    do: clip(e.do || (e.issue ? `Answer in HQ chat (#${e.issue})` : ''), 120), bot: e.bot || '', issue: e.issue || null, at: e.at })).sort((a, b) => a.at - b.at).slice(0, 12);
+}
 const fileOf = bot => `${WORK}/${String(bot).replace(/[^\w-]/g, '')}.json`;
 const read = bot => { try { return JSON.parse(fs.readFileSync(fileOf(bot), 'utf8')); } catch { return {}; } };
 const write = (bot, w) => { w.at = Date.now(); fs.writeFileSync(fileOf(bot), JSON.stringify(w, null, 1), { mode: 0o600 }); };
@@ -142,7 +159,7 @@ function bundle(withThumbs = true) {
     if (withThumbs) b.thumbs = imgs.slice(0, THUMBS_PER_BOT).map(p => ({ n: path.basename(p), d: thumb(p) })).filter(x => x.d);
     bots[bot] = b;
   }
-  return { type: 'work', v: 1, at: Date.now(), bots };
+  return { type: 'work', v: 1, at: Date.now(), bots, needs: openNeeds() };
 }
 
 let devCache = null, devAt = 0;
@@ -177,14 +194,15 @@ async function push() {
 
 function sig() {
   let files = []; try { files = fs.readdirSync(WORK).filter(f => f.endsWith('.json')); } catch {}
-  return files.map(f => { try { return f + ':' + fs.statSync(`${WORK}/${f}`).mtimeMs; } catch { return f; } }).join('|');
+  let nm = 0; try { nm = fs.statSync(NEEDS).mtimeMs; } catch {}
+  return files.map(f => { try { return f + ':' + fs.statSync(`${WORK}/${f}`).mtimeMs; } catch { return f; } }).join('|') + '|needs:' + nm;
 }
 async function watch() {
   log('work-live watcher up');
   let last = '', lastPush = 0;
   for (;;) {
     for (const f of fs.readdirSync(WORK).filter(f => f.endsWith('.json'))) { const bot = f.slice(0, -5); let w = read(bot); if (w.logFile && scanLog(bot, w)) w = read(bot); if (w.watchDir) scanDir(bot, w); }
-    const s = sig(), fresh = Object.keys(bundle(false).bots).length > 0;
+    const s = sig(), b0 = bundle(false), fresh = Object.keys(b0.bots).length > 0 || b0.needs.length > 0;
     const due = (s !== last && Date.now() - lastPush >= MIN_PUSH_MS) || (fresh && Date.now() - lastPush > KEEPALIVE_MS);
     if (due) { if (await push()) { last = s; lastPush = Date.now(); } else lastPush = Date.now() - MIN_PUSH_MS + 60000; }
     await new Promise(r => setTimeout(r, 4000));
@@ -253,6 +271,17 @@ else if (cmd === 'pipe' && bot) {
   process.stdin.on('data', d => { buf += d; if (!t) t = setTimeout(() => { t = 0; flush(); }, 700); });
   process.stdin.on('end', () => { buf += '\n'; flush(); });
 } else if (cmd === 'clear' && bot) { try { fs.unlinkSync(fileOf(bot)); } catch {} console.log(bot, 'cleared'); }
+else if (cmd === 'need') {
+  const sub = bot, id = rest[0];
+  if (sub === 'list') console.log(JSON.stringify(openNeeds(), null, 1));
+  else if ((sub === 'add' || sub === 'done') && id) {
+    const e = { id, at: new Date().toISOString() };
+    if (sub === 'done') e.done = true;
+    else for (let i = 1; i < rest.length; i += 2) { const k = rest[i].replace(/^--/, ''), v = rest[i + 1]; if (v === undefined) break; if (['title', 'who', 'do', 'bot'].includes(k)) e[k] = v; else if (k === 'issue') e.issue = +v || null; }
+    if (sub === 'add' && !e.title) { console.error('need --title'); process.exit(2); }
+    fs.appendFileSync(NEEDS, JSON.stringify(e) + '\n', { mode: 0o600 }); console.log('need', sub, id);
+  } else { console.error('usage: need add <id> --title T [--who W] [--do D] [--bot B] [--issue N] | need done <id> | need list'); process.exit(2); }
+}
 else if (cmd === 'show') console.log(JSON.stringify(bundle(rest.includes('--thumbs') || bot === '--thumbs'), null, 1));
 else if (cmd === 'push') process.exit((await push()) ? 0 : 1);
 else if (cmd === 'watch') await watch();

@@ -271,3 +271,15 @@ but shows an Office character as `name`; `bot` is the real bot behind it, and HQ
 
 Layout `scranton-2`: conference room now shares a wall with Michael's office (whiteboard on that wall), west bullpen door is the
 emergency exit (the warehouse is downstairs, signed by the front door), supply closet front-west.
+
+## Needs you (HQ #53)
+
+Toby's desk (**Profile & Settings**, HR annex) is the **Needs you** widget: one live list of everything waiting on Chris.
+Each row: what it is, who's asking, what to do ("Tap your favorite H–L on Kelly's desk or the conference TV, then SUBMIT"), and how long it's been waiting. Empty: "Nothing needs you right now." Asks handled in the last 3 h stay below, dimmed, under RECENTLY HANDLED.
+
+One shared list (`needsList()` in `monitors.js`) feeds this widget **and** the Team Board's WAITING ON YOU count, so they never disagree. Sources:
+- live work feeds waiting on Chris (`work-live.mjs waiting <bot> Chris`, an open pick card, or review/blocked with a step naming Chris)
+- `tasks.json` entries with `"waiting": "Chris"` (when that bot has no live feed)
+- anything else: `node tools/work-live.mjs need add <id> --title "Approve X" --who "Andy · Shop" --do "Reply yes in HQ chat (#44)" [--bot <station>] [--issue N]`, closed with `need done <id>` (`need list` shows the open ones). Stored in `~/.config/grok-bot-hq/needs-chris.jsonl` on the box, sent only inside the encrypted work feed.
+
+Live: rides the existing work-feed publisher (`work-live.mjs watch`, pushes within ~15 s of a change) and the iPad's 12 s poll. No reload.

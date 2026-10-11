@@ -1042,6 +1042,7 @@ function showPanel(s) {
     <p>${s.role}</p><p>${status}</p>
     <div class="screenwrap"></div>
     ${REFRESH_KIND[s.id] ? `<button class="refreshbtn" type="button">⟳ REFRESH ${s.id === 'inbox' ? 'INBOX' : s.short} <span>(tap or X)</span></button>` : ''}
+    ${s.id === 'profile' ? (n => `<p class="pickhint"><b style="color:${n ? '#ffca28' : '#7CFC9A'}">${n ? `⏳ ${n} thing${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} you` : '✓ Nothing needs you right now'}</b>. This screen lists anything waiting on you, live.</p>`)(monitors.needs().open.length) : ''}
     ${monitors.hasPick(s.id) ? `<p class="pickhint"><b style="color:#ffca28">⏳ Waiting on you:</b> tap the badges you like on the screen (or D-pad ←/→ + X), then <b>SUBMIT PICKS</b>. ${s.name.split(' ')[0]} gets them right away.</p>` : ''}
     <small>Hold View (or Enter) to message ${s.bot || 'this bot'} via Grok Bot + team. B / Q / A to close.</small>`;
   const rb = ui.panel.querySelector('.refreshbtn');

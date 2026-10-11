@@ -11,6 +11,9 @@
 //   Tap cards to select (multi-select), then SUBMIT PICKS: onPick() sends them through the encrypted HQ relay. Boards and
 //   desks flag every feed that waits on Chris ("WAITING ON YOU").
 //   Family Inbox: a REFRESH button on the screen (HQ #29) asks Grok Bot for a fresh pull.
+//   HQ #53 "Needs you": Toby's Profile & Settings screen lists everything waiting on Chris, built by needsList() from the
+//   same data the desks + Team Board use (feeds waiting on Chris, open pick cards, tasks.json `waiting`) plus the feed's
+//   `needs` (needs-chris.jsonl via tools/work-live.mjs need add). The Team Board's WAITING ON YOU count uses the same list.
 // Data stays private: the transcript comes from this iPad's own HQ chat log (end-to-end encrypted relay), never a public file.
 // Perf (iPad): canvases redraw on change or at most ~3 fps for the cursor/scroll animation, and only for desks within
 // ~16 m of you (or the one you're focused on). The 3D loop just calls tick() every frame; it's time-gated inside.
@@ -26,6 +29,9 @@ const STAGE_FRESH = { review: 48 * 3600e3, queued: 48 * 3600e3, blocked: 24 * 36
 const liveWork = m => m.work && (m.busy || STAGE_FRESH[m.work.stage] || m.work.pick) && Date.now() - m.work.at < (STAGE_FRESH[m.work.stage] || WORK_FRESH);
 const WAIT_COL = '#ffca28';
 const waitingOn = wk => !!wk && (wk.waiting || (wk.pick && !wk.pick.done ? 'Chris' : ''));
+const pickLetters = pk => (ks => ks.length > 2 ? ks[0] + '–' + ks[ks.length - 1] : ks.join(', '))(pk.options.map(o => o.k));
+const NEEDS_ID = 'profile';
+const lc1 = t => String(t || '').replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase());   // "Badge options" -> "Kelly's badge options"   // HQ #53: station whose screen is the "Needs you" widget
 const STAGES = ['queued', 'working', 'review', 'done'];
 const STAGE_COL = { queued: '#90a4ae', working: '#ffb74d', review: '#64b5f6', done: '#66bb6a', blocked: '#ef5350' };
 const STAGE_LABEL = { queued: 'QUEUED', working: 'WORKING', review: 'REVIEW', done: 'DONE', blocked: 'BLOCKED' };
@@ -338,6 +344,63 @@ function drawInbox(g, s, m, t) {
   refreshBtn(g, m, t);
 }
 
+// ---------- HQ #53: "Needs you" (one shared list: desks, Team Board and Toby's widget all read it) ----------
+function needsList(mons, extra) {
+  const open = [], done = [], st = id => [...mons.values()].find(m => m.s.id === id)?.s;
+  for (const m of mons.values()) {
+    if (m.s.hero) continue;
+    const first = m.s.name.split(' ')[0], who = m.s.bot ? `${m.s.name} · ${m.s.bot}` : m.s.name, wk = liveWork(m) ? m.work : null, pk = wk?.pick;
+    if (wk && waitingOn(wk)) {
+      const open1 = pk && !pk.done;
+      open.push({ key: 'w:' + m.s.id, color: m.s.color, who, at: wk.stageAt || wk.at, kind: open1 ? 'pick' : 'review',
+        title: open1 ? `${first}'s ${lc1(pk.title) || 'pick'}` : wk.task || m.task || 'Needs your call',
+        do: open1 ? `Tap your favorite ${pickLetters(pk)} on ${first}'s desk or the conference TV, then SUBMIT` : wk.step ? `${wk.step} · check ${first}'s desk` : `Check ${first}'s desk, then answer in HQ chat` });
+    } else if (wk && pk?.done && Date.now() - (pk.pickedAt || 0) < 3 * 3600e3) done.push({ key: 'd:' + m.s.id, title: `${first}'s ${lc1(pk.title) || 'pick'}: you picked ${pk.picked.join(', ')}`, at: pk.pickedAt, color: m.s.color });
+    else if (!wk && m.busy && m.waiting) open.push({ key: 't:' + m.s.id, color: m.s.color, who, at: m.since, kind: 'task', title: m.task || 'Needs your call', do: `Check ${first}'s desk, then answer in HQ chat` });
+  }
+  for (const n of extra || []) { const s = n.bot && st(n.bot);
+    open.push({ key: 'n:' + n.id, color: s?.color || WAIT_COL, who: n.who || (s ? `${s.name} · ${s.bot}` : 'Grok Bot'), at: n.at, kind: 'ask', title: n.title, do: n.do || (n.issue ? `Answer in HQ chat (#${n.issue})` : 'Answer in HQ chat') }); }
+  open.sort((a, b) => (a.at || 0) - (b.at || 0)); done.sort((a, b) => (b.at || 0) - (a.at || 0));
+  return { open, done };
+}
+function drawNeeds(g, s, m, t) {
+  const w = W, h = H, hh = 58, pad = 20, foot = 30, L = m.needs || { open: [], done: [] }, n = L.open.length;
+  g.fillStyle = '#121620'; g.fillRect(0, 0, w, h);
+  // header: amber while something waits on Chris, calm green when clear
+  const grd = g.createLinearGradient(0, 0, w, 0); grd.addColorStop(0, n ? '#c98a12' : '#2e7d4f'); grd.addColorStop(1, '#1c2230'); g.fillStyle = grd; g.fillRect(0, 0, w, hh);
+  g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.font = `900 27px ${FONT}`; g.fillText(n ? `⏳ NEEDS YOU · ${n}` : '✓ NEEDS YOU', pad, hh / 2 + 1);
+  g.textAlign = 'right'; g.font = `600 21px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.85)'; g.fillText(clock(), w - pad, hh / 2 + 1);
+  g.fillStyle = (t / 600 | 0) % 2 ? '#ff5252' : '#ff8a80'; g.beginPath(); g.arc(w - 110, hh / 2, 6, 0, 7); g.fill();
+  let y = hh + 10;
+  if (!n) {
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#7CFC9A'; g.font = `800 34px ${FONT}`; g.fillText('Nothing needs you right now.', w / 2, y + 70);
+    g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 19px ${FONT}`; g.fillText('The moment a bot is waiting on you, it shows up here.', w / 2, y + 112); y += 150;
+  } else {
+    const rowH = 84, maxRows = Math.max(1, Math.floor((h - foot - y - (L.done.length ? 34 : 0)) / rowH)), shown = L.open.slice(0, n > maxRows ? maxRows - 1 : maxRows);
+    shown.forEach((r, i) => {
+      const ry = y + i * rowH;
+      rr(g, pad - 6, ry, w - pad * 2 + 12, rowH - 8, 10); g.globalAlpha = 0.13 + 0.05 * Math.sin(t / 300 + i); g.fillStyle = WAIT_COL; g.fill(); g.globalAlpha = 1;
+      g.fillStyle = r.color || WAIT_COL; g.fillRect(pad, ry + 10, 6, rowH - 28);
+      g.textAlign = 'right'; g.textBaseline = 'top'; g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 15px ${FONT}`; const age = r.at ? `${ago(r.at)}${ago(r.at) === 'just now' ? '' : ' ago'}` : ''; g.fillText(age, w - pad, ry + 9);
+      const aw = g.measureText(age).width + 14, tx = pad + 16, tw = w - pad - tx - aw;
+      g.textAlign = 'left'; g.fillStyle = '#fff'; g.font = `800 21px ${FONT}`; g.fillText(wrapOne(g, r.title, tw), tx, ry + 6);
+      g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 15px ${FONT}`; g.fillText(wrapOne(g, r.who, w - pad - tx), tx, ry + 31);
+      g.fillStyle = WAIT_COL; g.font = `800 17px ${FONT}`; g.fillText(wrapOne(g, '➜ ' + r.do, w - pad - tx), tx, ry + 51);
+    });
+    y += shown.length * rowH;
+    if (n > shown.length) { g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `700 18px ${FONT}`; g.fillText(`+ ${n - shown.length} more waiting on you`, w / 2, y); y += rowH; }
+  }
+  // recently handled (last 3 h), dimmed, so a just-finished ask doesn't vanish without a trace
+  if (L.done.length && y < h - foot - 30) {
+    g.textAlign = 'left'; g.textBaseline = 'top'; g.fillStyle = 'rgba(255,255,255,.4)'; g.font = `800 14px ${FONT}`; g.fillText('RECENTLY HANDLED', pad, y); y += 22;
+    for (const d of L.done) { if (y > h - foot - 22) break; g.fillStyle = STAGE_COL.done; g.font = `700 17px ${FONT}`; g.fillText(wrapOne(g, `✓ ${d.title} · ${hm(d.at)}`, w - pad * 2), pad, y); y += 24; }
+  }
+  g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(0, h - foot, w, foot);
+  g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 15px ${FONT}`;
+  g.fillText(wrapOne(g, `${s.name} · ${s.bot} · ${m.busy ? 'working: ' + (m.task || 'on a task') : 'live list of anything waiting on you'}`, w - pad * 2), pad, h - foot / 2);
+  scan(g, w, h);
+}
+
 // ---------- HQ #48: conference-room TV = live team board (same data as the desk stage tracks) ----------
 const BOARD_W = 1024, BOARD_H = 580, STAGE_ORDER = { blocked: 0, working: 1, review: 2, queued: 3, done: 4 };
 function boardRows(mons) {
@@ -350,7 +413,7 @@ function boardRows(mons) {
     const pct = wk ? (wk.pct != null ? wk.pct : steps.length ? 100 * steps.filter(x => x.s === 'done').length / steps.length : null) : m.deskPct;
     rows.push({ id: m.s.id, who: m.s.name, bot: m.s.bot || '', color: m.s.color, task: (wk && wk.task) || m.task || 'On a task', stage, pct: pct == null ? null : Math.round(pct),
       sub: ni >= 0 ? `Step ${ni + 1}/${steps.length} · ${steps[ni].t}` : wk?.step || '', at: wk ? wk.stageAt || wk.at : m.since,
-      wait: wk ? waitingOn(wk) : m.waiting || '', pick: wk?.pick && !wk.pick.done ? (ks => ks.length > 2 ? ks[0] + '–' + ks[ks.length - 1] : ks.join(', '))(wk.pick.options.map(o => o.k)) : '' });
+      wait: wk ? waitingOn(wk) : m.waiting || '', pick: wk?.pick && !wk.pick.done ? pickLetters(wk.pick) : '' });
   }
   return rows.sort((a, b) => !!b.wait - !!a.wait || STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage] || (b.at || 0) - (a.at || 0));
 }
@@ -401,7 +464,7 @@ function drawBoardPick(g, m, top, t, hover) {
   g.fillText(st === 'done' ? `✓ PICKS IN · ${who.toUpperCase()} ON IT` : st === 'sent' ? `SENT ✓ ${who.toUpperCase()} HAS THEM` : st === 'sending' ? 'SENDING' + dots : st === 'failed' ? 'NOT SENT · TAP AGAIN' : `SUBMIT PICKS${n ? ' (' + n + ')' : ''} ▶`, r.x + r.w / 2, r.y + r.h / 2 + 1);
   return BPK.h + 6;
 }
-function drawBoard(g, rows, t, pm, hover) {
+function drawBoard(g, rows, t, pm, hover, nNeeds) {
   const w = BOARD_W, h = BOARD_H, pad = 30, hh = 78;
   const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#16202b'); grd.addColorStop(1, '#2c2118'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
   g.textBaseline = 'middle'; g.textAlign = 'left';
@@ -410,7 +473,7 @@ function drawBoard(g, rows, t, pm, hover) {
   g.fillStyle = '#fff'; g.font = `800 24px ${FONT}`; g.fillText('LIVE', w - 220, hh / 2 + 1);
   g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.8)'; g.font = `600 24px ${FONT}`; g.fillText(clock(), w - pad, hh / 2 + 1);
   // stage counts
-  const cnt = k => rows.filter(r => r.stage === k).length, nWait = rows.filter(r => r.wait).length;
+  const cnt = k => rows.filter(r => r.stage === k).length, nWait = nNeeds != null ? nNeeds : rows.filter(r => r.wait).length; // HQ #53: same list as Toby's widget
   g.textAlign = 'left'; g.font = `800 19px ${FONT}`; let cx = pad;
   if (nWait) { const lbl = `⏳ WAITING ON YOU ${nWait}`, tw = g.measureText(lbl).width + 26; rr(g, cx, hh + 4, tw, 30, 15); g.globalAlpha = 0.8 + 0.2 * Math.sin(t / 300); g.fillStyle = WAIT_COL; g.fill(); g.globalAlpha = 1; g.fillStyle = '#1a1206'; g.fillText(lbl, cx + 13, hh + 20); cx += tw + 10; }
   for (const k of ['working', 'blocked', 'review', 'queued', 'done']) { const n = cnt(k); if (!n && k === 'blocked') continue; const lbl = `${STAGE_LABEL[k]} ${n}`, tw = g.measureText(lbl).width + 26;
@@ -446,6 +509,7 @@ function setPct(m, p) {
 }
 export function createMonitors({ stations, onPick }) {
   const mons = new Map();
+  let feedNeeds = [];   // HQ #53: `needs` from the work feed (needs-chris.jsonl)
   for (const s of stations) {
     const c = document.createElement('canvas'); c.width = s.hero ? HERO_W : W; c.height = s.hero ? HERO_H : H;
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
@@ -455,7 +519,8 @@ export function createMonitors({ stations, onPick }) {
   }
   const INBOX_STALE = 36 * 3600e3; // older feed than this: fall back to the task screen
   function draw(m, t) {
-    const fn = m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? (m.work.pick ? drawPick : drawWork) : drawDesk;
+    if (m.s.id === NEEDS_ID) m.needs = needsList(mons, feedNeeds);
+    const fn = m.s.hero ? drawHero : m.s.id === NEEDS_ID ? drawNeeds : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? (m.work.pick ? drawPick : drawWork) : drawDesk;
     fn(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false;
   }
   function animated(m, d, focused) {
@@ -466,10 +531,11 @@ export function createMonitors({ stations, onPick }) {
     if (liveWork(m) && (d < 7 || focused)) return true;
     if (m.pickSent?.state === 'sending') return true;                 // stage pulse / indeterminate bar
     if (m.s.hero) return d < 10 || focused; // status dots / cursor
+    if (m.s.id === NEEDS_ID) return (d < 7 || focused) && !!m.needs?.open.length; // amber rows pulse up close
     if (m.refresh?.state === 'asked' && (d < 7 || focused)) return true; // "ASKED GROK..." dots
     return m.busy && (d < 7 || focused);    // blinking cursor while working, only up close
   }
-  let lastMinute = -1, nextAt = 0, board = null;
+  let lastMinute = -1, nextAt = 0, board = null, needsSig = '';
   return {
     // HQ #48: conference TV texture, redrawn when anyone's task / stage / % changes (and animated while you're near it)
     board({ x, z }) {
@@ -505,6 +571,7 @@ export function createMonitors({ stations, onPick }) {
     // live work feed (hq-link.fetchWorkFeed): { bots: { id: { step, file, lines[], thumbs:[{n,d}], images, at } } }
     setWork(feed) {
       const bots = (feed && feed.bots) || {};
+      feedNeeds = Array.isArray(feed?.needs) ? feed.needs : [];
       for (const m of mons.values()) {
         if (m.s.hero) continue;
         const wk = bots[m.s.id] || null, sig = wk ? JSON.stringify([wk.at, wk.step, wk.file, wk.lines, wk.stage, wk.pct, wk.steps, wk.task, wk.waiting, wk.pick && [wk.pick.id, wk.pick.done, wk.pick.picked], (wk.thumbs || []).map(x => x.n)]) : '';
@@ -541,6 +608,7 @@ export function createMonitors({ stations, onPick }) {
       if (inR(L.submit, 10)) return 'submit';
       const i = L.cells.findIndex(c => inR(c)); return i >= 0 && i < pk.options.length ? pk.options[i].k : null;
     },
+    needs: () => needsList(mons, feedNeeds),
     hasPick: id => { const m = mons.get(id); return !!(m && liveWork(m) && m.work.pick && !m.work.pick.done); },
     pickInfo: id => { const m = mons.get(id); return m?.work?.pick ? { title: m.work.pick.title, n: m.sel?.size || 0, done: m.work.pick.done } : null; },
     setPickHover(id, key) { for (const m of mons.values()) { const v = m.s.id === id ? key || null : null; if ((m.pickHover || null) !== v) { m.pickHover = v; m.dirty = true; } } },
@@ -578,10 +646,13 @@ export function createMonitors({ stations, onPick }) {
     tick(now, pos, focusedId) {
       if (now < nextAt) return; nextAt = now + FRAME_MS;
       const min = new Date().getMinutes(); const minuteTick = min !== lastMinute; lastMinute = min;
+      // HQ #53: Needs-you widget redraws when the shared list changes (any desk, pick, task or needs-chris item)
+      const nl = needsList(mons, feedNeeds), nsig = JSON.stringify([nl.open.map(r => [r.key, r.title, r.do]), nl.done.map(r => r.key + r.title)]);
+      if (nsig !== needsSig) { needsSig = nsig; const nm = mons.get(NEEDS_ID); if (nm) nm.dirty = true; }
       if (board) {
         const rows = boardRows(mons), pm = boardPickM(mons), near = Math.hypot(board.x - pos.x, board.z - pos.z) < 9;
-        const sig = JSON.stringify([rows, pm && [pm.psig, [...(pm.sel || [])], pm.pickSent, pm.work.pick.done, Object.values(pm.pickImgs || {}).filter(i => i?.complete).length, !!pm.pickSheet?.complete], board.hover]);
-        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now, pm, board.hover); board.tex.needsUpdate = true; }
+        const sig = JSON.stringify([rows, nl.open.length, pm && [pm.psig, [...(pm.sel || [])], pm.pickSent, pm.work.pick.done, Object.values(pm.pickImgs || {}).filter(i => i?.complete).length, !!pm.pickSheet?.complete], board.hover]);
+        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now, pm, board.hover, nl.open.length); board.tex.needsUpdate = true; }
       }
       for (const m of mons.values()) {
         const focused = m.s.id === focusedId, d = Math.hypot(m.s.x - pos.x, m.s.z - pos.z), near = focused || d < NEAR;
