@@ -31,6 +31,8 @@ const mat = c => { if (!matCache.has(c)) matCache.set(c, new THREE.MeshStandardM
 function hash(s) { let h = 2166136261; for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; }
 
 // Office cast models live in characters.js (HQ #46). Same rig shape as before, so all the animation below still applies.
+// seated idle bouts between typing stretches (HQ #70); per-person mix from characters.js `idle`
+const IDLE_STYLES = { default: ['lean', 'stretch', 'sip', 'phone'], boss: ['stretch', 'sip', 'lean', 'stretch'], lean: ['lean', 'sip', 'lean', 'stretch'], upright: ['upright', 'sip', 'upright'], snack: ['sip', 'lean', 'sip', 'stretch'], phone: ['phone', 'phone', 'sip', 'stretch'], slump: ['slump', 'sip', 'slump'] };
 function buildPerson(st) {
   return buildCharacter(st, { cupGeo: G.cup, phoneGeo: G.phone, cupMat: mat('#f2f2f0'), phoneMat: mat('#16181c') });
 }
@@ -123,7 +125,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     const seat = new THREE.Vector3(0, 0, dd / 2 + 0.3).applyMatrix4(st.group.matrixWorld);
     const approach = new THREE.Vector3(0, 0, dd / 2 + 1.25).applyMatrix4(st.group.matrixWorld);
     const w = { st, ...p, tag, seat, approach, x: 0, z: 0, yaw: Math.random() * 6.28, busy: false, task: '',
-      state: 'idle', path: null, after: null, timer: 0, phase: Math.random() * 6.28, act: 'think', actYaw: 0, sit: 0, speed: 0, sitPose: 0 };
+      seed: (hash(st.id) % 1000) / 1000, idleStyles: IDLE_STYLES[p.look?.idle] || IDLE_STYLES.default, state: 'idle', path: null, after: null, timer: 0, phase: Math.random() * 6.28, act: 'think', actYaw: 0, sit: 0, speed: 0, sitPose: 0 };
     workers.push(w);
   }
   const hero = stations.find(s => s.hero);
@@ -249,37 +251,75 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
         if (d > 0.01 && d < 0.55) { const px = w.x + dx / d * (0.55 - d) * dt * 3, pz = w.z + dz / d * (0.55 - d) * dt * 3; if (!blockedAt(px, pz, R - 0.08)) { w.x = px; w.z = pz; } }
       }
 
-      // ---------- pose ----------
+      // ---------- pose (HQ #70: elbows + knees, breathing, weight shift, seated idle bouts) ----------
       const sitT = w.state === 'work' ? 1 : 0; w.sit += (sitT - w.sit) * Math.min(1, dt * 4);
       const s = w.sit; w.phase += dt * (moving ? w.speed * 6.2 : 1.6);
-      const swing = moving ? Math.sin(w.phase) * 0.55 * Math.min(1, w.speed / WALK) : 0;
-      const breathe = Math.sin(t * 1.7 + w.phase * 0.1) * 0.015;
+      const walkAmt = moving ? Math.min(1, w.speed / WALK) : 0;
+      const swing = moving ? Math.sin(w.phase) * 0.55 * walkAmt : 0;
+      const breath = Math.sin(t * 1.7 + w.seed);
+      const breathe = breath * 0.015;
       w.root.position.set(w.x, groundY(w.x, w.z), w.z); w.root.rotation.y = w.yaw;
       w.body.position.y = (moving ? Math.abs(Math.cos(w.phase)) * 0.035 : 0) - s * 0.27;
       w.body.position.z = -s * 0.04;
-      w.legL.rotation.x = swing * (1 - s) + s * 1.45; w.legR.rotation.x = -swing * (1 - s) + s * 1.45;
-      let aLx = -swing * 0.9, aRx = swing * 0.9, aLz = 0.06, aRz = -0.06, hx = 0, hy = 0;
+      // standing still: slow weight shift from foot to foot (hips slide, the relaxed knee bends)
+      const still = (1 - walkAmt) * (1 - s);
+      const shift = Math.sin(t * 0.45 + w.seed * 3) * still;
+      w.body.position.x = shift * 0.018; w.body.rotation.z = shift * 0.012;
+      let kL = -Math.max(0, shift) * 0.16, kR = -Math.max(0, -shift) * 0.16;
+      let lLx = swing * (1 - s) + s * 1.45 - kL * 0.45, lRx = -swing * (1 - s) + s * 1.45 - kR * 0.45;
+      if (moving) { kL = -Math.max(0, Math.sin(w.phase + 1.6)) * 0.75 * walkAmt; kR = -Math.max(0, Math.sin(w.phase + 1.6 + Math.PI)) * 0.75 * walkAmt; }
+      kL = kL * (1 - s) - s * 1.4; kR = kR * (1 - s) - s * 1.4;
+      // spine: breathing, counter-sway, lean in to type / sit back during idle bouts
+      let spX = 0, spZ = -shift * 0.02;
+      if (moving) spX = -0.05 * walkAmt;
+      let aLx = -swing * 0.9, aRx = swing * 0.9, aLz = -0.07, aRz = 0.07, hx = 0, hy = 0;
+      let eL = 0.14 + (moving ? Math.max(0, -swing) * 0.5 : 0), eR = 0.14 + (moving ? Math.max(0, swing) * 0.5 : 0);
+      aLx += breath * 0.02 * still; aRx += breath * 0.02 * still;
       w.cup.visible = false; w.phone.visible = false;
       for (const e of w.extras || []) e.obj.visible = !(e.standOnly && s > 0.4); // Michael's mug goes on the desk when he sits
       if (w.state === 'act' && !moving) {
         const a = w.act;
-        if (a === 'water') { w.cup.visible = true; const sip = Math.max(0, Math.sin(t * 0.9 + w.phase)) ** 6; aRx = 0.9 + sip * 1.1; aRz = -0.15; hx = -sip * 0.3; }
-        else if (a === 'phone') { w.phone.visible = true; aRx = 1.25 + Math.sin(t * 3 + w.phase) * 0.04; aRz = -0.32; hx = 0.45; hy = 0.15; }
-        else if (a === 'think') { aRx = 1.7; aRz = -0.55; aLx = 0.5; aLz = 0.45; hx = -0.1 + Math.sin(t * 0.6) * 0.05; hy = Math.sin(t * 0.4 + w.phase) * 0.35; }
-        else if (a === 'window') { aLx = 0.1; aRx = 0.1; aLz = 0.28; aRz = -0.28; hy = Math.sin(t * 0.3 + w.phase) * 0.6; hx = -0.08; }
-        else if (a === 'chat') { const g = Math.sin(t * 2.3 + w.phase); aRx = 0.6 + Math.max(0, g) * 0.6; aRz = -0.2; hy = Math.sin(t * 0.7) * 0.15; hx = Math.sin(t * 2.1 + w.phase) * 0.06; }
+        if (a === 'water') { w.cup.visible = true; const sip = Math.max(0, Math.sin(t * 0.9 + w.phase)) ** 6; aRx = 0.45 + sip * 0.45; aRz = 0.05; eR = 1.1 + sip * 0.9; hx = -sip * 0.3; }
+        else if (a === 'phone') { w.phone.visible = true; aRx = 0.35 + Math.sin(t * 3 + w.phase) * 0.03; aRz = 0.35; eR = 2.45; hx = 0.1; hy = 0.15; aLx = 0.35; eL = 1.3; aLz = 0.25; }
+        else if (a === 'think') { aRx = 0.55; aRz = 0.08; eR = 2.05; aLx = 0.3; eL = 1.45; aLz = 0.3; hx = -0.1 + Math.sin(t * 0.6) * 0.05; hy = Math.sin(t * 0.4 + w.phase) * 0.35; } // hand on chin, other arm across
+        else if (a === 'window') { aLx = -0.3; aRx = -0.3; aLz = 0.1; aRz = -0.1; eL = 0.7; eR = 0.7; hy = Math.sin(t * 0.3 + w.phase) * 0.6; hx = -0.08; } // hands behind the back
+        else if (a === 'chat') { const g = Math.sin(t * 2.3 + w.phase); aRx = 0.3 + Math.max(0, g) * 0.45; aRz = 0.12; eR = 0.9 + Math.max(0, g) * 0.6; aLx = 0.1 + Math.max(0, -g) * 0.3; eL = 0.4 + Math.max(0, -g) * 0.6; hy = Math.sin(t * 0.7) * 0.15; hx = Math.sin(t * 2.1 + w.phase) * 0.06; }
       } else if (w.state === 'pause' && !moving) { hy = Math.sin(t * 0.8 + w.phase) * 0.5; }
-      if (s > 0.01) { // typing at the desk
+      w.cup.rotation.set(0, 0, 0);
+      if (s > 0.01) { // at the desk: type, then every so often an idle bout (sit back / stretch / sip / glance at phone)
         const k = t * 11 + w.phase;
-        const tl = 1.15 + Math.sin(k) * 0.05 * s, tr = 1.15 + Math.sin(k + 1.9) * 0.05 * s;
-        aLx = aLx * (1 - s) + tl * s; aRx = aRx * (1 - s) + tr * s; aLz = aLz * (1 - s) + 0.12 * s; aRz = aRz * (1 - s) - 0.12 * s;
+        const cyc = (t / 26 + w.seed) % 1, bout = Math.floor(t / 26 + w.seed);
+        const u = Math.min(1, Math.max(0, Math.min((cyc - 0.72) / 0.05, (1 - cyc) / 0.05))) * s; // 0 typing .. 1 idle bout
+        const typ = s * (1 - u);
+        const tl = 0.42 + Math.sin(k) * 0.05, tr = 0.42 + Math.sin(k + 1.9) * 0.05;
+        aLx = aLx * (1 - s) + tl * s; aRx = aRx * (1 - s) + tr * s; aLz = aLz * (1 - s) + 0.16 * s; aRz = aRz * (1 - s) - 0.16 * s;
+        eL = eL * (1 - s) + (1.0 + Math.sin(k * 0.5) * 0.04) * s; eR = eR * (1 - s) + (1.0 + Math.sin(k * 0.5 + 1) * 0.04) * s;
         hx = hx * (1 - s) + (0.12 + Math.sin(t * 0.5 + w.phase) * 0.04) * s; hy = hy * (1 - s) + Math.sin(t * 0.37 + w.phase) * 0.12 * s;
-        if (Math.sin(t * 0.21 + w.phase) > 0.93) hy += 0.35 * s; // glance away now and then
+        spX = spX * (1 - s) - 0.06 * typ; // lean in to the keyboard
+        if (Math.sin(t * 0.21 + w.phase) > 0.93) hy += 0.35 * typ; // glance away now and then
+        if (u > 0.001) {
+          const style = w.idleStyles[bout % w.idleStyles.length];
+          let bLx = 0.25, bRx = 0.25, bEL = 0.9, bER = 0.9, bLz = 0.2, bRz = -0.2, bSp = 0.1, bHx = -0.05, bHy = Math.sin(t * 0.5 + w.seed) * 0.5;
+          if (style === 'stretch') { const p = Math.min(1, Math.max(0, Math.sin((cyc - 0.72) / 0.28 * Math.PI)) * 1.4); bLx = 2.9 * p + 0.25 * (1 - p); bRx = bLx; bEL = 1.7 * p + 0.9 * (1 - p); bER = bEL; bLz = 0.35; bRz = -0.35; bSp = 0.14; bHx = -0.25 * p; bHy = 0; } // hands behind the head
+          else if (style === 'sip') { w.cup.visible = u > 0.5; const sp = Math.max(0, Math.sin(t * 0.8 + w.seed)) ** 4; bRx = 0.5 + sp * 0.4; bER = 1.3 + sp * 0.9; bRz = 0.02; bHx = -sp * 0.25; bHy *= 0.3; bSp = 0.04; }
+          else if (style === 'phone') { w.phone.visible = u > 0.5; bRx = 0.55; bER = 1.6; bLx = 0.55; bEL = 1.6; bRz = 0.15; bLz = -0.15; bHx = 0.35; bHy = 0; bSp = -0.02; } // scrolling a phone in both hands
+          else if (style === 'slump') { bSp = 0.16; bHx = 0.25; bHy *= 0.4; bLx = 0.1; bRx = 0.1; bEL = 0.6; bER = 0.6; }
+          else if (style === 'upright') { bSp = -0.02; bLx = 0.42; bRx = 0.42; bEL = 1.2; bER = 1.2; bLz = 0.3; bRz = -0.3; bHx = 0; bHy = Math.sin(t * 0.9 + w.seed) * 0.6; } // hands folded, scanning the room
+          aLx += (bLx - aLx) * u; aRx += (bRx - aRx) * u; eL += (bEL - eL) * u; eR += (bER - eR) * u; aLz += (bLz - aLz) * u; aRz += (bRz - aRz) * u;
+          spX += (bSp - spX) * u; hx += (bHx - hx) * u; hy += (bHy - hy) * u;
+          if (style === 'sip') w.cup.rotation.x = -(aRx + eR) + 0.2;
+        }
+        spX += breath * 0.012 * s;
       }
+      if (w.cup.visible && s < 0.5) w.cup.rotation.x = -(aRx + eR) + (w.act === 'water' ? 0.25 : 0);
+      for (const e of w.extras || []) if (e.upright && e.obj.visible) e.obj.rotation.x = -(aLx + eL);
+      w.spine.rotation.set(spX, 0, spZ);
+      w.torso.scale.set(1 + breath * 0.012, 1, 1 + breath * 0.02);
+      w.legL.rotation.x = lLx; w.legR.rotation.x = lRx; w.kneeL.rotation.x = kL; w.kneeR.rotation.x = kR;
       // glance at the player when they're close and we're not busy walking
       const pd = Math.hypot(player.pos.x - w.x, player.pos.z - w.z);
       if (pd < 2.6 && !moving) { const look = angTo(w.yaw, Math.atan2(-(player.pos.x - w.x), -(player.pos.z - w.z))); if (Math.abs(look) < 1.6) hy = hy * 0.3 + look * 0.7; }
-      w.armL.rotation.set(aLx, 0, aLz); w.armR.rotation.set(aRx, 0, aRz);
+      w.armL.rotation.set(aLx, 0, aLz); w.armR.rotation.set(aRx, 0, aRz); w.elbowL.rotation.x = eL; w.elbowR.rotation.x = eR;
       w.headG.rotation.set(-(hx + breathe), hy, 0); // hx > 0 = look down
       w.tag.position.y = 2.02 - s * 0.27;
       w.tag.material.opacity = (pd > 14 ? 0 : pd > 10 ? (14 - pd) / 4 : 1) * Math.max(0, 1 - s * 1.5); // seated: the desk screen says it
