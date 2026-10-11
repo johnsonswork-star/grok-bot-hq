@@ -319,14 +319,6 @@ for (const st of STATIONS) {
 
 // live desk monitors: Grok = HQ chat transcript, others = current task / idle (monitors.js)
 const monitors = createMonitors({ stations });
-// worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
-const workers = createWorkers({ scene, stations, colliders,
-  extraColliders: [-12.7, 12.7].map(cx => ({ minX: cx - 2.3, maxX: cx + 2.3, minZ: -5.45, maxZ: -5.35 })), onStatus: (s, busy, task, meta = {}) => {
-  const st = stations.find(x => x.id === s.id); if (!st) return;
-  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until);
-  if (panelOpen === st) showPanel(st);
-} });
-
 // pod dividers + carpets
 for (const cx of [-12.7, 12.7]) {
   box(4.6, 0.5, 0.05, M.divider, cx, 1.02, -5.4);
@@ -402,29 +394,88 @@ box(15, 0.006, 3.4, M.carpet, 0, 0.003, -11.3, scene, false);
   addCollider(-13, 12.8, 4, 1.1); addCollider(-15.7, 11.1, 1.1, 2.4);
   box(1.6, 0.05, 0.8, M.walnut, -12.8, 0.42, 10.8); box(1.4, 0.38, 0.6, M.steel, -12.8, 0.19, 10.8);
   addCollider(-12.8, 10.8, 1.6, 0.8);
-  // kitchenette along west wall
-  box(0.65, 0.9, 4, M.white, -19.55, 0.45, 8.5); box(0.7, 0.04, 4.05, M.walnut, -19.55, 0.92, 8.5);
-  box(0.4, 0.8, 4, M.white, -19.7, 2.1, 8.5);
-  box(0.7, 1.9, 0.8, M.steel, -19.55, 0.95, 5.9);
-  addCollider(-19.55, 7.9, 0.7, 5.2);
+  // kitchenette along west wall: cabinets with doors, sink, coffee machine, stainless fridge (reads as a kitchen, not a counter)
+  {
+    const kx = -19.55, kz = 8.5, cab = std('#e9e6e0', 0.6), seam = std('#9a948b', 0.8), handle = std('#b8bcc2', 0.3, 0.8);
+    box(0.65, 0.86, 4, cab, kx, 0.45, kz); box(0.7, 0.04, 4.05, M.walnut, kx, 0.9, kz);
+    box(0.08, 0.1, 4, std('#3a3a3a', 0.9), kx + 0.3, 0.05, kz, scene, false); // toe kick
+    for (let i = 0; i < 5; i++) { const z = kz - 2 + 0.4 + i * 0.8;
+      box(0.012, 0.74, 0.012, seam, kx + 0.33, 0.48, z + 0.4, scene, false);
+      box(0.02, 0.14, 0.025, handle, kx + 0.345, 0.72, z + 0.3, scene, false); }
+    // sink + faucet
+    box(0.42, 0.02, 0.6, std('#c9ccd0', 0.25, 0.8), kx + 0.02, 0.925, kz + 0.9, scene, false);
+    box(0.04, 0.3, 0.04, handle, kx - 0.22, 1.07, kz + 0.9, scene, false); box(0.18, 0.04, 0.04, handle, kx - 0.14, 1.21, kz + 0.9, scene, false);
+    // coffee machine + mugs
+    box(0.32, 0.42, 0.3, std('#1d1d1f', 0.4, 0.3), kx - 0.05, 1.13, kz - 0.9);
+    box(0.02, 0.1, 0.16, std('#e8a33d', 0.5), kx + 0.115, 1.2, kz - 0.9, scene, false);
+    for (const [dz, c] of [[-0.35, '#c7764f'], [-0.2, '#4a7fb5']]) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.1, 12), std(c, 0.6)); m.position.set(kx + 0.1, 0.97, kz + dz); scene.add(m); }
+    // upper cabinets with doors
+    box(0.4, 0.8, 4, cab, -19.7, 2.1, kz);
+    for (let i = 0; i < 5; i++) { const z = kz - 2 + i * 0.8;
+      if (i) box(0.012, 0.76, 0.012, seam, -19.49, 2.1, z, scene, false);
+      box(0.02, 0.12, 0.025, handle, -19.48, 1.82, z + 0.65, scene, false); }
+    // stainless fridge with door split + handles
+    const fx = -19.5, fz = 5.9, ss = std('#c3c7cc', 0.35, 0.7);
+    box(0.75, 1.95, 0.85, ss, fx, 0.975, fz);
+    box(0.012, 1.95, 0.012, seam, fx + 0.38, 0.975, fz, scene, false);
+    box(0.04, 0.9, 0.04, std('#6b6f75', 0.3, 0.8), fx + 0.4, 1.15, fz - 0.07, scene, false);
+    box(0.04, 0.9, 0.04, std('#6b6f75', 0.3, 0.8), fx + 0.4, 1.15, fz + 0.07, scene, false);
+    addCollider(-19.55, 7.9, 0.75, 5.2);
+  }
   plant(-19, 13, 1.3); plant(-10.2, 13.2, 1);
 }
 
 // extra greenery near windows and pods
-// water cooler on the back wall (workers stop here when idle)
-function waterCooler(x, z) {
-  const g = new THREE.Group(); g.position.set(x, 0, z);
-  const body = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 });
-  const water = new THREE.MeshStandardMaterial({ color: 0x5fb4ff, transparent: true, opacity: 0.6, roughness: 0.1 });
-  box(0.42, 1.0, 0.42, body, 0, 0.5, 0, g);
-  box(0.12, 0.06, 0.04, new THREE.MeshStandardMaterial({ color: 0x2266cc }), -0.08, 0.82, 0.23, g);
-  box(0.12, 0.06, 0.04, new THREE.MeshStandardMaterial({ color: 0xcc2222 }), 0.08, 0.82, 0.23, g);
-  const jug = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.42, 16), water); jug.position.y = 1.23; g.add(jug);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 0.08, 12), water); neck.position.y = 1.02; g.add(neck);
-  scene.add(g); addCollider(x, z, 0.5, 0.5);
+// water cooler on the west wall between the plants, near the window corner (where Chris asked for it; workers stop here when idle)
+// classic office cooler: white cabinet, big blue jug upside-down on top, blue/red taps, drip tray, paper-cup tube + bin
+const COOLER = { x: -19.45, z: -5.2 };
+function waterCooler(x, z, ry = Math.PI / 2) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; // local +z = front (faces into the room)
+  const white = std('#f4f5f7', 0.45), grey = std('#9aa0a6', 0.5), dark = std('#2b2f33', 0.6);
+  const jugMat = new THREE.MeshPhysicalMaterial({ color: '#3d9bff', roughness: 0.08, metalness: 0, transparent: true, opacity: 0.82, clearcoat: 1 });
+  // cabinet
+  box(0.36, 0.98, 0.34, white, 0, 0.49, 0, g);
+  box(0.37, 0.05, 0.35, grey, 0, 0.025, 0, g);                       // base
+  box(0.38, 0.03, 0.36, white, 0, 1.0, 0, g);                         // top lip
+  box(0.26, 0.26, 0.02, dark, 0, 0.78, 0.171, g, false);              // recessed tap panel
+  box(0.24, 0.02, 0.08, grey, 0, 0.66, 0.2, g, false);                // drip tray
+  box(0.05, 0.06, 0.06, std('#1e6fe0', 0.4), -0.06, 0.84, 0.2, g, false); // cold tap
+  box(0.05, 0.06, 0.06, std('#d8312b', 0.4), 0.06, 0.84, 0.2, g, false);  // hot tap
+  box(0.2, 0.004, 0.004, grey, 0, 0.42, 0.171, g, false);             // door seam
+  // jug: upside-down 5-gallon bottle with shoulders, ribs and a neck into the cabinet
+  const jug = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.34, 28), jugMat); jug.position.y = 1.33; g.add(jug);
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.15, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), jugMat); top.position.y = 1.5; g.add(top);
+  const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.055, 0.1, 28), jugMat); shoulder.position.y = 1.11; g.add(shoulder);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 16), jugMat); neck.position.y = 1.04; g.add(neck);
+  for (const y of [1.24, 1.42]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.152, 0.008, 6, 28), jugMat); r.rotation.x = Math.PI / 2; r.position.y = y; g.add(r); }
+  const label = new THREE.Mesh(new THREE.CylinderGeometry(0.153, 0.153, 0.07, 28, 1, true, -0.9, 1.8), std('#ffffff', 0.6)); label.position.y = 1.33; g.add(label);
+  // paper-cup dispenser tube on the side, with a cup sticking out the bottom
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.36, 14), new THREE.MeshPhysicalMaterial({ color: '#dfe7ee', transparent: true, opacity: 0.55, roughness: 0.1 }));
+  tube.position.set(0.23, 0.72, 0.05); g.add(tube);
+  box(0.06, 0.03, 0.04, grey, 0.2, 0.72, 0.05, g, false);
+  const cupMat = std('#ffffff', 0.7);
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.07, 14), cupMat); cup.position.set(0.23, 0.505, 0.05); g.add(cup);
+  // couple of cups on the drip tray + a small bin
+  for (const dx of [-0.05, 0.07]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.022, 0.065, 12), cupMat); c.position.set(dx, 0.705, 0.2); g.add(c); }
+  const bin = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.36, 18), grey); bin.position.set(-0.36, 0.18, 0.02); bin.castShadow = true; g.add(bin);
+  // little "WATER" sign above it so it reads from across the room
+  const sign = canvasTex(256, 96, (c, w, h) => { roundRect(c, 4, 4, w - 8, h - 8, 18); c.fillStyle = '#1e6fe0'; c.fill(); c.fillStyle = '#fff'; c.font = '800 44px system-ui,Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('💧 WATER', w / 2, h / 2 + 2); });
+  const sm = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.19), new THREE.MeshBasicMaterial({ map: sign, transparent: true, toneMapped: false }));
+  sm.position.set(0, 2.0, -0.24); g.add(sm);
+  scene.add(g); addCollider(x, z, 1.0, 0.6, ry);
 }
-waterCooler(13.5, -12.7);
+waterCooler(COOLER.x, COOLER.z);
 for (const [x, z, s] of [[-19, -13, 1.4], [19, -13, 1.4], [-9.5, -12.8, 1], [9.5, -12.8, 1], [-17.5, -8.5, 1.1], [17.5, -8.5, 1.1], [-3, 2.8, 0.9], [3, 2.8, 0.9], [19, 0, 1.2], [-19, -2, 1.1]]) plant(x, z, s);
+
+// (created after every prop so their nav grid knows about plants, lounge, kitchen, cooler, conference room)
+// worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
+const workers = createWorkers({ scene, stations, colliders,
+  extraColliders: [-12.7, 12.7].map(cx => ({ minX: cx - 2.3, maxX: cx + 2.3, minZ: -5.45, maxZ: -5.35 })), onStatus: (s, busy, task, meta = {}) => {
+  const st = stations.find(x => x.id === s.id); if (!st) return;
+  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until);
+  if (panelOpen === st) showPanel(st);
+} });
+
 
 // ---------- player ----------
 const player = { pos: new THREE.Vector3(0, 0, 12.4), yaw: 0, pitch: 0, radius: 0.3, travel: null };
@@ -633,13 +684,52 @@ function nextStation(dir = 1) {
 // ---------- HQ chat ----------
 // Grab what Chris is looking at (3D view only, no HUD/chat) as a small JPEG data URL for HQ chat.
 // Renders a fresh frame and copies it in the same task, so no preserveDrawingBuffer is needed. Returns null on any failure.
+// Where Chris is + which way he faces, burned into the HQ shot (text banner + mini floor map). North = -z (north window wall), east = +x.
+function whereAmI() {
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  const heading = ((Math.atan2(fx, -fz) * 180 / Math.PI) + 360) % 360; // 0 = north, 90 = east
+  const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+  const facing = dirs[Math.round(heading / 45) % 8];
+  const near = stations.map(s => ({ s, d: Math.hypot(s.x - player.pos.x, s.z - player.pos.z) })).sort((a, b) => a.d - b.d)[0];
+  const { x, z } = player.pos;
+  const area = Math.hypot(x - COOLER.x, z - COOLER.z) < 3 ? 'by the water cooler' : x < -9 && z > 6 ? 'lounge / kitchen' : x > 8 && z > 4 ? 'conference room'
+    : z > 6 ? 'reception / entrance' : z < -10 ? 'north window side' : x < -9 ? 'west side' : x > 9 ? 'east side' : 'middle of the floor';
+  return { x, z, heading, facing, area, near: near && near.d < 4 ? near : null };
+}
+function stampWhere(g, w, h) {
+  const p = whereAmI(), k = Math.max(0.6, w / 1280);
+  const line1 = `📍 Chris at x ${p.x.toFixed(1)}, z ${p.z.toFixed(1)} · facing ${p.facing} (${Math.round(p.heading)}°)`;
+  const line2 = `${p.area}${p.near ? ` · near ${p.near.s.name}'s desk (${p.near.d.toFixed(1)} m)` : ''} · north = window wall`;
+  g.font = `600 ${Math.round(22 * k)}px system-ui,Arial`;
+  const bw = Math.max(g.measureText(line1).width, g.measureText(line2).width) + 28 * k, bh = 66 * k;
+  g.fillStyle = 'rgba(0,0,0,.62)'; roundRect(g, 10 * k, 10 * k, bw, bh, 10 * k); g.fill();
+  g.fillStyle = '#fff'; g.textBaseline = 'top'; g.textAlign = 'left';
+  g.fillText(line1, 24 * k, 18 * k);
+  g.fillStyle = '#ffd59a'; g.font = `500 ${Math.round(19 * k)}px system-ui,Arial`; g.fillText(line2, 24 * k, 44 * k);
+  // mini floor map (top-down, north up): room 40 x 28, desks, cooler, Chris + view cone
+  const mw = 220 * k, mh = mw * D / W, mx = w - mw - 12 * k, my = 30 * k, sx = mw / W, sz = mh / D;
+  const P = (x, z) => [mx + (x - X0) * sx, my + (z - Z0) * sz];
+  g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(mx - 6 * k, my - 6 * k, mw + 12 * k, mh + 12 * k);
+  g.fillStyle = '#d9c6a8'; g.fillRect(mx, my, mw, mh);
+  g.fillStyle = '#7fc4ff'; g.fillRect(mx, my, mw, 3 * k); g.fillRect(mx + mw - 3 * k, my, 3 * k, mh); // windows N + E
+  g.fillStyle = '#c7764f'; g.fillRect(mx, my + (1 - Z0) * sz, 3 * k, 10 * sz);                     // west accent wall
+  g.strokeStyle = 'rgba(80,110,140,.8)'; g.lineWidth = 1.5 * k; g.strokeRect(...P(8, 4), (X1 - 8) * sx, (Z1 - 4) * sz); // conference
+  for (const s of stations) { const [a, b] = P(s.x, s.z); g.fillStyle = s.color; g.fillRect(a - 3 * k, b - 3 * k, 6 * k, 6 * k); }
+  { const [a, b] = P(COOLER.x, COOLER.z); g.fillStyle = '#1e6fe0'; g.beginPath(); g.arc(a + 3 * k, b, 4 * k, 0, 7); g.fill(); }
+  const [px, pz] = P(p.x, p.z), ang = Math.atan2(-Math.cos(player.yaw), -Math.sin(player.yaw)); // canvas angle of facing
+  g.fillStyle = 'rgba(255,230,120,.45)'; g.beginPath(); g.moveTo(px, pz); g.arc(px, pz, 34 * k, ang - 0.6, ang + 0.6); g.closePath(); g.fill();
+  g.fillStyle = '#ff3b30'; g.strokeStyle = '#fff'; g.lineWidth = 2 * k; g.beginPath(); g.arc(px, pz, 5 * k, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = '#fff'; g.font = `700 ${Math.round(13 * k)}px system-ui,Arial`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+  g.fillText('N (windows)', mx + mw / 2, my - 7 * k);
+}
 function snapshot(maxW = 1280, q = 0.7) {
   try {
     renderer.render(scene, camera);
     const src = renderer.domElement, sc = Math.min(1, maxW / src.width);
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(src.width * sc)); c.height = Math.max(1, Math.round(src.height * sc));
-    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    const g = c.getContext('2d'); g.drawImage(src, 0, 0, c.width, c.height);
+    try { stampWhere(g, c.width, c.height); } catch (e) {} // position/facing overlay is a bonus; the shot still goes without it
     const url = c.toDataURL('image/jpeg', q);
     return /^data:image\/jpeg;base64,/.test(url) && url.length > 2000 ? url : null;
   } catch (e) { return null; }
