@@ -155,3 +155,13 @@ Mark bots from the box: `tools/set-busy.sh builder "Ship login fix" [minutes]`, 
 
 ## Live reload
 `deploy.sh` writes `version.json` with a build id. The open office polls it every 20 s; on a new build it waits until no HQ message is sending and you aren't typing, then reloads and restores your spot, view, open chat, and draft text. Pages files are revalidated by the service worker (no 10-minute stale cache).
+
+## Live desk monitors (monitors.js)
+- **Grok Bot's monitor** = the HQ chat, live: your messages and Grok Bot/team replies, newest at the bottom, auto-scrolling, with a footer ("Grok Bot is on it (#n)…", "Waiting for your next message").
+- **Every other monitor** = that bot's real status from `tasks.json`: **WORKING** + task text + "at desk N min" (+ "until" time), or **Idle · roaming the floor**. Nothing invented.
+- Look at a desk and press **A / E** to open its panel: the monitor is shown full-size there (same live canvas).
+- **Where the chat feed comes from (privacy):** no public transcript. The monitor mirrors this device's own HQ chat log (localStorage) plus replies pulled from the end-to-end encrypted ntfy relay (decrypted on the iPad). The app now polls for replies every 15 s even with the chat closed, so the monitor updates while you play.
+- **Bridge wiring:** when `tools/hq-bridge.mjs` files a new HQ message as an issue, it sends an encrypted `ack` (issue #) to the sending iPad; the chat shows "#n" and Grok's monitor shows "Grok Bot is on it (#n)". Replies via `tools/hq-inbox.sh reply` arrive the same encrypted way and appear on the monitor within ~15 s.
+- Other bots: `tools/set-busy.sh <id> "task" [minutes]` (now also records `since`) → their monitor flips to WORKING within ~1–2 min.
+- iPad perf: screens redraw only on change or ≤3 fps (cursor/scroll), and only for desks within ~16 m of you.
+- Limitation: transcript is per device (another device shows its own HQ history).

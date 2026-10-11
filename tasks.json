@@ -1,6 +1,9 @@
 {
   "_how": "Which bots are on a task right now. Busy bots walk to their desk and type; everyone else roams the floor. Key = station id from stations.js. Value = task text, or {\"task\": \"...\", \"until\": \"2026-10-10T22:00:00-05:00\"} to auto-clear. Delete the key to set a bot idle. Update with tools/set-busy.sh.",
   "busy": {
-    "grok": "HQ chat on duty"
+    "grok": {
+      "task": "HQ chat on duty",
+      "since": "2026-10-11T00:57:22.045Z"
+    }
   }
 }

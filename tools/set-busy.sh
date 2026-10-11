@@ -17,7 +17,8 @@ const ids=(fs.readFileSync("stations.js","utf8").match(/id:\s*"?\x27?([a-z]+)/g)
 if(id==="list"){for(const[k,v]of Object.entries(j.busy))console.log(k+": "+(typeof v==="string"?v:JSON.stringify(v)));process.exit(0)}
 if(!ids.includes(id)){console.error("unknown id "+id+" (use: "+ids.join(" ")+")");process.exit(2)}
 if(!task||task==="off"||task==="idle")delete j.busy[id];
-else j.busy[id]=mins?{task,until:new Date(Date.now()+mins*60000).toISOString()}:task;
+else { const prev=j.busy[id], keep=prev&&(typeof prev==="string"?prev:prev.task)===task&&prev.since; // since = when the desk screen says they sat down
+  j.busy[id]={task,since:keep||new Date().toISOString(),...(mins?{until:new Date(Date.now()+mins*60000).toISOString()}:{})}; }
 fs.writeFileSync("tasks.json",JSON.stringify(j,null,2)+"\n");console.log(id+" -> "+(j.busy[id]?JSON.stringify(j.busy[id]):"idle"));
 ' "$@"
 [ "$1" = "list" ] && exit 0

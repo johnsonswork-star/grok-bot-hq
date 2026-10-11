@@ -76,7 +76,8 @@ export async function fetchReplies() {
       try {
         const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
         const p = await open(JSON.parse(m.message), d.priv);
-        out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at });
+        if (p.type === 'ack') out.push({ type: 'ack', id: p.id, mid: p.mid, issue: p.issue, at: p.at }); // bridge: filed as issue #n
+        else out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at });
       } catch (e) {}
     }
   } catch (e) {}

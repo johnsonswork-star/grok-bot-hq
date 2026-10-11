@@ -188,10 +188,10 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     w.state = 'walk'; w.free = true; w.path = [[w.approach.x, w.approach.z]]; w.after = () => { w.free = false; chooseIdle(w); };
   }
 
-  function applyBusy(w, busy, task) {
+  function applyBusy(w, busy, task, meta = {}) {
     const was = w.busy; w.busy = busy; w.task = busy ? task || 'On a task' : '';
     w.tag.userData.draw(busy);
-    if (was !== busy || onStatus) onStatus?.(w.st, busy, w.task);
+    if (was !== busy || onStatus) onStatus?.(w.st, busy, w.task, meta);
     if (was === busy) return;
     if (busy) goToDesk(w);
     else if (w.state === 'work' || (w.after && w.free)) leaveDesk(w);
@@ -208,13 +208,14 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
       const id = w.st.id;
       let entry = override.has(id) ? override.get(id) : fileBusy[id];
       if (urlBusy.includes(id) || urlBusy.includes('all')) entry = entry || 'Test task (URL ?busy=)';
-      let busy = false, task = '';
+      let busy = false, task = '', meta = {};
       if (entry) {
         if (typeof entry === 'string') { busy = true; task = entry; }
-        else if (typeof entry === 'object') { busy = entry.busy !== false && !(entry.until && Date.parse(entry.until) < now); task = entry.task || ''; }
+        else if (typeof entry === 'object') { busy = entry.busy !== false && !(entry.until && Date.parse(entry.until) < now); task = entry.task || ''; meta = { since: entry.since, until: entry.until }; }
         else busy = !!entry;
       }
-      if (busy !== w.busy || task !== w.task) applyBusy(w, busy, task);
+      const mk = JSON.stringify(meta);
+      if (busy !== w.busy || task !== w.task || mk !== w.metaKey) { w.metaKey = mk; applyBusy(w, busy, task, meta); }
     }
   }
   async function poll() {

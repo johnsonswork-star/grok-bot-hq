@@ -2,6 +2,7 @@ import { createChat } from './chat.js';
 import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
 import { createWorkers } from './workers.js';
+import { createMonitors } from './monitors.js';
 import { startLiveReload, takeResume } from './live.js';
 
 // ---------- device detection ----------
@@ -316,11 +317,13 @@ for (const st of STATIONS) {
   stations.push({ ...st, group: g, screen, frame, plate, bounds, stand, yaw, center: new THREE.Vector3(st.x, 1, st.z) });
 }
 
+// live desk monitors: Grok = HQ chat transcript, others = current task / idle (monitors.js)
+const monitors = createMonitors({ stations });
 // worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
 const workers = createWorkers({ scene, stations, colliders,
-  extraColliders: [-12.7, 12.7].map(cx => ({ minX: cx - 2.3, maxX: cx + 2.3, minZ: -5.45, maxZ: -5.35 })), onStatus: (s, busy, task) => {
+  extraColliders: [-12.7, 12.7].map(cx => ({ minX: cx - 2.3, maxX: cx + 2.3, minZ: -5.45, maxZ: -5.35 })), onStatus: (s, busy, task, meta = {}) => {
   const st = stations.find(x => x.id === s.id); if (!st) return;
-  st.busy = busy; st.task = task; setScreenStatus(st, busy, task);
+  st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until);
   if (panelOpen === st) showPanel(st);
 } });
 
@@ -582,7 +585,7 @@ function setFocus(s) {
   focused = s;
   ui.reticle.classList.toggle('hot', !!s);
   ui.focus.classList.toggle('show', !!s);
-  if (s) { s.frame.visible = true; s.plate.scale.copy(s.plate.userData.baseScale).multiplyScalar(1.15); ui.focus.textContent = `${s.name}  ·  A / E to open`; }
+  if (s) { s.frame.visible = true; s.plate.scale.copy(s.plate.userData.baseScale).multiplyScalar(1.15); ui.focus.textContent = `${s.name}  ·  A / E to view screen`; }
 }
 let lastDesk = null;
 function interact() {
@@ -598,10 +601,14 @@ function showPanel(s) {
     : `<b style="color:#7CFC9A">● Idle</b>: out on the floor, ready for a task`;
   ui.panel.innerHTML = `<h2><span class="sw" style="background:${s.color}"></span>${s.name}</h2>
     <p>${s.role}</p><p>${status}</p>
+    <div class="screenwrap"></div>
     <small>Hold View (or Enter) to message this bot via Grok Bot + team. B / Q / A to close.</small>`;
+  // the desk's live monitor, full size and readable (same canvas the 3D screen uses, so it keeps updating)
+  const cv = monitors.canvas(s.id); if (cv) { cv.className = 'deskscreen'; ui.panel.querySelector('.screenwrap').appendChild(cv); }
+  ui.panel.classList.toggle('wide', !!s.hero);
   ui.panel.style.display = 'block';
 }
-function closePanel() { panelOpen = null; ui.panel.style.display = 'none'; }
+function closePanel() { panelOpen = null; ui.panel.style.display = 'none'; ui.panel.querySelector('canvas')?.remove(); }
 let stationIdx = -1;
 function nextStation(dir = 1) {
   if (paused) return;
@@ -624,7 +631,7 @@ function snapshot(maxW = 1280, q = 0.7) {
     return /^data:image\/jpeg;base64,/.test(url) && url.length > 2000 ? url : null;
   } catch (e) { return null; }
 }
-const chat = createChat({ stations, snapshot, onOpenChange: o => {
+const chat = createChat({ stations, snapshot, onLog: entries => monitors.setLog(entries), onOpenChange: o => {
   if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
 } });
 // who you talk to: open panel > desk you're looking at > last desk you used > Grok Bot
@@ -704,6 +711,7 @@ function tick() {
   camera.rotation.set(player.pitch, player.yaw, 0);
   workers.update(dt, clock.elapsedTime, player);
   setFocus(paused ? null : findFocus());
+  monitors.tick(performance.now(), player.pos, (panelOpen || focused)?.id);
   for (const s of stations) { // fade nearby plates you aren't looking at so they don't stack up
     const d = Math.hypot(s.x - player.pos.x, s.z - player.pos.z);
     s.plate.material.opacity = s === focused || d > 3.2 ? 1 : 0.25 + 0.75 * Math.max(0, (d - 1.5) / 1.7);
@@ -736,7 +744,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers };
+window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

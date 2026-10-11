@@ -5,7 +5,7 @@ const LOG = 'hq.chatLog';
 const CHIPS = ['Status update?', "What's next today?", 'Anything need me?', 'Good work, team'];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function createChat({ stations, onOpenChange, snapshot }) {
+export function createChat({ stations, onOpenChange, snapshot, onLog }) {
   const el = document.getElementById('chat');
   const $ = s => el.querySelector(s);
   const log = $('.log'), input = $('input'), sel = $('select'), chipsEl = $('.chips'), status = $('.cstatus');
@@ -20,12 +20,13 @@ export function createChat({ stations, onOpenChange, snapshot }) {
   function render() {
     log.innerHTML = entries.length ? entries.map(m => {
       if (m.kind === 'me') return `<div class="msg me"><div class="who">You → ${esc(m.to)}</div><div class="txt">${esc(m.text)}</div>
-        <div class="st ${m.status}">${m.status === 'delivered' ? '✓ Delivered to Grok Bot &amp; team' + shotNote(m)
+        <div class="st ${m.status}">${m.status === 'delivered' ? '✓ Delivered to Grok Bot &amp; team' + (m.issue ? ` · #${m.issue}` : '') + shotNote(m)
           : m.status === 'sending' ? 'Sending…' + (m.shot === 'on' ? ' 📸' : '')
           : `<a href="#" class="retry" data-at="${m.at}">⚠ Not sent (no signal?). Tap to retry</a>`}</div></div>`;
       return `<div class="msg bot"><div class="who">${esc(m.from)}</div><div class="txt">${esc(m.text)}</div></div>`;
     }).join('') : `<div class="empty">Messages go straight to Grok Bot and the team. Replies show up here.</div>`;
     log.scrollTop = log.scrollHeight;
+    try { onLog?.(entries); } catch (e) {} // Grok Bot's desk monitor mirrors this log live
     status.innerHTML = link.isLinked() ? '<span class="ok">● Live to Grok Bot + team (encrypted)</span>'
       : '<span class="warn">● This browser can\'t encrypt messages. Update iPadOS / Safari</span>';
   }
@@ -57,7 +58,10 @@ export function createChat({ stations, onOpenChange, snapshot }) {
   async function poll() {
     const replies = await link.fetchReplies();
     let added = false;
-    for (const r of replies) if (!entries.some(e => e.kind === 'bot' && e.id === r.id)) { entries.push({ kind: 'bot', ...r }); added = true; }
+    for (const r of replies) {
+      if (r.type === 'ack') { const m = entries.find(e => e.kind === 'me' && e.ref === r.mid); if (m && m.issue !== r.issue) { m.issue = r.issue; added = true; } continue; }
+      if (!entries.some(e => e.kind === 'bot' && e.id === r.id)) { entries.push({ kind: 'bot', ...r }); added = true; }
+    }
     if (added) { entries.sort((a, b) => (new Date(a.at)) - (new Date(b.at))); save(); render(); }
   }
   function show(s) {
@@ -83,6 +87,9 @@ export function createChat({ stations, onOpenChange, snapshot }) {
     if (gp.R[1]) log.scrollTop += gp.R[1] * 14;
   }
   render();
+  // background poll (cheap ntfy read, only while the app is visible) so replies reach the desk monitor without opening chat
+  poll(); setInterval(() => { if (!open && !document.hidden) poll(); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
   return { show, close, toggle: s => (open ? close() : show(s)), isOpen: () => open, pad, isTyping: () => document.activeElement === input,
     // live reload: never reload mid-send; carry the draft + who you were talking to across the reload
     isSending: () => entries.some(m => m.kind === 'me' && m.status === 'sending'),

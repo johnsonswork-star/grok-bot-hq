@@ -166,9 +166,21 @@ async function handle(m, priv, st) {
   const evt = { source: 'grok-bot-hq', event: 'hq-chat', issue: +url.split('/').pop(), url, to, text, ts: p.ts, filedAt: new Date().toISOString(),
     ...(shot ? { shot: shot.file } : {}) };
   try { fs.appendFileSync(`${DIR}/queue.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
+  await sendAck(p, evt.issue);
   await fireWebhook(evt);
   await fireEmail(evt);
   await fireSlack(evt);
+}
+
+// Tell the sending iPad its message was filed (issue #n), encrypted to that device only. The iPad's chat shows "#n"
+// and Grok Bot's desk monitor flips to "Grok Bot is on it (#n)". Nothing is published in plaintext.
+async function sendAck(p, issue) {
+  const d = p.device; if (!d?.topic || !d?.pub || !issue) return;
+  try {
+    const r = await fetch(`${RELAY}/${d.topic}`, { method: 'POST', signal: AbortSignal.timeout(10000),
+      body: JSON.stringify(await seal({ type: 'ack', id: 'ack-' + p.mid, mid: p.mid, issue, at: new Date().toISOString() }, d.pub)) });
+    log('ack issue', issue, 'to device', d.id, r.status);
+  } catch (e) { log('ack error', e.message); }
 }
 
 async function once(since = '12h') {
