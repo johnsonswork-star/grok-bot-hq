@@ -34,7 +34,7 @@ export function append(e) {
   if (all.length > 2000) fs.writeFileSync(LOG, all.slice(-1500).concat(e).map(x => JSON.stringify(x)).join('\n') + '\n', { mode: 0o600 }); // trim
   return true;
 }
-const who = id => { const s = st(id); return s ? { who: id, name: s.name, bot: s.bot } : { who: 'grok', name: 'Michael Scott', bot: 'Grok Bot' }; };
+export const who = id => { const s = st(id); return s ? { who: id, name: s.name, bot: s.bot } : { who: 'grok', name: 'Michael Scott', bot: 'Grok Bot' }; };
 
 // ---------- cheap writer for small talk: FREE models only, else the built-in lines ----------
 function env() {
@@ -43,14 +43,14 @@ function env() {
   return { orKey: g('OPENROUTER_API_KEY'), orModel: g('OFFICE_MODEL') || g('BANTER_MODEL'), gemKey: g('GEMINI_API_KEY') || g('GOOGLE_API_KEY'), gemModel: g('GEMINI_MODEL') || 'gemini-flash-lite-latest' };
 }
 const isFree = m => m === 'openrouter/free' || /:free$/.test(m);
-const BIO = { grok: 'Michael Scott, needy goofy boss', inbox: 'Pam Beesly, kind receptionist', cos: 'Jim Halpert, deadpan prankster', assist: 'Dwight Schrute, intense beet farmer',
+export const BIO = { grok: 'Michael Scott, needy goofy boss', inbox: 'Pam Beesly, kind receptionist', cos: 'Jim Halpert, deadpan prankster', assist: 'Dwight Schrute, intense beet farmer',
   icons: 'Andy Bernard, eager Cornell a cappella guy', onpad: 'Phyllis Vance, sweet, Bob Vance\'s wife', builder: 'Stanley Hudson, grumpy, crosswords', faith: 'Angela Martin, uptight cat lady',
   broker: 'Oscar Martinez, smart, "actually"', conn: 'Kevin Malone, slow, loves food', review: 'Creed Bratton, bizarre shady past', kids: 'Meredith Palmer, party girl',
   designer: 'Kelly Kapoor, fast-talking gossip', profile: 'Toby Flenderson, sad apologetic HR guy' };
-async function freeLine(bot, text) {
+export async function freeLine(bot, text, ctx = '') {
   const c = env(); if (!c.orKey && !c.gemKey) return null;
   const prompt = `You are ${BIO[bot] || BIO.inbox} from The Office (US), working at a cozy virtual Dunder Mifflin office. Your boss's boss Chris (the owner) just said in the office chat: "${clip(text, 200)}". ` +
-    `Reply with ONE short, friendly, PG, in-character line (under 22 words). Do not promise to do any real work, send anything, or make decisions; that is Michael's job. Reply with the line only.`;
+    `Reply with ONE short, friendly, PG, in-character line (under 22 words). Do not promise to do any real work, send anything, or make decisions; that is Michael's job. Reply with the line only.` + (ctx ? `\n${ctx}` : '');
   try {
     if (c.orKey) {
       for (const model of [...new Set([c.orModel, 'openrouter/free', 'google/gemma-4-31b-it:free'])].filter(m => m && isFree(m))) {
@@ -83,7 +83,7 @@ export async function reply(text, tri, p = {}) {
   return [{ bot, text: f?.text || R.casualLine(bot, text, seed), via: f?.via || 'built-in' }];
 }
 
-async function toDevice(d, msg) {
+export async function toDevice(d, msg) {
   if (!d?.topic || !d?.pub) return false;
   try { const r = await fetch(`${RELAY}/${d.topic}`, { method: 'POST', body: JSON.stringify(await seal(msg, d.pub)), signal: AbortSignal.timeout(10000) }); return r.ok; } catch { return false; }
 }
@@ -129,7 +129,7 @@ export function noteReply({ id, issue, from, text, at }) {
 }
 
 // ---------- publisher: newest lines -> each device's `<topic>_chat` (encrypted) ----------
-let dirty = true; const bump = () => { dirty = true; };
+let dirty = true; export const bump = () => { dirty = true; };
 function bundle() {
   const cut = Date.now() - KEEP_MS;
   const chat = readLines(LOG).filter(e => e.at > cut);

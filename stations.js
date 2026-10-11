@@ -1,6 +1,8 @@
 // Bot stations for the Dunder Mifflin Scranton office (set from The Office). HQ #30 / #36 / #37 / #38 / #42 (set scale, desks touching).
 // id = stable bot id (tasks.json, work-live, inbox feeds key on it). name = the Office character shown in the 3D office.
 // bot = the real bot behind the desk (HQ chat routes to this, Grok Bot answers as Grok Bot).
+// teammate: true = a real Grok Bot teammate agent sits behind this desk (HQ #63 Direct tab forwards to it; agent ids live
+// only on the box in ~/.config/grok-bot-hq/teammates.json, never in this public repo).
 // x/z in meters (HQ #43: room spans x -11..11, z -7.5..7.5; north = -z = window wall, east = +x = windows, front door = south wall x 0).
 // ry = rotation (radians). At ry=0 the monitor sits on the north edge of the desk and the bot sits south of it, facing north.
 // ry=PI: bot sits north, faces south. ry=PI/2: bot sits east, faces west. `desk` = whose desk it is in the show.
@@ -18,7 +20,7 @@ export const STATIONS = [
   { id: 'assist',   name: 'Dwight Schrute',  bot: 'Family Assistance',    short: 'DWIGHT',  color: '#e07a5f', x: 4.2,  z: 3.7,  ry: PI,     desk: 'Asst. (to the) Regional Mgr',
     role: 'Benefits, appointments, paperwork and household help. Assistant (to the) Grok Bot.' },
   // Andy: the desk on the other side of reception
-  { id: 'icons',    name: 'Andy Bernard',    bot: 'Icon Shop',            short: 'ANDY',    color: '#ff9f43', x: -4.0, z: 4.9,  ry: 0,      desk: 'sales (Nard Dog)',
+  { id: 'icons',    name: 'Andy Bernard',    bot: 'Icon Shop', teammate: true,            short: 'ANDY',    color: '#ff9f43', x: -4.0, z: 4.9,  ry: 0,      desk: 'sales (Nard Dog)',
     role: 'Icon sets and visual assets.' },
   // Phyllis + Stanley: face-to-face pair behind Jim + Dwight
   { id: 'onpad',    name: 'Phyllis Vance',   bot: 'OnPad Chat',           short: 'PHYLLIS', color: '#f06292', x: 4.2,  z: -0.6, ry: 0,      desk: 'sales',
@@ -38,8 +40,8 @@ export const STATIONS = [
   { id: 'kids',     name: 'Meredith Palmer', bot: 'Kids Tech',            short: 'MEREDITH', color: '#8bc34a', x: 1.2, z: -6.2, ry: 0,     desk: 'supplier relations',
     role: 'Homeschool tech, devices and kid-safe setups.' },
   // The Annex (north-east): Kelly + Toby
-  { id: 'designer', name: 'Kelly Kapoor',    bot: 'Atom Family Designer', short: 'KELLY',   color: '#c9a227', x: 8.1,  z: -6.1, ry: 0,      desk: 'customer service (annex)',
+  { id: 'designer', name: 'Kelly Kapoor',    bot: 'Atom Family Designer', teammate: true, short: 'KELLY',   color: '#c9a227', x: 8.1,  z: -6.1, ry: 0,      desk: 'customer service (annex)',
     role: 'Designs and model shots for Atom Family Clothing Co.' },
-  { id: 'profile',  name: 'Toby Flenderson', bot: 'Profile & Settings',   short: 'TOBY',    color: '#90a4ae', x: 10.1, z: -4.5, ry: -PI / 2,      desk: 'HR (annex)',
+  { id: 'profile',  name: 'Toby Flenderson', bot: 'Profile & Settings', teammate: true,   short: 'TOBY',    color: '#90a4ae', x: 10.1, z: -4.5, ry: -PI / 2,      desk: 'HR (annex)',
     role: 'Your profile, accounts and assistant settings.' },
 ];

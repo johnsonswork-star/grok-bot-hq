@@ -85,6 +85,26 @@ If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
 
 Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
+## Direct tab: 1:1 with one teammate, no Michael (HQ #63)
+
+The chat panel now has three tabs (tap them, or press **X** on the controller to cycle):
+
+- **★ Michael (Grok Bot)**: the real Grok Bot only. Real orders, questions, builds (same HQ issue + Slack wake as before).
+- **📣 Office**: the #59 whole-office stream (small talk + moves = free office bot, real orders = Michael). Direct threads never show here.
+- **💬 Direct**: pick ONE person from the people row (or LB / RB) and talk to them 1:1. Michael is not in this path: no HQ issue, no Slack wake.
+
+What happens to a Direct message (`direct: { bot }` in the encrypted envelope; `tools/hq-bridge.mjs` hands it to `tools/direct.mjs`):
+1. Moves ("get out of the way", "go to the water cooler") run instantly on the iPad and the person answers in character (bubble over their head).
+2. The person's **office stand-in** answers right away in character (free built-in lines, or a FREE model if `~/.config/grok-bot-hq/llm.env` has an OpenRouter/Gemini key). Labeled "🎭 office stand-in".
+3. If a **real teammate agent** sits behind that desk (✓ in the people row; `teammate: true` in stations.js), every non-move message is queued for it in `~/.config/grok-bot-hq/teammate-inbox/<botId>.jsonl` (private, never in git). The teammate answers with `node tools/direct.mjs reply <botId> "text"` and the line lands in Chris's Direct thread labeled "✓ real <teammate>".
+4. Worker memory (HQ #58) records what Chris said to them and what they answered. The thread is filed as `thread: "dm:<botId>"` in `office-chat.jsonl` (Michael's desk monitor only mirrors the Office stream, not Direct threads).
+
+Character -> teammate map (agent ids only in `~/.config/grok-bot-hq/teammates.json`, see `tools/teammates.json.example`):
+Andy Bernard -> Icon Shop, Kelly Kapoor -> Atom Family Designer, Toby Flenderson -> Profile & Settings. Everyone else is an office character (chats + moves, says real work goes to Michael) until a teammate agent is added to teammates.json and `teammate: true` is set on that station. Michael Scott = Grok Bot, main tab only.
+
+Forward path: the box cannot wake another agent by itself. Whoever has agent messaging (Grok Bot's SendToAgent, a routine) runs `tools/direct.mjs pending` (also shown by `tools/hq-inbox.sh pending`), sends each line to its agentId with the reply command, then `tools/direct.mjs forwarded <bot> all`.
+CLI: `node tools/direct.mjs map | test <bot> "text" | thread <bot> | pending [bot] | forwarded <bot> <id|all> | reply <bot> "text"` (or `tools/hq-inbox.sh direct ...`).
+
 ## Tap-to-pick on desk screens (HQ #50)
 
 When a bot is waiting on Chris to choose between options, its desk screen turns into **pick cards** (image + letter, 3 x 2 grid, last cell = contact sheet). First use: Kelly's (Atom Family Designer) badge options H–L.

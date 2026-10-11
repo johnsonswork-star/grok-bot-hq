@@ -41,7 +41,7 @@ export const isLinked = () => !!(globalThis.crypto && crypto.subtle);
 
 const SHOT_MAX = 1.5e6; // chars of data URL (~1.1 MB JPEG); bigger shots are dropped, text still goes
 
-export async function send({ to, text, sentAt, shot, office, mid: fixedMid }) {
+export async function send({ to, text, sentAt, shot, office, direct, mid: fixedMid }) {
   try {
     const d = await device();
     const mid = fixedMid || randomId(9); // HQ #59: chat.js picks the id up front so its instant office-bot line and the box's copy match
@@ -49,6 +49,7 @@ export async function send({ to, text, sentAt, shot, office, mid: fixedMid }) {
       const msg = { v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(),
         device: { id: d.id, topic: d.topic, pub: d.pubJwk }, ua: navigator.userAgent.slice(0, 120) };
       if (withShot) msg.shot = shot;
+      if (direct) msg.direct = direct; // HQ #63: { bot } = 1:1 Direct tab; the box answers as that teammate, never files it for Grok Bot
       if (office) msg.office = office; // HQ #59: { near, bot, line } so the box's triage + reply match what the iPad already did
       const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
       if (!r.ok) throw new Error('relay ' + r.status);
@@ -78,8 +79,8 @@ export async function fetchReplies() {
         const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
         const p = await open(JSON.parse(m.message), d.priv);
         if (p.type && p.type !== 'ack') continue; // other feed types never show as chat bubbles
-        if (p.type === 'ack') out.push({ type: 'ack', id: p.id, mid: p.mid, issue: p.issue, route: p.route, at: p.at }); // bridge: filed as issue #n (or route 'office' = office bot took it)
-        else out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at, ...(p.office ? { office: true, via: p.via } : {}) });
+        if (p.type === 'ack') out.push({ type: 'ack', id: p.id, mid: p.mid, issue: p.issue, route: p.route, thread: p.thread, at: p.at }); // bridge: filed as issue #n (or route 'office' = office bot took it)
+        else out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at, ...(p.office ? { office: true, via: p.via } : {}), ...(p.thread ? { thread: p.thread, who: p.who, real: !!p.real, standin: !!p.standin, handoff: p.handoff } : {}) });
       } catch (e) {}
     }
   } catch (e) {}

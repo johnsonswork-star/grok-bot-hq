@@ -1,0 +1,4 @@
+{
+  "_doc": "Copy to ~/.config/grok-bot-hq/teammates.json (private, never commit). Key = stations.js id. agentId = the real Grok Bot teammate behind that desk (HQ #63 Direct tab forwards to it). Also set teammate: true on that station in stations.js so the iPad labels it.",
+  "icons": { "agentId": "<teammate agent id>", "teammate": "Icon Shop", "character": "Andy Bernard" }
+}

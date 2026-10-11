@@ -8,6 +8,7 @@
 #   tools/hq-inbox.sh shot <n>        path(s) of the 📸 screenshot(s) of Chris's 3D view sent with issue n (open with Read)
 #   tools/hq-inbox.sh done <n>        close after handling
 #   tools/hq-inbox.sh pending         open HQ messages with no bot reply yet (what Grok Bot must answer); also heals the bridge
+#   tools/hq-inbox.sh direct <map|pending|forwarded|reply|thread> ...   HQ #63 Direct tab (1:1 with a teammate, no Grok Bot)
 #   tools/hq-inbox.sh refreshes       open tap-to-refresh requests (bank / inbox) newer than the last feed push (pending shows them too)
 #   tools/hq-inbox.sh bridge          make sure the live bridge (iPad -> inbox) is running on this box (also keeps the watcher up)
 #   tools/hq-inbox.sh watcher [start|stop|status|log]   auto-reply watcher: full AI reply to each HQ message within seconds
@@ -54,8 +55,10 @@ case "$1" in
   pending) bridge >/dev/null; worklive; banter; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1
           gh issue list --repo $REPO --label hq-chat --state open --limit 50 --json number,title,createdAt,comments \
            -q '.[] | select((.comments|length)==0 or ((.comments|last|.body) | test("^\\s*\\*\\*[^*]{1,40}:\\*\\*") | not)) | "#\(.number)  \(.createdAt)  \(.title)"'
-          refreshes ;;
+          refreshes
+          NODE_NO_WARNINGS=1 node "$DIR/direct.mjs" pending --quiet ;;  # HQ #63: Direct-tab messages queued for real teammates
   refreshes) refreshes ;;
+  direct) shift; NODE_NO_WARNINGS=1 node "$DIR/direct.mjs" "$@" ;;  # HQ #63: map | pending | forwarded <bot> <id|all> | reply <bot> "text" | thread <bot>
   reply)  url=$(gh issue comment "$2" --repo $REPO --body "**${4:-Grok Bot}:** $3") && echo "$url" &&
           { NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" log "${4:-Grok Bot}" "I told Chris: $3" --kind reply --issue "$2" --src hq-reply >/dev/null 2>&1 || true; } &&
           NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" relay "$2" "${url##*issuecomment-}" ;;

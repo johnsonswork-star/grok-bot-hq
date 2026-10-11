@@ -156,6 +156,7 @@ async function handle(m, priv, st) {
   let p; try { p = await open(JSON.parse(await envelopeText(m)), priv); } catch { return log('skip undecryptable', m.id); }
   if (p.type === 'refresh') return handleRefresh(p, st);
   if (p.type === 'pick') return handlePick(p, st);
+  if (p.direct) return handleDirect(p, st); // HQ #63: Direct tab = 1:1 with a teammate, never filed for Grok Bot, no Slack wake
   if (!p.mid || alreadyFiled(p.mid, st)) return;
   let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
   const shot = p.shot ? saveShot(p.mid, p.shot) : null;
@@ -182,6 +183,16 @@ async function handle(m, priv, st) {
   await fireWebhook(evt);
   await fireEmail(evt);
   await fireSlack(evt);
+}
+
+// HQ #63 Direct tab: Chris talks 1:1 to one teammate. tools/direct.mjs answers in character (free), logs the thread, and queues
+// it for the REAL teammate agent when one sits behind that desk (~/.config/grok-bot-hq/teammate-inbox/<bot>.jsonl).
+// No GitHub issue, no Slack #hq-chat wake: Grok Bot (Michael) is not in this path.
+let dm = null; const direct = async () => dm ||= await import(new URL('./direct.mjs', import.meta.url)).catch(e => { log('direct load failed', e.message); return null; });
+async function handleDirect(p, st) {
+  if (!p.mid || st.done.includes(p.mid)) return;
+  st.done.push(p.mid); saveState(st);
+  try { const D = await direct(); if (D) await D.handle(p, { log }); } catch (e) { log('direct error', e.message); }
 }
 
 // Tap-to-refresh (HQ #29): Chris tapped REFRESH on the whiteboard BANK panel or the Family Inbox monitor. No GitHub issue:
