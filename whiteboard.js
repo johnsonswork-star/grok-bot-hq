@@ -1,13 +1,23 @@
 // Full-wall whiteboard in the conference room (south wall). Looks hand-drawn in marker, but it's a live widget screen:
 // a canvas texture redrawn only when data changes (iPad-friendly, no per-frame work).
-// Widgets: live weather (Open-Meteo, keyless) + a bank placeholder (NOT connected; nothing is fetched until Chris says go).
+// Widgets: clock (CT), live weather (Open-Meteo, keyless), live markets (CNBC public quote feed, keyless + CORS-open),
+// team status (tasks.json, same file the workers use) and a bank placeholder (NOT connected; nothing is fetched until Chris says go).
 import * as THREE from './vendor/three.module.js';
+import { STATIONS } from './stations.js';
 
 const PLACE = { name: 'Blue Ridge, TX', lat: 33.30, lon: -96.40 }; // Blue Ridge / Celina TX area
 const WX_URL = `https://api.open-meteo.com/v1/forecast?latitude=${PLACE.lat}&longitude=${PLACE.lon}`
   + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day'
   + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
   + '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FChicago&forecast_days=5';
+const WATCH = [ // [symbol, label] — 3 index ETFs + 5 liquid names
+  ['SPY', 'SPY'], ['QQQ', 'QQQ'], ['DIA', 'DIA'], ['AAPL', 'AAPL'], ['MSFT', 'MSFT'], ['NVDA', 'NVDA'], ['AMZN', 'AMZN'], ['TSLA', 'TSLA']];
+const MKT_URL = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols='
+  + encodeURIComponent(WATCH.map(w => w[0]).join('|')) + '&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+const MKT_OPEN_MS = 3 * 60 * 1000;     // market hours
+const MKT_SLOW_MS = 20 * 60 * 1000;    // pre/after hours, nights, weekends
+const TASKS_MS = 60 * 1000;            // team status
+const TZ = 'America/Chicago';
 const FETCH_MS = 10 * 60 * 1000;   // weather refresh while in-game
 const RETRY_MS = 60 * 1000;        // after a failed fetch
 const CW = 2560, CH = 572;         // canvas matches the board's aspect (11.4 m x 2.55 m)
@@ -89,8 +99,21 @@ function icon(g, kind, cx, cy, s, seed) {
   if (kind === 'fog') { pen(g, INK.grey, s * 0.06); for (let i = 0; i < 3; i++) line(g, cx - s * 0.8 + i * 10, cy + s * 0.45 + i * s * 0.17, cx + s * 0.75 - i * 6, cy + s * 0.45 + i * s * 0.17, seed + 'f' + i, 3); }
 }
 
+// ---------- time helpers ----------
+const fmtTime = (t, o = {}) => new Date(t).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit', ...o });
+function nyParts(t = Date.now()) { // market session in New York time
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false })
+    .formatToParts(new Date(t)).map(x => [x.type, x.value]));
+  const mins = (+p.hour % 24) * 60 + +p.minute, wk = !['Sat', 'Sun'].includes(p.weekday);
+  return { mins, wk, open: wk && mins >= 570 && mins < 960, ext: wk && mins >= 240 && mins < 1200 };
+}
+const fit = (g, s, size, maxW) => { g.font = `${size}px ${FONT}`; if (g.measureText(s).width <= maxW) return s;
+  while (s.length > 2 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s.trimEnd() + '…'; };
+const num = s => parseFloat(String(s ?? '').replace(/[,%+$]/g, ''));
+
 // ---------- the board drawing ----------
-function draw(g, wx, status) {
+function draw(g, st) {
+  const { wx, wxStatus, mkt, mktStatus, team } = st, now = Date.now();
   // board surface: off-white with faint ghosting from old erased marker
   g.fillStyle = '#f6f6f1'; g.fillRect(0, 0, CW, CH);
   const ghost = rng('ghost'); g.globalAlpha = 0.05; pen(g, '#4a5560', 14);
@@ -101,53 +124,103 @@ function draw(g, wx, status) {
   text(g, 'HQ BOARD', 46, 92, 76, INK.black, { tilt: -0.015 });
   pen(g, INK.red, 7); line(g, 44, 112, 400, 106, 'title-ul', 4);
 
+  // ---- clock (CT) ----
+  { const cx = 520, cy = 68, r = 46;
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(now)).map(x => [x.type, x.value]));
+    const h = +p.hour % 12, m = +p.minute;
+    pen(g, INK.black, 5); circle(g, cx, cy, r, 'clock', 2);
+    for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; line(g, cx + Math.sin(a) * r * 0.8, cy - Math.cos(a) * r * 0.8, cx + Math.sin(a) * r * 0.92, cy - Math.cos(a) * r * 0.92, 'tick' + i, 1); }
+    const ah = (h + m / 60) * Math.PI / 6, am = m * Math.PI / 30;
+    pen(g, INK.black, 6); line(g, cx, cy, cx + Math.sin(ah) * r * 0.5, cy - Math.cos(ah) * r * 0.5, 'hh', 1);
+    pen(g, INK.red, 4); line(g, cx, cy, cx + Math.sin(am) * r * 0.78, cy - Math.cos(am) * r * 0.78, 'mh', 1);
+    text(g, fmtTime(now), cx + 72, 94, 70, INK.black, { tilt: -0.01 });
+    text(g, new Date(now).toLocaleDateString('en-US', { timeZone: TZ, weekday: 'long', month: 'short', day: 'numeric' }) + ' · CT', cx + 380, 90, 40, INK.blue, { tilt: -0.01 });
+  }
+  text(g, 'want another widget? ask Grok in HQ chat :)', CW - 40, 84, 30, INK.grey, { align: 'right', tilt: -0.01 });
+
   // ---- weather widget ----
-  const wx0 = 40, wy0 = 140, ww = 1440, wh = 400;
+  const wx0 = 40, wy0 = 140, ww = 1010, wh = 400;
   pen(g, INK.blue, 6); rect(g, wx0, wy0, ww, wh, 'wxbox', 4);
-  text(g, `WEATHER · ${PLACE.name}`, wx0 + 30, wy0 + 62, 48, INK.blue, { tilt: -0.01 });
+  text(g, `WEATHER · ${PLACE.name}`, wx0 + 28, wy0 + 58, 42, INK.blue, { tilt: -0.01 });
   if (wx) {
     const c = wx.current, d = wx.daily;
-    icon(g, wxKind(c.weather_code, c.is_day), wx0 + 160, wy0 + 215, 120, 'now' + c.weather_code);
-    text(g, `${Math.round(c.temperature_2m)}°`, wx0 + 300, wy0 + 270, 190, INK.black, { tilt: -0.02 });
-    text(g, WX_WORDS[c.weather_code] || '—', wx0 + 32, wy0 + 360, 44, INK.black);
-    text(g, `feels ${Math.round(c.apparent_temperature)}° · wind ${Math.round(c.wind_speed_10m)} mph · ${Math.round(c.relative_humidity_2m)}% humid`, wx0 + 300, wy0 + 360, 34, INK.grey);
-    text(g, `today ↑${Math.round(d.temperature_2m_max[0])}°  ↓${Math.round(d.temperature_2m_min[0])}°`, wx0 + 560, wy0 + 160, 44, INK.red, { tilt: -0.01 });
-    text(g, `rain ${d.precipitation_probability_max[0] ?? 0}%`, wx0 + 560, wy0 + 225, 40, INK.blue);
-    // next 4 days
-    pen(g, INK.grey, 3); line(g, wx0 + 880, wy0 + 90, wx0 + 878, wy0 + 380, 'wxdiv', 4);
+    text(g, `today ↑${Math.round(d.temperature_2m_max[0])}° ↓${Math.round(d.temperature_2m_min[0])}° · rain ${d.precipitation_probability_max[0] ?? 0}%`, wx0 + 30, wy0 + 112, 32, INK.red, { tilt: -0.01 });
+    icon(g, wxKind(c.weather_code, c.is_day), wx0 + 105, wy0 + 215, 96, 'now' + c.weather_code);
+    text(g, `${Math.round(c.temperature_2m)}°`, wx0 + 200, wy0 + 268, 150, INK.black, { tilt: -0.02 });
+    text(g, fit(g, WX_WORDS[c.weather_code] || '—', 38, 450), wx0 + 30, wy0 + 330, 38, INK.black);
+    text(g, `feels ${Math.round(c.apparent_temperature)}° · wind ${Math.round(c.wind_speed_10m)} · ${Math.round(c.relative_humidity_2m)}%rh`, wx0 + 30, wy0 + 372, 26, INK.grey);
+    pen(g, INK.grey, 3); line(g, wx0 + 500, wy0 + 90, wx0 + 498, wy0 + 380, 'wxdiv', 4);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     for (let i = 1; i < Math.min(5, d.time.length); i++) {
-      const x = wx0 + 900 + (i - 1) * 135, dt = new Date(d.time[i] + 'T12:00:00');
-      text(g, days[dt.getDay()], x + 62, wy0 + 125, 38, INK.black, { align: 'center' });
-      icon(g, wxKind(d.weather_code[i]), x + 62, wy0 + 195, 46, 'd' + i + d.weather_code[i]);
-      text(g, `${Math.round(d.temperature_2m_max[i])}°`, x + 62, wy0 + 290, 40, INK.red, { align: 'center' });
-      text(g, `${Math.round(d.temperature_2m_min[i])}°`, x + 62, wy0 + 335, 34, INK.blue, { align: 'center' });
-      if ((d.precipitation_probability_max[i] ?? 0) >= 20) text(g, `${d.precipitation_probability_max[i]}%💧`, x + 62, wy0 + 372, 28, INK.blue, { align: 'center' });
+      const x = wx0 + 580 + (i - 1) * 118, dt = new Date(d.time[i] + 'T12:00:00');
+      text(g, days[dt.getDay()], x, wy0 + 128, 36, INK.black, { align: 'center' });
+      icon(g, wxKind(d.weather_code[i]), x, wy0 + 195, 44, 'd' + i + d.weather_code[i]);
+      text(g, `${Math.round(d.temperature_2m_max[i])}°`, x, wy0 + 290, 38, INK.red, { align: 'center' });
+      text(g, `${Math.round(d.temperature_2m_min[i])}°`, x, wy0 + 333, 32, INK.blue, { align: 'center' });
+      if ((d.precipitation_probability_max[i] ?? 0) >= 20) text(g, `${d.precipitation_probability_max[i]}%💧`, x, wy0 + 372, 26, INK.blue, { align: 'center' });
     }
   } else {
-    text(g, status === 'error' ? 'weather offline — retrying…' : 'checking the sky…', wx0 + 40, wy0 + 230, 58, INK.grey, { tilt: -0.02 });
+    text(g, wxStatus === 'error' ? 'weather offline — retrying…' : 'checking the sky…', wx0 + 40, wy0 + 230, 52, INK.grey, { tilt: -0.02 });
   }
-  const upd = wx ? `updated ${new Date(wx.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} CT · Open-Meteo${status === 'error' ? ' · (stale, retrying)' : ''}` : 'Open-Meteo';
-  text(g, upd, wx0 + ww - 24, wy0 + 52, 24, INK.grey, { align: 'right' });
+  text(g, wx ? `${fmtTime(wx.at)} CT${wxStatus === 'error' ? ' · stale' : ''}` : '', wx0 + ww - 24, wy0 + 52, 22, INK.grey, { align: 'right' });
+
+  // ---- markets widget ----
+  const mx = 1080, my = 140, mw = 760, mh = 400;
+  pen(g, INK.black, 6); rect(g, mx, my, mw, mh, 'mktbox', 4);
+  text(g, 'MARKETS', mx + 28, my + 58, 42, INK.black, { tilt: -0.01 });
+  const ses = nyParts(now);
+  const sesTxt = ses.open ? 'market OPEN' : ses.ext ? (ses.mins < 570 ? 'pre-market' : 'after hours') : 'market closed';
+  text(g, sesTxt, mx + 250, my + 56, 30, ses.open ? INK.green : INK.orange, { tilt: -0.02 });
+  if (ses.open) { g.fillStyle = INK.green; g.beginPath(); g.arc(mx + 236, my + 46, 7, 0, 7); g.fill(); }
+  if (mkt && mkt.rows.length) {
+    let y = my + 104;
+    mkt.rows.forEach((q, i) => {
+      if (i === 3) { pen(g, INK.grey, 2); line(g, mx + 26, y - 26, mx + mw - 26, y - 27, 'mktdiv', 3); y += 8; }
+      const up = q.chg >= 0, col = isNaN(q.chg) ? INK.grey : up ? INK.green : INK.red;
+      text(g, q.label, mx + 30, y, 30, i < 3 ? INK.blue : INK.black);
+      text(g, isNaN(q.last) ? '—' : q.last.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), mx + 300, y, 30, INK.black, { align: 'right' });
+      text(g, isNaN(q.pct) ? '' : `${up ? '▲' : '▼'} ${Math.abs(q.pct).toFixed(2)}%`, mx + 470, y, 28, col, { align: 'right' });
+      if (q.lo < q.hi && !isNaN(q.last)) { // day range, low → high, dot = last
+        const x0 = mx + 500, x1 = mx + mw - 40, t = Math.min(1, Math.max(0, (q.last - q.lo) / (q.hi - q.lo)));
+        pen(g, INK.grey, 3); line(g, x0, y - 10, x1, y - 10, 'rg' + i, 2);
+        line(g, x0, y - 18, x0, y - 2, 'rl' + i, 1); line(g, x1, y - 18, x1, y - 2, 'rh' + i, 1);
+        g.fillStyle = col; g.beginPath(); g.arc(x0 + (x1 - x0) * t, y - 10, 8, 0, 7); g.fill();
+      }
+      y += 36;
+    });
+    text(g, 'day range', mx + mw - 40, my + 82, 20, INK.grey, { align: 'right' });
+    text(g, `as of ${mkt.asof || fmtTime(mkt.at)} · updated ${fmtTime(mkt.at)} CT${mktStatus === 'error' ? ' · stale' : ''}`, mx + 30, my + mh - 14, 20, INK.grey);
+  } else {
+    text(g, mktStatus === 'error' ? 'quotes offline — retrying…' : 'pulling quotes…', mx + 40, my + 230, 48, INK.grey, { tilt: -0.02 });
+  }
+
+  // ---- team status (tasks.json) ----
+  const tx = 1870, ty = 140, tw = 390, th = 400;
+  pen(g, INK.orange, 6); rect(g, tx, ty, tw, th, 'teambox', 4);
+  text(g, 'TEAM ON IT', tx + 24, ty + 58, 40, INK.orange, { tilt: -0.01 });
+  if (team === null) text(g, 'checking…', tx + 30, ty + 140, 34, INK.grey);
+  else if (!team.length) text(g, 'all roaming — no tasks', tx + 30, ty + 140, 30, INK.grey);
+  else {
+    const max = team.length > 7 ? 6 : 7;
+    team.slice(0, max).forEach((b, i) => {
+      const y = ty + 108 + i * 40;
+      g.fillStyle = b.color; g.beginPath(); g.arc(tx + 34, y - 9, 9, 0, 7); g.fill();
+      text(g, b.short, tx + 52, y, 26, INK.black);
+      text(g, fit(g, b.task, 24, tw - 150), tx + 130, y, 24, INK.grey);
+    });
+    if (team.length > max) text(g, `+${team.length - max} more`, tx + 52, ty + 108 + max * 40, 24, INK.grey);
+  }
 
   // ---- bank placeholder (NOT connected) ----
-  const bx = 1540, by = 140, bw = 680, bh = 400;
+  const bx = 2290, by = 140, bw = 240, bh = 400;
   pen(g, INK.green, 5); dashed(g, bx, by, bw, bh, 'bank');
-  text(g, 'BANK', bx + 30, by + 64, 52, INK.green, { tilt: -0.01 });
-  text(g, 'connect when Chris says go', bx + 30, by + 124, 40, INK.green);
-  text(g, '$ — — — . — —', bx + 30, by + 240, 76, 'rgba(31,122,58,.35)');
-  text(g, 'not linked · no balances pulled', bx + 30, by + 320, 32, INK.grey);
-  text(g, 'placeholder', bx + bw - 30, by + bh - 24, 28, INK.grey, { align: 'right', tilt: -0.02 });
+  text(g, 'BANK', bx + 24, by + 60, 44, INK.green, { tilt: -0.01 });
+  text(g, 'connect when', bx + 24, by + 116, 28, INK.green);
+  text(g, 'Chris says go', bx + 24, by + 152, 28, INK.green);
+  text(g, '$ — — —', bx + 24, by + 250, 46, 'rgba(31,122,58,.35)');
+  text(g, 'not linked', bx + 24, by + 320, 24, INK.grey);
+  text(g, 'placeholder', bx + bw - 20, by + bh - 20, 22, INK.grey, { align: 'right', tilt: -0.02 });
 
-  // ---- sticky note ----
-  g.save(); g.translate(2390, 300); g.rotate(0.04);
-  g.fillStyle = '#ffe36e'; g.shadowColor = 'rgba(0,0,0,.18)'; g.shadowBlur = 10; g.shadowOffsetY = 4; g.fillRect(-130, -140, 260, 260); g.restore();
-  g.save(); g.translate(2390, 300); g.rotate(0.04);
-  text(g, 'more widgets?', 0, -60, 38, INK.black, { align: 'center' });
-  text(g, 'ask Grok', 0, 0, 34, INK.black, { align: 'center' });
-  text(g, 'in HQ chat :)', 0, 50, 34, INK.black, { align: 'center' });
-  g.restore();
-  tape(g, 2390, 165, 110, -0.08);
   // tape on the board corners
   tape(g, 30, 22, 90, -0.6); tape(g, CW - 30, 22, 90, 0.6);
 }
@@ -171,25 +244,92 @@ export function createWhiteboard({ scene, x0, x1, y0, y1, z, std, box }) {
   const surf = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat);
   surf.rotation.y = Math.PI; surf.position.set(cx, cy, z - 0.002); surf.receiveShadow = true; scene.add(surf);
 
-  let wx = null, status = 'loading', lastFetch = 0, timer = 0;
-  const redraw = () => { draw(g, wx, status); tex.needsUpdate = true; };
+  const st = { wx: null, wxStatus: 'loading', mkt: null, mktStatus: 'loading', team: null };
+  // throttled redraw: coalesce bursts, at most one canvas upload per second, none while the app is hidden
+  let lastDraw = 0, drawTimer = 0, dirty = false;
+  const redraw = () => {
+    dirty = true; if (drawTimer) return;
+    if (document.hidden) return;
+    drawTimer = setTimeout(() => { drawTimer = 0; if (document.hidden) return; dirty = false; lastDraw = Date.now(); draw(g, st); tex.needsUpdate = true; }, Math.max(0, 1000 - (Date.now() - lastDraw)));
+  };
+
+  // weather
+  let lastWx = 0, wxTimer = 0;
   async function fetchWx() {
-    clearTimeout(timer);
+    clearTimeout(wxTimer);
     if (document.hidden) return; // resume on visibilitychange
-    lastFetch = Date.now();
+    lastWx = Date.now();
     try {
       const r = await fetch(WX_URL, { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
       if (!j.current || !j.daily) throw new Error('bad data');
-      wx = { current: j.current, daily: j.daily, at: Date.now() }; status = 'ok';
-      timer = setTimeout(fetchWx, FETCH_MS);
-    } catch (e) { status = 'error'; timer = setTimeout(fetchWx, RETRY_MS); }
+      st.wx = { current: j.current, daily: j.daily, at: Date.now() }; st.wxStatus = 'ok';
+      wxTimer = setTimeout(fetchWx, FETCH_MS);
+    } catch (e) { st.wxStatus = 'error'; wxTimer = setTimeout(fetchWx, RETRY_MS); }
     redraw();
   }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastFetch > FETCH_MS) fetchWx(); });
-  redraw(); fetchWx();
+
+  // markets (CNBC public quote feed: no key, Access-Control-Allow-Origin: *)
+  let lastMkt = 0, mktTimer = 0;
+  const mktEvery = () => (nyParts().open ? MKT_OPEN_MS : MKT_SLOW_MS);
+  async function fetchMkt() {
+    clearTimeout(mktTimer);
+    if (document.hidden) return;
+    lastMkt = Date.now();
+    try {
+      const r = await fetch(MKT_URL, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const list = (await r.json())?.FormattedQuoteResult?.FormattedQuote || [];
+      const by = Object.fromEntries(list.map(q => [q.symbol, q]));
+      const rows = WATCH.map(([sym, label]) => { const q = by[sym] || {};
+        return { label, last: num(q.last), chg: num(q.change), pct: num(q.change_pct), lo: num(q.low), hi: num(q.high) }; });
+      if (!rows.some(x => !isNaN(x.last))) throw new Error('no quotes');
+      const lt = by.SPY?.last_timedate || '';
+      st.mkt = { rows, at: Date.now(), asof: /\d\d\/\d\d\/\d\d/.test(lt) ? 'close ' + lt.slice(0, 5).replace(/^0/, '') : lt.replace(/ E[DS]T$/, ' ET') };
+      st.mktStatus = 'ok'; mktTimer = setTimeout(fetchMkt, mktEvery());
+    } catch (e) { st.mktStatus = 'error'; mktTimer = setTimeout(fetchMkt, RETRY_MS * 2); }
+    redraw();
+  }
+
+  // team status: busy bots from tasks.json (honours "until" like workers.js)
+  const byId = Object.fromEntries(STATIONS.map(s => [s.id, s]));
+  let lastTeam = 0;
+  async function fetchTeam() {
+    if (document.hidden) return;
+    lastTeam = Date.now();
+    try {
+      const r = await fetch('./tasks.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const busy = (await r.json()).busy || {};
+      const team = [];
+      for (const [id, v] of Object.entries(busy)) {
+        const s = byId[id]; if (!s) continue;
+        const task = typeof v === 'string' ? v : v?.task; const until = typeof v === 'object' ? v?.until : null;
+        if (!task || (until && Date.parse(until) < Date.now())) continue;
+        team.push({ short: s.short, color: s.color, task, hero: !!s.hero });
+      }
+      team.sort((a, b) => b.hero - a.hero);
+      const sig = JSON.stringify(team);
+      if (sig !== JSON.stringify(st.team)) { st.team = team; redraw(); }
+    } catch (e) { if (st.team === null) { st.team = []; redraw(); } }
+  }
+  setInterval(fetchTeam, TASKS_MS);
+
+  // clock: redraw on each minute boundary
+  const tick = () => { redraw(); setTimeout(tick, 60000 - (Date.now() % 60000) + 50); };
+  setTimeout(tick, 60000 - (Date.now() % 60000) + 50);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (Date.now() - lastWx > FETCH_MS) fetchWx();
+    if (Date.now() - lastMkt > mktEvery()) fetchMkt();
+    if (Date.now() - lastTeam > TASKS_MS) fetchTeam();
+    redraw(); // clock catch-up
+  });
+  draw(g, st); tex.needsUpdate = true; lastDraw = Date.now();
+  fetchWx(); fetchMkt(); fetchTeam();
   // redraw once more after fonts settle (Marker Felt etc. are system fonts on iPad, but be safe)
   document.fonts?.ready?.then(redraw).catch(() => {});
-  return { canvas, refresh: fetchWx, get weather() { return wx; }, get status() { return status; } };
+  return { canvas, refresh: () => { fetchWx(); fetchMkt(); fetchTeam(); }, get weather() { return st.wx; }, get markets() { return st.mkt; }, get team() { return st.team; }, get status() { return st.wxStatus; } };
 }

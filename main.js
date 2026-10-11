@@ -361,7 +361,7 @@ box(15, 0.006, 3.4, M.carpet, 0, 0.003, -11.3, scene, false);
   bs.rotation.y = -Math.PI / 2; bs.position.set(18.85, 1.55, tz); scene.add(bs);
   plant(19.2, 4.6, 1.1); plant(9, 4.7, 1); // (corner plant moved off the south wall so the whiteboard has the whole wall)
 }
-// full-wall hand-drawn whiteboard on the conference room's south wall = live widget screen (HQ #21): weather + bank placeholder
+// full-wall hand-drawn whiteboard on the conference room's south wall = live widget screen (HQ #21, #25): clock, weather, markets, team status + bank placeholder
 const whiteboard = createWhiteboard({ scene, x0: 8.3, x1: 19.7, y0: 0.5, y1: 3.05, z: 13.86, std, box });
 
 // ---------- reception + logo wall (south, by the door) ----------
