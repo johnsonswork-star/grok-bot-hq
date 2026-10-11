@@ -45,7 +45,7 @@ const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 function cleanName(a) {
   let n = String(a.name || a.official_name || a.subtype || 'Account')
     .replace(/[^\x20-\x7E]/g, '')            // ® etc. arrive mangled
-    .replace(/\.{2,}\s*\d+|x+\d{2,}|\b\d{4,}\b/gi, '') // "...8058", "xx1234", any long digit run
+    .replace(/\.{2,}\s*\d+|x+\d{2,}|\b\d{4,}\b/gi, '') // "...1234", "xx1234", any long digit run
     .replace(/\s+/g, ' ').trim();
   if (n === n.toUpperCase()) n = title(n);
   return (n || title(a.subtype || 'Account')).slice(0, 28);
