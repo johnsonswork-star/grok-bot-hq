@@ -16,14 +16,14 @@
       "until": "2026-10-11T03:48:05.393Z"
     },
     "builder": {
-      "task": "App / office builds",
-      "since": "2026-10-11T01:52:20.148Z",
-      "until": "2026-10-11T04:52:20.149Z"
+      "task": "Office: tap-to-refresh + live desk screens (HQ #29, #31)",
+      "since": "2026-10-11T02:20:18.982Z",
+      "until": "2026-10-11T05:20:18.982Z"
     },
     "designer": {
-      "task": "Atom Family designs",
-      "since": "2026-10-11T01:52:21.638Z",
-      "until": "2026-10-11T04:52:21.638Z"
+      "task": "Atom Family designs: print check + badge options",
+      "since": "2026-10-11T02:20:18.884Z",
+      "until": "2026-10-11T06:20:18.885Z"
     },
     "assist": {
       "task": "Job apps / resume",

@@ -23,11 +23,12 @@ const FETCH_MS = 10 * 60 * 1000;   // weather refresh while in-game
 const RETRY_MS = 60 * 1000;        // after a failed fetch
 const CW = 2560, CH = 572;         // canvas matches the board's aspect (11.4 m x 2.55 m)
 const FONT = '"Marker Felt", "Chalkboard SE", Noteworthy, "Segoe Print", "Comic Sans MS", cursive';
-const INK = { black: '#1f2328', blue: '#1d4fb8', red: '#c8322b', green: '#1f7a3a', orange: '#d9761c', grey: '#7a7f86' };
+// HQ #31 pass: darker, more saturated ink + thicker strokes so the board reads from across the room on iPad
+const INK = { black: '#0b0d10', blue: '#0a3a9e', red: '#b3140c', green: '#0b6b2a', orange: '#b85a00', grey: '#3b4048' };
 
 // ---------- hand-drawn helpers (seeded so the wobble stays put between redraws) ----------
 function rng(seed) { let s = 0; for (const ch of String(seed)) s = (s * 31 + ch.charCodeAt(0)) | 0; return () => { s = (s * 1103515245 + 12345) | 0; return ((s >>> 16) & 0x7fff) / 0x7fff; }; }
-function pen(g, color, width) { g.strokeStyle = color; g.fillStyle = color; g.lineWidth = width; g.lineCap = g.lineJoin = 'round'; }
+function pen(g, color, width) { g.strokeStyle = color; g.fillStyle = color; g.lineWidth = width * 1.3; g.lineCap = g.lineJoin = 'round'; }
 function line(g, x1, y1, x2, y2, seed, wob = 3) {
   const r = rng(seed + ':' + x1 + y1), len = Math.hypot(x2 - x1, y2 - y1), n = Math.max(2, Math.round(len / 60));
   const nx = -(y2 - y1) / (len || 1), ny = (x2 - x1) / (len || 1);
@@ -52,7 +53,7 @@ function circle(g, cx, cy, rad, seed, wob = 3) {
 }
 function text(g, s, x, y, size, color, { align = 'left', tilt = 0, weight = '' } = {}) {
   g.save(); g.translate(x, y); g.rotate(tilt); g.font = `${weight} ${size}px ${FONT}`; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'alphabetic';
-  g.strokeStyle = color; g.lineWidth = Math.max(1.5, size / 22); g.lineJoin = 'round'; g.strokeText(s, 0, 0); // marker-thick strokes
+  g.strokeStyle = color; g.lineWidth = Math.max(2.4, size / 13); g.lineJoin = 'round'; g.strokeText(s, 0, 0); // bold marker strokes (contrast)
   g.fillText(s, 0, 0); g.restore();
 }
 function tape(g, x, y, w, rot) {
@@ -89,7 +90,7 @@ function icon(g, kind, cx, cy, s, seed) {
   if (kind === 'sun') return sun(cx, cy, s * 0.42, INK.orange);
   if (kind === 'moon') { // crescent: filled disc, bite taken out in board colour, wobbly outline
     g.save(); g.fillStyle = '#f2c94c'; g.beginPath(); g.arc(cx, cy, s * 0.46, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#f6f6f1'; g.beginPath(); g.arc(cx + s * 0.26, cy - s * 0.12, s * 0.4, 0, Math.PI * 2); g.fill(); g.restore();
+    g.fillStyle = '#fbfbf8'; g.beginPath(); g.arc(cx + s * 0.26, cy - s * 0.12, s * 0.4, 0, Math.PI * 2); g.fill(); g.restore();
     pen(g, INK.orange, s * 0.05); g.beginPath(); g.arc(cx, cy, s * 0.46, 0.55, 5.0); g.stroke();
     pen(g, INK.orange, s * 0.04); for (const [dx, dy] of [[-0.7, -0.5], [0.75, -0.65], [0.6, 0.55]]) { line(g, cx + dx * s - 9, cy + dy * s, cx + dx * s + 9, cy + dy * s, seed + dx, 1); line(g, cx + dx * s, cy + dy * s - 9, cx + dx * s, cy + dy * s + 9, seed + dy, 1); } return; }
   if (kind === 'partly') { sun(cx + s * 0.3, cy - s * 0.3, s * 0.3, INK.orange); pen(g, INK.black, s * 0.06); return cloudShape(g, cx - s * 0.1, cy + s * 0.15, s * 0.85, seed + 'c'); }
@@ -110,14 +111,18 @@ function nyParts(t = Date.now()) { // market session in New York time
 }
 const fit = (g, s, size, maxW) => { g.font = `${size}px ${FONT}`; if (g.measureText(s).width <= maxW) return s;
   while (s.length > 2 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s.trimEnd() + '…'; };
+// bank panel box + its REFRESH button (canvas px). Exported via hitTest() so main.js can tell taps / reticle hits.
+const BANK = { x: 2208, y: 140, w: 322, h: 400 };
+const BTN = { y: 320, h: 66 }; // offset inside the bank box
+const btnRect = () => ({ x: BANK.x + 18, y: BANK.y + BTN.y, w: BANK.w - 36, h: BTN.h });
 const num = s => parseFloat(String(s ?? '').replace(/[,%+$]/g, ''));
 
 // ---------- the board drawing ----------
 function draw(g, st) {
   const { wx, wxStatus, mkt, mktStatus, team } = st, now = Date.now();
   // board surface: off-white with faint ghosting from old erased marker
-  g.fillStyle = '#f6f6f1'; g.fillRect(0, 0, CW, CH);
-  const ghost = rng('ghost'); g.globalAlpha = 0.05; pen(g, '#4a5560', 14);
+  g.fillStyle = '#fbfbf8'; g.fillRect(0, 0, CW, CH);
+  const ghost = rng('ghost'); g.globalAlpha = 0.03; pen(g, '#4a5560', 14);
   for (let i = 0; i < 9; i++) { const x = ghost() * CW, y = ghost() * CH; line(g, x, y, x + 120 + ghost() * 260, y + (ghost() - 0.5) * 60, 'g' + i, 10); }
   g.globalAlpha = 1;
 
@@ -166,7 +171,7 @@ function draw(g, st) {
   text(g, wx ? `${fmtTime(wx.at)} CT${wxStatus === 'error' ? ' · stale' : ''}` : '', wx0 + ww - 24, wy0 + 52, 22, INK.grey, { align: 'right' });
 
   // ---- markets widget ----
-  const mx = 1080, my = 140, mw = 760, mh = 400;
+  const mx = 1080, my = 140, mw = 700, mh = 400;
   pen(g, INK.black, 6); rect(g, mx, my, mw, mh, 'mktbox', 4);
   text(g, 'MARKETS', mx + 28, my + 58, 42, INK.black, { tilt: -0.01 });
   const ses = nyParts(now);
@@ -196,7 +201,7 @@ function draw(g, st) {
   }
 
   // ---- team status (tasks.json) ----
-  const tx = 1870, ty = 140, tw = 390, th = 400;
+  const tx = 1806, ty = 140, tw = 372, th = 400;
   pen(g, INK.orange, 6); rect(g, tx, ty, tw, th, 'teambox', 4);
   text(g, 'TEAM ON IT', tx + 24, ty + 58, 40, INK.orange, { tilt: -0.01 });
   if (team === null) text(g, 'checking…', tx + 30, ty + 140, 34, INK.grey);
@@ -212,35 +217,43 @@ function draw(g, st) {
     if (team.length > max) text(g, `+${team.length - max} more`, tx + 52, ty + 108 + max * 40, 24, INK.grey);
   }
 
-  // ---- bank (read-only, encrypted feed; see tools/refresh-bank-feed.mjs) ----
-  const bx = 2290, by = 140, bw = 240, bh = 400, bank = st.bank;
+  // ---- bank (read-only, encrypted feed; see tools/refresh-bank-feed.mjs) + tap-to-refresh marker button (HQ #29) ----
+  const bx = BANK.x, by = BANK.y, bw = BANK.w, bh = BANK.h, bank = st.bank;
   pen(g, INK.green, 5); rect(g, bx, by, bw, bh, 'bank', 3);
-  text(g, 'BANK', bx + 24, by + 56, 44, INK.green, { tilt: -0.01 });
+  text(g, 'BANK', bx + 22, by + 56, 46, INK.green, { tilt: -0.01 });
+  text(g, 'read-only', bx + bw - 18, by + 50, 22, INK.grey, { align: 'right' });
+  const foot = by + BTN.y - 14; // status line sits just above the REFRESH button
   if (!bank) {
-    text(g, st.bankStatus === 'offline' ? 'bank feed' : 'loading…', bx + 24, by + 130, 30, INK.grey);
-    if (st.bankStatus === 'offline') text(g, 'offline', bx + 24, by + 168, 30, INK.grey);
-    text(g, 'read-only', bx + 24, by + bh - 18, 20, INK.grey);
+    text(g, st.bankStatus === 'offline' ? 'bank feed offline' : 'loading…', bx + 22, by + 140, 32, INK.grey);
   } else {
     const usd = v => (v == null || isNaN(v)) ? '—' : (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const T = bank.totals || {};
-    text(g, fit(g, usd(T.cash), 46, bw - 40), bx + 24, by + 114, 46, INK.green, { tilt: -0.015 });
-    text(g, 'cash total', bx + 26, by + 142, 22, INK.grey);
-    let y = by + 186;
+    text(g, fit(g, usd(T.cash), 54, bw - 40), bx + 22, by + 114, 54, INK.green, { tilt: -0.015 });
+    text(g, 'cash total', bx + 24, by + 142, 24, INK.grey);
+    let y = by + 178;
     const extra = [];
     if (T.credit) extra.push(['cards owe', T.credit.balance, INK.red]);
     if (T.investments != null) extra.push(['invested', T.investments, INK.blue]);
     if (T.loans != null) extra.push(['loans', T.loans, INK.red]);
-    const rows = (bank.accounts || []).slice(0, Math.max(1, 3 - extra.length));
-    for (const a of rows) {
-      { const tail = a.last4 ? ' ··' + a.last4 : ''; g.font = `20px ${FONT}`; const tw4 = g.measureText(tail).width;
-        text(g, fit(g, a.name, 20, bw - 44 - tw4) + tail, bx + 24, y, 20, INK.grey); } y += 30;
-      text(g, usd(a.bal), bx + 30, y, 28, a.cls === 'liability' ? INK.red : INK.black); y += 38;
+    const room = Math.max(1, Math.floor((foot - 56 - y) / 62) + 1);
+    const rows = (bank.accounts || []).slice(0, Math.max(1, room - (extra.length ? 1 : 0)));
+    for (const a of rows) { // two lines per account: name ··last4, then the balance
+      const tail = a.last4 ? ' ··' + a.last4 : ''; g.font = `24px ${FONT}`; const tw4 = g.measureText(tail).width;
+      text(g, fit(g, a.name, 24, bw - 44 - tw4) + tail, bx + 22, y, 24, INK.grey);
+      text(g, usd(a.bal), bx + bw - 18, y + 32, 32, a.cls === 'liability' ? INK.red : INK.black, { align: 'right' }); y += 62;
     }
-    for (const [label, v, c] of extra) { text(g, label, bx + 24, y, 20, INK.grey); text(g, usd(v), bx + bw - 20, y, 26, c, { align: 'right' }); y += 34; }
-    const more = (bank.accounts || []).length - rows.length;
-    if (more > 0 && !extra.length) text(g, `+${more} more`, bx + 24, Math.min(y, by + bh - 50), 20, INK.grey);
-    text(g, 'read-only · updated', bx + 24, by + bh - 40, 20, INK.grey);
-    text(g, `${fmtTime(bank.at)} CT${st.bankStatus === 'offline' ? ' · stale' : ''}`, bx + 24, by + bh - 14, 20, st.bankStatus === 'offline' ? INK.orange : INK.grey);
+    y -= 4;
+    for (const [label, v, c] of extra) { if (y > foot - 30) break; text(g, label, bx + 22, y, 24, INK.grey); text(g, usd(v), bx + bw - 18, y, 28, c, { align: 'right' }); y += 38; }
+    text(g, `updated ${fmtTime(bank.at)} CT${st.bankStatus === 'offline' ? ' · stale' : ''}`, bx + 22, foot, 24, st.bankStatus === 'offline' ? INK.orange : INK.grey);
+  }
+  // the REFRESH marker button (tap it on iPad, or aim the reticle at it and press A)
+  { const r = btnRect(), rs = st.refresh || {}, hot = st.hover;
+    const asked = rs.state === 'asked', fresh = rs.state === 'fresh', failed = rs.state === 'failed';
+    const col = failed ? INK.red : fresh ? INK.green : asked ? INK.blue : INK.red;
+    if (hot || asked) { g.save(); g.fillStyle = hot ? 'rgba(255,214,0,.45)' : 'rgba(10,58,158,.10)'; g.fillRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8); g.restore(); }
+    pen(g, col, hot ? 7 : 5); rect(g, r.x, r.y, r.w, r.h, 'bankbtn', 3);
+    const label = failed ? 'NOT SENT · TAP' : fresh ? 'FRESH ✓' : asked ? 'ASKED GROK ✓' : '⟳ REFRESH';
+    text(g, label, r.x + r.w / 2, r.y + r.h / 2 + 15, label.length > 11 ? 34 : 40, col, { align: 'center', tilt: -0.01, weight: 'bold' });
   }
 
   // tape on the board corners
@@ -360,5 +373,12 @@ export function createWhiteboard({ scene, x0, x1, y0, y1, z, std, box }) {
     if (sig === st.bankSig) return; st.bankSig = sig;
     if (feed) st.bank = feed; st.bankStatus = status; redraw();
   }
-  return { canvas, setBank, refresh: () => { fetchWx(); fetchMkt(); fetchTeam(); }, get weather() { return st.wx; }, get markets() { return st.mkt; }, get team() { return st.team; }, get status() { return st.wxStatus; } };
+  // HQ #29 tap-to-refresh: uv on the board surface -> 'bank' when it's on the REFRESH button (a little forgiving)
+  function hitTest(uv) {
+    if (!uv) return null; const px = uv.x * CW, py = (1 - uv.y) * CH, r = btnRect(), m = 16;
+    return px > r.x - m && px < r.x + r.w + m && py > r.y - m && py < r.y + r.h + m ? 'bank' : null;
+  }
+  function setHover(h) { h = !!h; if (h !== !!st.hover) { st.hover = h; redraw(); } }
+  function setRefresh(r) { const sig = JSON.stringify(r || null); if (sig !== st.rsig) { st.rsig = sig; st.refresh = r; redraw(); } }
+  return { canvas, surface: surf, hitTest, setHover, setRefresh, setBank, refresh: () => { fetchWx(); fetchMkt(); fetchTeam(); }, get weather() { return st.wx; }, get markets() { return st.mkt; }, get team() { return st.team; }, get status() { return st.wxStatus; } };
 }

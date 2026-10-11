@@ -76,6 +76,7 @@ export async function fetchReplies() {
       try {
         const m = JSON.parse(line); if (m.event !== 'message' || !m.message) continue;
         const p = await open(JSON.parse(m.message), d.priv);
+        if (p.type && p.type !== 'ack') continue; // other feed types never show as chat bubbles
         if (p.type === 'ack') out.push({ type: 'ack', id: p.id, mid: p.mid, issue: p.issue, at: p.at }); // bridge: filed as issue #n
         else out.push({ ref: p.ref, id: p.id, from: p.from || 'Grok Bot', text: p.text, at: p.at });
       } catch (e) {}
@@ -110,7 +111,7 @@ export async function fetchInboxFeed() {
 export async function fetchBankFeed() {
   try {
     const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}_bank/json?poll=1&since=all&t=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch(`${RELAY}/${d.topic}_bank/json?poll=1&since=all`, { cache: 'no-store' });
     if (!r.ok) return null;
     const lines = (await r.text()).split('\n').filter(l => l.trim()).reverse();
     for (const line of lines) {
@@ -122,4 +123,39 @@ export async function fetchBankFeed() {
     }
   } catch (e) {}
   return null;
+}
+
+// Tap-to-refresh (HQ #29): the REFRESH marker on the whiteboard BANK panel / Family Inbox monitor sends a tiny encrypted
+// request through the same HQ relay as chat. The bridge on Grok Bot's box sees type:'refresh', logs it to
+// ~/.config/grok-bot-hq/refresh-requests.jsonl and pings Slack #hq-chat, which wakes Grok Bot to pull fresh data
+// (Finance / Gmail connectors) and push the feed. No GitHub issue, no chat bubble. kind = 'bank' | 'inbox'.
+export async function requestRefresh(kind) {
+  try {
+    const d = await device();
+    const msg = { v: 2, type: 'refresh', kind: String(kind).slice(0, 20), mid: 'rf' + randomId(9), ts: new Date().toISOString(),
+      device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
+    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+// Live work on desk screens (HQ #31): per-bot step / file / last output lines / design thumbnails, encrypted on the box
+// to THIS device's key and posted to `<topic>_work` (tools/work-live.mjs). Big feeds (thumbnails) ride as an ntfy
+// attachment (kept ~3 h, CORS-open); the iPad keeps its last copy. Only the newest message is read (since=latest),
+// and nothing is re-downloaded unless its id changed. Returns { id, feed } | { id, same: true } | null.
+let workId = null;
+export async function fetchWorkFeed() {
+  try {
+    const d = await device();
+    const r = await fetch(`${RELAY}/${d.topic}_work/json?poll=1&since=latest`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) return null;
+    const m = JSON.parse(line); if (m.event !== 'message') return null;
+    if (m.id === workId) return { id: m.id, same: true };
+    let body = m.message;
+    if (m.attachment?.url) { const a = await fetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
+    const p = await open(JSON.parse(body), d.priv);
+    if (p.type !== 'work' || !p.bots) return null;
+    workId = m.id; return { id: m.id, feed: p };
+  } catch (e) { return null; }
 }

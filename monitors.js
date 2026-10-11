@@ -2,6 +2,9 @@
 //   Grok Bot (hero desk): the live HQ chat transcript (your messages + replies as they land), auto-scrolling.
 //   Family Inbox: Chris's newest emails (sender, subject, time; lead/job alerts filtered) from an encrypted per-device feed.
 //   Every other bot: its current task from tasks.json (busy) or a clear idle / roaming screen. No made-up activity.
+//   Busy + live work feed (HQ #31, tools/work-live.mjs): LIVE view = current step + file, the last output lines scrolling
+//   like a terminal, and thumbnails of the newest images (e.g. Atom Family Designer's design PNGs).
+//   Family Inbox: a REFRESH button on the screen (HQ #29) asks Grok Bot for a fresh pull.
 // Data stays private: the transcript comes from this iPad's own HQ chat log (end-to-end encrypted relay), never a public file.
 // Perf (iPad): canvases redraw on change or at most ~3 fps for the cursor/scroll animation, and only for desks within
 // ~16 m of you (or the one you're focused on). The 3D loop just calls tick() every frame; it's time-gated inside.
@@ -10,6 +13,9 @@ import * as THREE from './vendor/three.module.js';
 const FONT = 'system-ui,-apple-system,Segoe UI,Arial';
 const HERO_W = 1024, HERO_H = 600, W = 768, H = 450;   // same 512:300 aspect as the monitor planes
 const NEAR = 16, FRAME_MS = 330;
+const REFRESHABLE = { inbox: 'inbox' }; // station id -> refresh kind (screen gets a REFRESH button)
+const WORK_FRESH = 3 * 3600e3;          // live work feed older than this: back to the plain task card
+const liveWork = m => m.busy && m.work && Date.now() - m.work.at < WORK_FRESH;
 const clock = () => new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 const hm = t => { try { return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } };
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
@@ -113,11 +119,72 @@ function drawDesk(g, s, m, t) {
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 27px ${FONT}`; g.fillText('No task right now. Ready when you need it.', w / 2, h / 2 + 66);
   }
   scan(g, w, h);
+  if (REFRESHABLE[s.id]) refreshBtn(g, m, t);
+}
+
+// ---------- REFRESH button (HQ #29) on refreshable screens: bottom-right, big enough to tap on the 3D monitor ----------
+const BTN = { w: 236, h: 50, m: 4 };
+const btnRect = () => ({ x: W - BTN.w - BTN.m, y: H - BTN.h - BTN.m, w: BTN.w, h: BTN.h });
+function refreshBtn(g, m, t) {
+  const r = btnRect(), rs = m.refresh || {}, hot = m.hover;
+  const asked = rs.state === 'asked', fresh = rs.state === 'fresh', failed = rs.state === 'failed';
+  const bg = failed ? '#b3261e' : fresh ? '#1f8a4c' : asked ? '#1d4fb8' : '#e8a33d';
+  rr(g, r.x, r.y, r.w, r.h, 12); g.fillStyle = bg; g.fill();
+  if (hot) { g.lineWidth = 5; g.strokeStyle = '#fff'; g.stroke(); }
+  g.fillStyle = asked || fresh || failed ? '#fff' : '#1a1206'; g.font = `900 25px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const dots = '.'.repeat(1 + (t / 450 | 0) % 3);
+  g.fillText(failed ? 'NOT SENT · TAP' : fresh ? 'FRESH ✓' : asked ? 'ASKED GROK' + dots : '⟳ REFRESH', r.x + r.w / 2, r.y + r.h / 2 + 1);
+}
+
+// ---------- live work (tools/work-live.mjs): step + file, scrolling output lines, image thumbnails ----------
+function drawWork(g, s, m, t) {
+  const w = W, h = H, hh = 58, pad = 22, wk = m.work, thumbs = (m.thumbs || []).filter(x => x.img.complete && x.img.naturalWidth);
+  g.fillStyle = '#0d1117'; g.fillRect(0, 0, w, h);
+  header(g, w, s, true, 'LIVE · ' + s.short, hh);
+  // pulsing LIVE dot
+  g.fillStyle = (t / 600 | 0) % 2 ? '#ff5252' : '#ff8a80'; g.beginPath(); g.arc(w - 120, hh / 2, 7, 0, 7); g.fill();
+  g.textBaseline = 'top'; g.textAlign = 'left';
+  g.fillStyle = '#ffb74d'; g.font = `800 17px ${FONT}`; g.fillText((m.task || 'ON A TASK').toUpperCase().slice(0, 60), pad, hh + 10);
+  g.fillStyle = '#fff'; g.font = `700 27px ${FONT}`; g.fillText(wrap(g, wk.step || 'Working…', w - pad * 2, 1)[0], pad, hh + 32);
+  let y = hh + 66;
+  if (wk.file) { g.fillStyle = '#8fd3ff'; g.font = `600 19px ui-monospace,Menlo,monospace`; g.fillText('▸ ' + wrap(g, wk.file, w - pad * 2 - 30, 1)[0], pad, y); y += 28; }
+  // thumbnails strip (newest first) on the right
+  const tw = thumbs.length ? 224 : 0, tGap = 8, colX = w - pad - tw;
+  if (thumbs.length) {
+    const rows = Math.max(1, Math.min(2, Math.floor((h - 30 - y) / ((tw - tGap) / 2 + 20))));
+    for (let i = 0; i < Math.min(thumbs.length, rows * 2); i++) {
+      const th = thumbs[i], cw = (tw - tGap) / 2, ch = cw * 1.0, cx = colX + (i % 2) * (cw + tGap), cy = y + 4 + (i / 2 | 0) * (ch + 20);
+      g.fillStyle = '#fff'; g.fillRect(cx - 2, cy - 2, cw + 4, ch + 4);
+      const ar = th.img.naturalWidth / th.img.naturalHeight, dw = ar > 1 ? cw : ch * ar, dh = ar > 1 ? cw / ar : ch;
+      g.fillStyle = '#e9e6df'; g.fillRect(cx, cy, cw, ch); g.drawImage(th.img, cx + (cw - dw) / 2, cy + (ch - dh) / 2, dw, dh);
+      if (i === 0) { g.strokeStyle = '#ffb74d'; g.lineWidth = 3; g.strokeRect(cx - 3, cy - 3, cw + 6, ch + 6); }
+      g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `500 12px ${FONT}`; g.textBaseline = 'top';
+      g.fillText(wrap(g, th.n.replace(/\.(png|jpe?g|webp)$/i, ''), cw, 1)[0], cx, cy + ch + 4);
+    }
+  }
+  // terminal: last output lines, newest at the bottom, sliding up as lines arrive
+  const tx = pad, tW = (thumbs.length ? colX - 14 : w - pad) - tx, ty = y + 2, tH = h - 32 - ty;
+  rr(g, tx, ty, tW, tH, 8); g.fillStyle = '#05080c'; g.fill(); g.strokeStyle = '#1f2a37'; g.lineWidth = 2; g.stroke();
+  g.save(); g.beginPath(); g.rect(tx, ty, tW, tH); g.clip();
+  g.font = `500 17px ui-monospace,Menlo,monospace`; g.textBaseline = 'alphabetic';
+  const lh = 22, lines = []; for (const l of wk.lines || []) lines.push(...wrap(g, l, tW - 24, 3));
+  let ly = ty + tH - 10 + (m.wscroll || 0);
+  for (let i = lines.length - 1; i >= 0 && ly > ty; i--, ly -= lh) {
+    const newest = i === lines.length - 1; g.fillStyle = newest ? '#b9f6ca' : 'rgba(185,246,202,' + Math.max(0.35, 0.85 - (lines.length - 1 - i) * 0.06) + ')';
+    g.fillText(lines[i], tx + 12, ly);
+    if (newest && (t / 530 | 0) % 2) { const lw = g.measureText(lines[i]).width; g.fillRect(tx + 16 + lw, ly - 15, 10, 18); }
+  }
+  g.restore();
+  g.textBaseline = 'bottom'; g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 17px ${FONT}`;
+  const bits = [`updated ${ago(wk.at)}${ago(wk.at) === 'just now' ? '' : ' ago'}`]; if (m.since) bits.push(`at desk ${ago(m.since)}`);
+  if (wk.images) bits.push(`${wk.images} image${wk.images === 1 ? '' : 's'}`);
+  g.fillText(bits.join('  ·  '), pad, h - 8);
+  scan(g, w, h);
 }
 
 // ---------- Family Inbox: Chris's real inbox (headers only, lead/job mail filtered; encrypted feed) ----------
 function drawInbox(g, s, m, t) {
-  const w = W, h = H, hh = 58, pad = 22, foot = 40, f = m.inbox;
+  const w = W, h = H, hh = 58, pad = 22, foot = 58, f = m.inbox;
   g.fillStyle = '#121620'; g.fillRect(0, 0, w, h);
   header(g, w, s, m.busy, 'INBOX LIVE · ' + s.short, hh);
   const items = f.items || [], rowH = 50, top = hh + 6, rows = Math.min(items.length, Math.floor((h - top - foot) / rowH));
@@ -137,9 +204,9 @@ function drawInbox(g, s, m, t) {
   g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(0, h - foot, w, foot);
   g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 18px ${FONT}`;
   const unread = items.filter(e => e.u).length;
-  g.fillText(`${unread} unread · ${f.leads || 0} lead/job alerts hidden · updated ${ago(f.at)}${ago(f.at) === 'just now' ? '' : ' ago'}`, pad, h - foot / 2);
-  if (m.busy && m.task) { g.textAlign = 'right'; g.fillStyle = '#ffb74d'; g.font = `600 18px ${FONT}`; g.fillText(wrap(g, m.task, 220, 1)[0], w - pad, h - foot / 2); }
+  g.fillText(`${unread} unread · ${f.leads || 0} leads hidden · updated ${ago(f.at)}${ago(f.at) === 'just now' ? '' : ' ago'}`, pad, h - foot / 2);
   scan(g, w, h);
+  refreshBtn(g, m, t);
 }
 
 export function createMonitors({ stations }) {
@@ -152,10 +219,15 @@ export function createMonitors({ stations }) {
     mons.set(s.id, m); draw(m, performance.now());
   }
   const INBOX_STALE = 36 * 3600e3; // older feed than this: fall back to the task screen
-  function draw(m, t) { (m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : drawDesk)(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false; }
+  function draw(m, t) {
+    const fn = m.s.hero ? drawHero : m.inbox && Date.now() - m.inbox.at < INBOX_STALE ? drawInbox : liveWork(m) ? drawWork : drawDesk;
+    fn(m.g, m.s, m, t); m.tex.needsUpdate = true; m.last = t; m.dirty = false;
+  }
   function animated(m, d, focused) {
     if (m.scroll > 0.5) return true;
+    if (m.wscroll > 0.5) return true;
     if (m.s.hero) return d < 10 || focused; // status dots / cursor
+    if (m.refresh?.state === 'asked' && (d < 7 || focused)) return true; // "ASKED GROK..." dots
     return m.busy && (d < 7 || focused);    // blinking cursor while working, only up close
   }
   let lastMinute = -1, nextAt = 0;
@@ -173,6 +245,30 @@ export function createMonitors({ stations }) {
       const sig = JSON.stringify([feed.at, feed.items]); if (sig === m.isig) return;
       m.isig = sig; m.inbox = feed; m.dirty = true;
     },
+    // live work feed (hq-link.fetchWorkFeed): { bots: { id: { step, file, lines[], thumbs:[{n,d}], images, at } } }
+    setWork(feed) {
+      const bots = (feed && feed.bots) || {};
+      for (const m of mons.values()) {
+        if (m.s.hero) continue;
+        const wk = bots[m.s.id] || null, sig = wk ? JSON.stringify([wk.at, wk.step, wk.file, wk.lines, (wk.thumbs || []).map(x => x.n)]) : '';
+        if (sig === m.wsig) continue;
+        const grew = wk && m.work && (wk.lines || []).length && JSON.stringify(wk.lines) !== JSON.stringify(m.work.lines);
+        m.wsig = sig; m.work = wk; m.dirty = true; if (grew) m.wscroll = 44;
+        const names = (wk?.thumbs || []).map(x => x.n).join('|');
+        if (names !== m.tsig) {
+          m.tsig = names;
+          m.thumbs = (wk?.thumbs || []).map(x => { const img = new Image(); img.onload = () => { m.dirty = true; }; img.src = x.d; return { n: x.n, img }; });
+        }
+      }
+    },
+    // HQ #29 REFRESH button: uv on a monitor plane -> refresh kind when it's on the button
+    hitTest(id, uv) {
+      const m = mons.get(id); if (!m || !REFRESHABLE[id] || !uv || m.s.hero) return null;
+      const px = uv.x * W, py = (1 - uv.y) * H, r = btnRect(), k = 12;
+      return px > r.x - k && px < r.x + r.w + k && py > r.y - k && py < r.y + r.h + k ? REFRESHABLE[id] : null;
+    },
+    setHover(id, h) { for (const m of mons.values()) { const v = m.s.id === id && !!h; if (!!m.hover !== v) { m.hover = v; m.dirty = true; } } },
+    setRefresh(id, r) { const m = mons.get(id); if (!m) return; const sig = JSON.stringify(r || null); if (sig !== m.rsig) { m.rsig = sig; m.refresh = r; m.dirty = true; } },
     // HQ chat log from chat.js (this device's own encrypted chat history)
     setLog(entries) {
       const m = [...mons.values()].find(x => x.s.hero); if (!m) return;
@@ -190,6 +286,7 @@ export function createMonitors({ stations }) {
         if (minuteTick) m.dirty = true; // header clock / "at desk N min"
         if (!near) continue;
         if (m.scroll > 0.5) m.scroll *= 0.45; else m.scroll = 0;
+        if (m.wscroll > 0.5) m.wscroll *= 0.5; else m.wscroll = 0;
         if (m.dirty || animated(m, d, focused)) draw(m, now);
       }
     },

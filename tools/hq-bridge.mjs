@@ -75,9 +75,12 @@ function loadSlack() {
 }
 let slackWarned = false;
 async function fireSlack(p) {
-  const s = loadSlack();
   const text = `:speech_balloon: *HQ chat #${p.issue}* from Chris → *${p.to}*\n>${String(p.text || '').replace(/\n/g, '\n>')}\n` +
     (p.shot ? `:camera: View screenshot: \`${p.shot}\` (on the box; open with Read)\n` : '') + (p.url || '');
+  return postSlack(text, 'issue ' + p.issue);
+}
+async function postSlack(text, tag) {
+  const s = loadSlack();
   const sent = [];
   try {
     if (s.SLACK_WEBHOOK_URL) {
@@ -90,7 +93,7 @@ async function fireSlack(p) {
         body: JSON.stringify({ channel: s.SLACK_CHANNEL_ID, text }), signal: AbortSignal.timeout(10000) });
       const j = await r.json().catch(() => ({})); sent.push('api ' + (j.ok ? 'ok' : j.error || r.status));
     } else { if (!slackWarned) { slackWarned = true; log('slack not configured (no SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN+SLACK_CHANNEL_ID); skipping slack wake'); } return; }
-    log('slack wake for issue', p.issue, '->', sent.join(', '));
+    log('slack wake for', tag, '->', sent.join(', '));
   } catch (e) { log('slack wake error', e.message); }
 }
 let webhookWarned = false;
@@ -147,6 +150,7 @@ function saveShot(mid, dataUrl) {
 async function handle(m, priv, st) {
   if (m.event !== 'message' || !(m.message || m.attachment?.url)) return;
   let p; try { p = await open(JSON.parse(await envelopeText(m)), priv); } catch { return log('skip undecryptable', m.id); }
+  if (p.type === 'refresh') return handleRefresh(p, st);
   if (!p.mid || alreadyFiled(p.mid, st)) return;
   const shot = p.shot ? saveShot(p.mid, p.shot) : null;
   if (p.shot && shot) log('shot saved', shot.file);
@@ -170,6 +174,31 @@ async function handle(m, priv, st) {
   await fireWebhook(evt);
   await fireEmail(evt);
   await fireSlack(evt);
+}
+
+// Tap-to-refresh (HQ #29): Chris tapped REFRESH on the whiteboard BANK panel or the Family Inbox monitor. No GitHub issue:
+// log it to refresh-requests.jsonl (tools/hq-inbox.sh refreshes / pending show the open ones) and ping Slack #hq-chat,
+// which wakes Grok Bot to pull fresh data with its connector and push the feed. One Slack ping per kind per 3 min;
+// requests older than 30 min (relay catch-up after a bridge restart) are logged but don't ping.
+const REFRESH = {
+  bank: { what: 'whiteboard BANK panel', how: 'Finance finance_list_accounts {} + finance_list_connections {} (write_to_file) -> `node tools/refresh-bank-feed.mjs <accounts-file> <connections-file>`' },
+  inbox: { what: 'Family Inbox desk monitor', how: 'Gmail search_threads {query:"in:inbox -category:promotions -category:social", pageSize:40} (write_to_file) -> `node tools/refresh-inbox-feed.mjs <file>`' },
+};
+const RSTATE = `${DIR}/refresh-state.json`;
+async function handleRefresh(p, st) {
+  if (!p.mid || st.done.includes(p.mid)) return;
+  st.done.push(p.mid); saveState(st);
+  const kind = REFRESH[p.kind] ? p.kind : null; if (!kind) return log('unknown refresh kind', p.kind);
+  const evt = { source: 'grok-bot-hq', event: 'refresh', kind, device: p.device?.id, ts: p.ts, at: new Date().toISOString() };
+  try { fs.appendFileSync(`${DIR}/refresh-requests.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
+  log('refresh request', kind, 'from device', p.device?.id);
+  if (Date.now() - (Date.parse(p.ts) || 0) > 30 * 60e3) return log('refresh', kind, 'is old (catch-up), no ping');
+  let rs = {}; try { rs = JSON.parse(fs.readFileSync(RSTATE, 'utf8')); } catch {}
+  if (Date.now() - (rs[kind] || 0) < 3 * 60e3) return log('refresh', kind, 'coalesced (pinged <3 min ago)');
+  rs[kind] = Date.now(); try { fs.writeFileSync(RSTATE, JSON.stringify(rs)); } catch {}
+  const r = REFRESH[kind];
+  await postSlack(`:arrows_counterclockwise: *HQ refresh request: ${kind.toUpperCase()}*. Chris tapped REFRESH on the ${r.what} (${chicago(p.ts)}).\n` +
+    `Grok Bot: ${r.how}. No HQ chat reply needed; the ${kind === 'bank' ? 'board' : 'monitor'} flips to FRESH when the new feed lands.`, 'refresh ' + kind);
 }
 
 // Tell the sending iPad its message was filed (issue #n), encrypted to that device only. The iPad's chat shows "#n"
@@ -249,6 +278,7 @@ if (cmd === 'watch') await watch();
 else if (cmd === 'webhook-test') { const w = loadWebhook(); log('webhook configured:', !!w.url, 'key:', !!w.key); await fireWebhook({ source: 'grok-bot-hq', event: 'hq-chat-test', issue: 0, url: '', to: 'Grok Bot', text: 'webhook test (ignore)', ts: new Date().toISOString(), test: true }); }
 else if (cmd === 'slack-test') { const s = loadSlack(); log('slack webhook:', !!s.SLACK_WEBHOOK_URL, 'token:', !!s.SLACK_BOT_TOKEN, 'channel:', s.SLACK_CHANNEL_ID || '-'); await fireSlack({ issue: 0, url: '', to: 'Grok Bot', text: a || 'Slack wake test from Bot HQ bridge (ignore)' }); }
 else if (cmd === 'once') await once(a);
+else if (cmd === 'refresh-test') { await handleRefresh({ type: 'refresh', kind: a || 'bank', mid: 'rftest' + Date.now(), ts: new Date().toISOString(), device: { id: 'test' } }, state()); }
 else if (cmd === 'relay') {
   const body = gh('issue', 'view', a, '--repo', REPO, '--json', 'body', '-q', '.body');
   const c = JSON.parse(gh('api', `repos/${REPO}/issues/comments/${b}`));
@@ -256,4 +286,4 @@ else if (cmd === 'relay') {
 } else if (cmd === 'relay-event') {
   const ev = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   await relayComment(ev.issue.body, { ...ev.comment, issue: ev.issue.number });
-} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | once [since] | relay <issue> <commentId> | relay-event');
+} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | refresh-test [bank|inbox] | once [since] | relay <issue> <commentId> | relay-event');

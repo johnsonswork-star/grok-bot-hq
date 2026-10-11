@@ -5,7 +5,7 @@ import { createWorkers } from './workers.js';
 import { createMonitors } from './monitors.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed, fetchBankFeed } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, requestRefresh } from './hq-link.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -510,7 +510,10 @@ function lockPointer() {
   try { const r = renderer.domElement.requestPointerLock?.(); if (r && r.catch) r.catch(() => {}); } catch (e) {}
 }
 document.getElementById('menu').addEventListener('click', () => { setPaused(false); lockPointer(); });
-renderer.domElement.addEventListener('click', () => { if (!paused && !document.pointerLockElement) lockPointer(); });
+renderer.domElement.addEventListener('click', e => {
+  if (!paused && document.pointerLockElement && hoverKind) return refreshCtl.request(hoverKind); // reticle on a REFRESH button
+  if (!paused && !document.pointerLockElement) { if (!CAN_LOCK && tapAt(e.clientX, e.clientY)) return; lockPointer(); }
+});
 document.addEventListener('pointerlockchange', () => {
   // Esc releases the lock: treat that as "pause" unless we released it ourselves
   if (CAN_LOCK && !document.pointerLockElement && !paused && !chat.isOpen() && lastInput === 'mouse') setPaused(true);
@@ -550,9 +553,11 @@ function showKnob(t, dx = 0, dy = 0) {
   knob.style.left = (t.x0 + dx) + 'px'; knob.style.top = (t.y0 + dy) + 'px';
 }
 const canvasEl = renderer.domElement;
+const taps = new Map(); // short, still touches = taps (REFRESH buttons on the whiteboard / inbox monitor)
 canvasEl.addEventListener('touchstart', e => {
   e.preventDefault();
   for (const t of e.changedTouches) {
+    taps.set(t.identifier, { x: t.clientX, y: t.clientY, t: performance.now(), moved: false });
     if (t.clientX < innerWidth / 2 && !touch.move) { touch.move = { id: t.identifier, x0: t.clientX, y0: t.clientY }; showKnob(touch.move); }
     else if (!touch.look) touch.look = { id: t.identifier, x: t.clientX, y: t.clientY };
   }
@@ -565,7 +570,9 @@ canvasEl.addEventListener('touchmove', e => {
       let dx = t.clientX - touch.move.x0, dy = t.clientY - touch.move.y0;
       const m = Math.hypot(dx, dy); if (m > TOUCH_RADIUS) { dx *= TOUCH_RADIUS / m; dy *= TOUCH_RADIUS / m; }
       touch.mx = dx / TOUCH_RADIUS; touch.mz = dy / TOUCH_RADIUS; showKnob(touch.move, dx, dy);
-    } else if (touch.look && t.identifier === touch.look.id) {
+    }
+    const tp = taps.get(t.identifier); if (tp && Math.hypot(t.clientX - tp.x, t.clientY - tp.y) > 14) tp.moved = true;
+    if (touch.look && t.identifier === touch.look.id) {
       touch.ldx += t.clientX - touch.look.x; touch.ldy += t.clientY - touch.look.y;
       touch.look.x = t.clientX; touch.look.y = t.clientY;
     }
@@ -573,6 +580,8 @@ canvasEl.addEventListener('touchmove', e => {
 }, { passive: false });
 function touchEnd(e) {
   for (const t of e.changedTouches) {
+    const tp = taps.get(t.identifier); taps.delete(t.identifier);
+    if (tp && !tp.moved && performance.now() - tp.t < 400 && e.type === 'touchend') tapAt(t.clientX, t.clientY);
     if (touch.move && t.identifier === touch.move.id) { touch.move = null; touch.mx = touch.mz = 0; showKnob(null); }
     if (touch.look && t.identifier === touch.look.id) touch.look = null;
   }
@@ -658,6 +667,7 @@ function setFocus(s) {
 let lastDesk = null;
 function interact() {
   if (paused) return;
+  if (!panelOpen && hoverKind) return refreshCtl.request(hoverKind); // reticle on a REFRESH button: A / E refreshes
   if (panelOpen) return closePanel();
   if (!focused) return;
   panelOpen = focused; lastDesk = focused;
@@ -670,7 +680,10 @@ function showPanel(s) {
   ui.panel.innerHTML = `<h2><span class="sw" style="background:${s.color}"></span>${s.name}</h2>
     <p>${s.role}</p><p>${status}</p>
     <div class="screenwrap"></div>
+    ${REFRESH_KIND[s.id] ? `<button class="refreshbtn" type="button">⟳ REFRESH ${s.short === 'FI' ? 'INBOX' : s.short} <span>(tap or X)</span></button>` : ''}
     <small>Hold View (or Enter) to message this bot via Grok Bot + team. B / Q / A to close.</small>`;
+  const rb = ui.panel.querySelector('.refreshbtn');
+  if (rb) for (const ev of ['touchstart', 'click']) rb.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); if (ev === 'click' && e.pointerType === 'touch') return; refreshCtl.request(REFRESH_KIND[s.id]); }, { passive: false });
   // the desk's live monitor, full size and readable (same canvas the 3D screen uses, so it keeps updating)
   const cv = monitors.canvas(s.id); if (cv) { cv.className = 'deskscreen'; ui.panel.querySelector('.screenwrap').appendChild(cv); }
   ui.panel.classList.toggle('wide', !!s.hero);
@@ -738,6 +751,69 @@ function snapshot(maxW = 1280, q = 0.7) {
     return /^data:image\/jpeg;base64,/.test(url) && url.length > 2000 ? url : null;
   } catch (e) { return null; }
 }
+// ---------- tap-to-refresh (HQ #29) ----------
+// REFRESH marker on the whiteboard BANK panel and the Family Inbox monitor. Tap it (iPad), aim the reticle at it and press
+// A / E / click, or press X in the Family Inbox desk panel. That sends an encrypted refresh request through the HQ relay
+// (hq-link.requestRefresh); the bridge pings Slack #hq-chat and Grok Bot pulls fresh data. Meanwhile the button shows
+// "ASKED GROK…", the feed is polled every 15 s for 10 min, and it flips to "FRESH ✓" when a newer feed lands.
+const REFRESH_KIND = { inbox: 'inbox' };
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const inboxSt = stations.find(s => s.id === 'inbox');
+let hoverKind = null;
+function refreshHit() {
+  const targets = [whiteboard.surface]; if (inboxSt) targets.push(inboxSt.screen);
+  raycaster.far = 10;
+  const h = raycaster.intersectObjects(targets, false)[0]; if (!h) return null;
+  if (h.object === whiteboard.surface) return whiteboard.hitTest(h.uv);
+  return h.distance < 5 ? monitors.hitTest('inbox', h.uv) : null;
+}
+function tapAt(x, y) {
+  if (paused || chat.isOpen()) return false;
+  const r = canvasEl.getBoundingClientRect();
+  ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const k = refreshHit(); if (k) { refreshCtl.request(k); return true; }
+  return false;
+}
+function updateHover() {
+  let k = null;
+  if (!paused && !chat.isOpen() && !panelOpen) { camera.getWorldDirection(tmpV); raycaster.set(camera.position, tmpV); k = refreshHit(); }
+  if (k === hoverKind) return;
+  hoverKind = k;
+  whiteboard.setHover(k === 'bank'); monitors.setHover(k === 'inbox' ? 'inbox' : null, true);
+  if (k) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = `⟳ Refresh ${k === 'bank' ? 'bank balances' : 'Family Inbox'}  ·  A / E / tap`; }
+  else { const f = focused; focused = null; ui.reticle.classList.remove('hot'); ui.focus.classList.remove('show'); setFocus(f); }
+}
+const refreshCtl = (() => {
+  const KEY = 'hq.refresh', COOLDOWN = 60e3, ASK_TTL = 30 * 60e3, FRESH_TTL = 3 * 60e3, FAIL_TTL = 5 * 60e3;
+  let st = {}; try { st = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  const feedAt = { bank: 0, inbox: 0 }, fast = {}, pollers = {};
+  function show(kind) {
+    const r = st[kind], now = Date.now(); let view = null;
+    if (r) {
+      if (r.state === 'asked' && feedAt[kind] > r.at) { r.state = 'fresh'; r.fresh = now; save(); }
+      if (r.state === 'asked' && now - r.at < ASK_TTL) view = { state: 'asked', at: r.at };
+      else if (r.state === 'fresh' && now - r.fresh < FRESH_TTL) view = { state: 'fresh' };
+      else if (r.state === 'failed' && now - r.at < FAIL_TTL) view = { state: 'failed' };
+    }
+    if (kind === 'bank') whiteboard.setRefresh(view); else monitors.setRefresh('inbox', view);
+  }
+  const label = k => (k === 'bank' ? 'bank balances' : 'inbox');
+  async function request(kind) {
+    const r = st[kind];
+    if (r && r.state === 'asked' && Date.now() - r.at < COOLDOWN) { toast(`Already asked Grok Bot. Fresh ${label(kind)} on the way`); return; }
+    st[kind] = { state: 'asked', at: Date.now() }; save(); show(kind);
+    toast(`⟳ Refresh requested. Grok Bot will pull fresh ${label(kind)}`);
+    const ok = await requestRefresh(kind);
+    if (!ok) { st[kind] = { state: 'failed', at: Date.now() }; save(); show(kind); toast('Refresh not sent (no signal?). Tap again'); return; }
+    fast[kind] = Date.now() + 10 * 60e3; pollers[kind]?.();
+  }
+  function feed(kind, at) { if (at > feedAt[kind]) feedAt[kind] = at; show(kind); }
+  setInterval(() => { show('bank'); show('inbox'); for (const k in fast) if (Date.now() < fast[k]) pollers[k]?.(); }, 15000);
+  setTimeout(() => { show('bank'); show('inbox'); }, 0);
+  return { request, feed, pollers };
+})();
 // Family Inbox desk monitor: real inbox headers, encrypted to this iPad (tools/refresh-inbox-feed.mjs). Last copy kept
 // on this device so the screen survives the relay's 12 h expiry; falls back to the task screen when there's none.
 (function inboxFeed() {
@@ -746,11 +822,13 @@ function snapshot(maxW = 1280, q = 0.7) {
   async function poll() {
     if (document.hidden) return;
     const f = await fetchInboxFeed(); if (!f) return;
+    refreshCtl.feed('inbox', f.at);
     let old = null; try { old = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
     if (old && old.at >= f.at) return;
     try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) {}
     monitors.setInbox('inbox', f);
   }
+  refreshCtl.pollers.inbox = poll;
   poll(); setInterval(poll, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 })();
@@ -763,10 +841,26 @@ function snapshot(maxW = 1280, q = 0.7) {
   async function poll() {
     if (document.hidden) return;
     const f = await fetchBankFeed();
+    if (f) refreshCtl.feed('bank', f.at);
     if (f && (!last || f.at >= last.at)) { last = f; try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) {} }
     whiteboard.setBank(last, !!f);
   }
+  refreshCtl.pollers.bank = poll;
   poll(); setInterval(poll, 120000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+})();
+// Live work on desk screens (HQ #31): encrypted per-device feed from tools/work-live.mjs (step, file, last output lines,
+// image thumbnails). Last copy kept on this device; the monitor shows it only while that bot is busy in tasks.json.
+(function workFeed() {
+  const KEY = 'hq.workFeed';
+  try { const f = JSON.parse(localStorage.getItem(KEY) || 'null'); if (f) monitors.setWork(f); } catch (e) {}
+  async function poll() {
+    if (document.hidden) return;
+    const r = await fetchWorkFeed(); if (!r || r.same || !r.feed) return;
+    try { localStorage.setItem(KEY, JSON.stringify(r.feed)); } catch (e) {}
+    monitors.setWork(r.feed);
+  }
+  poll(); setInterval(poll, 12000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 })();
 const chat = createChat({ stations, snapshot, onLog: entries => monitors.setLog(entries), onOpenChange: o => {
@@ -809,6 +903,7 @@ function tick() {
     else if (paused && gp.A) setPaused(false);
     else if (!paused) {
       if (gp.A) interact();
+      if (gp.X && panelOpen && REFRESH_KIND[panelOpen.id]) refreshCtl.request(REFRESH_KIND[panelOpen.id]);
       if (gp.B) closePanel();
       if (gp.Y || gp.dpad.right) nextStation(1);
       if (gp.dpad.left) nextStation(-1);
@@ -848,7 +943,8 @@ function tick() {
   camera.position.set(player.pos.x, EYE + bob, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
   workers.update(dt, clock.elapsedTime, player);
-  setFocus(paused ? null : findFocus());
+  if (!hoverKind) setFocus(paused ? null : findFocus()); else if (paused) setFocus(null);
+  updateHover();
   monitors.tick(performance.now(), player.pos, (panelOpen || focused)?.id);
   for (const s of stations) { // fade nearby plates you aren't looking at so they don't stack up
     const d = Math.hypot(s.x - player.pos.x, s.z - player.pos.z);
@@ -882,7 +978,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard };
+window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
