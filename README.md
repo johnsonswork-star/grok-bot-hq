@@ -85,21 +85,26 @@ If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
 
 Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
-## Layout (north = the big window wall, you spawn at the south entry door)
+## Layout: Dunder Mifflin Scranton (HQ #30 / #36)
 
-- **Entry / reception (south):** glass doors, a reception desk, and a slatted walnut "GROK BOT HQ" logo wall.
-- **Center:** **Grok Bot** sits on a raised round platform with a gold ring and a big monitor, facing the entrance. **Chief of Staff** is just to its left (west).
-- **North window bench (left to right):** **Faith Lands**, **Web Brokerage**, **Connectivity**.
-- **West pod, "family wing"** (back-to-back desks with a divider):
-  - South-facing row: **Family Inbox**, **Family Assistance**
-  - North-facing row: **Atom Family Designer**, **Kids Tech**
-- **East pod, "build wing"** (back-to-back desks):
-  - South-facing row: **App Builder**, **App Review**
-  - North-facing row: **OnPad Chat**, **Icon Shop**
-- **West wall, by the lounge:** **Profile & Settings**.
-- **Southwest:** lounge (L-sofa, rug, coffee table) and a kitchenette.
-- **Southeast:** glass-walled conference room with a table for 9 and an "HQ Briefing" display. Its door is on the west glass wall.
-- North and east walls are floor-to-ceiling windows with daylight, trees, and a skyline outside.
+North = the big window wall. You spawn at the south front door, facing Pam's reception. The floor plan follows The Office (Scranton branch); `LAYOUT` in `main.js` is bumped when it changes so a live reload drops you at the front door instead of inside a new wall.
+
+| Spot (The Office) | Bot | Where |
+|---|---|---|
+| Michael's glass corner office | **Grok Bot** (hero desk, HQ chat monitor) | SE corner, blinds, door on the north side by Jim + Dwight |
+| Pam's reception | **Family Inbox** | right inside the front door |
+| Jim's desk | **Chief of Staff** | face-to-face pair outside Michael's door |
+| Dwight's desk | **Family Assistance** | (bobblehead; Jim's stapler is in jello) |
+| Andy's desk | **Icon Shop** | west of Jim + Dwight |
+| Stanley's desk / Phyllis's desk | **App Builder** / **OnPad Chat** | face-to-face pair, middle of the bullpen |
+| Angela / Oscar / Kevin (accounting) | **Faith Lands** / **Web Brokerage** / **Connectivity** | U-cluster under the ACCOUNTING sign |
+| Creed's desk ("quality assurance") / Meredith's desk | **App Review** / **Kids Tech** | back of the bullpen by the windows |
+| Kelly's desk (annex) | **Atom Family Designer** | the annex, NE corner |
+| Toby's desk (annex, HR) | **Profile & Settings** | the annex |
+
+Rooms: conference room west of reception (glass + blinds, long table, HQ Briefing TV on the west wall, live whiteboard on the south wall with clock / weather / markets / TEAM ON IT / BANK + REFRESH); kitchen + break room in the back west corner (counter, fridge, microwave, coffee, snack + soda machines, round tables); the annex in the back east corner with Ryan's closet; copier by reception; filing cabinets; water cooler on the west wall just outside the kitchen (the only place workers drink); warehouse = a labeled door on the west wall with pallets of paper (no downstairs floor, to keep iPad frame rate up).
+
+Shots: `shots/scranton-*.png`.
 
 ## Files
 
@@ -144,7 +149,7 @@ After filing each new HQ issue, the bridge POSTs `{source, event:"hq-chat", issu
 ## Worker characters (one per bot)
 `workers.js` gives every station in `stations.js` a low-poly worker (shirt = bot color, short-name tag over the head).
 - **Idle**: roams the floor: coffee at the kitchenette, windows, phone calls, thinking, chatting with another idle worker. Glances at you when you walk up.
-- **Busy**: walks (A* around desks, pods, columns) to its own chair, sits and types. Its monitor switches to `WORKING` + the task line, and the desk panel (A / E) shows "Working at desk: <task>".
+- **Busy**: walks (A* around desks, walls, doorways, columns) to its own chair, sits and types. Its monitor switches to `WORKING` + the task line, and the desk panel (A / E) shows "Working at desk: <task>".
 - Looking at a worker focuses that bot, so A / E or Hold View works on people too.
 
 **What counts as busy:** `tasks.json` at the site root (polled every 20 s, never cached):

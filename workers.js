@@ -68,7 +68,7 @@ function tagSprite(st) {
   return sp;
 }
 
-export function createWorkers({ scene, stations, colliders: baseColliders, extraColliders = [], onStatus }) {
+export function createWorkers({ scene, stations, colliders: baseColliders, extraColliders = [], pois = null, onStatus }) {
   const colliders = baseColliders.concat(extraColliders); // extra = things only workers avoid (pod dividers)
   // ---------- nav grid + A* ----------
   const blockedAt = (x, z, r = R) => { for (const c of colliders) if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) return true; return false; };
@@ -125,19 +125,8 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
 
   // ---------- places to hang out when idle ----------
   const P = (x, z, yaw, act) => { const [i, j] = nearestFree(x, z); return { x: cx(i), z: cz(j), yaw, act }; };
-  const POIS = [
-    // drinks happen ONLY at the water cooler (west wall, below). No sink / kitchen counter stops (Chris, HQ #20).
-    P(-6, -13.1, 0, 'window'), P(6, -13.1, 0, 'window'), P(-15, -13.1, 0, 'window'), P(15, -13.1, 0, 'window'), P(-2.5, -13.1, 0.1, 'window'),
-    P(19.1, -6, -Math.PI / 2, 'window'), P(19.1, -2, -Math.PI / 2, 'window'),
-    P(-12.8, 11.7, Math.PI, 'phone'), P(-14.6, 10, -Math.PI / 2, 'think'), P(-11, 9.6, Math.PI * 0.75, 'phone'),
-    P(17.3, 8.4, -Math.PI / 2, 'think'), P(17.3, 9.6, -Math.PI / 2, 'think'), P(14, 7.4, Math.PI, 'phone'),
-    P(-3.6, 9.2, Math.PI, 'think'), P(-5.5, 6.8, 0, 'phone'), P(4, 6, 0.5, 'phone'), P(-2, 4.5, -2.4, 'think'),
-    P(3.5, -4, 2.2, 'phone'), P(-8, -5, 1.6, 'think'), P(8, -5, -1.6, 'think'), P(0, -8.5, 0, 'phone'), P(-16.5, -1, 1.2, 'phone'),
-    // water cooler on the west wall (-19.45, -5.2): stand in front, face the cooler
-    P(-18.6, -5.2, Math.PI / 2, 'water'), P(-18.6, -4.2, Math.atan2(0.85, 1.0), 'water'), P(-18.6, -6.2, Math.atan2(0.85, -1.0), 'water'),
-    P(-17.7, -5.2, Math.PI / 2, 'water'), // waiting in line for the cooler
-    P(15, -1.5, -0.6, 'think'), P(-9, 1.5, -2.6, 'phone'), P(10, 2.5, -2.2, 'phone'),
-  ];
+  // idle spots come from main.js (floor-plan specific): [x, z, yaw, act]. Drinks happen ONLY at the water cooler (HQ #20).
+  const POIS = (pois || [[0, 0, 0, 'think']]).map(([x, z, yaw, act]) => P(x, z, yaw, act));
 
   // ---------- one worker per station ----------
   const workers = [];
@@ -154,7 +143,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     workers.push(w);
   }
   const hero = stations.find(s => s.hero);
-  const groundY = (x, z) => hero && Math.hypot(x - hero.x, z - hero.z) < 2.65 ? 0.06 : 0;
+  const groundY = (x, z) => hero && hero.platform && Math.hypot(x - hero.x, z - hero.z) < 2.65 ? 0.06 : 0; // no raised hero platform in the Scranton layout
 
   function goTo(w, x, z, then, mustArrive = false) {
     const path = astar(w.x, w.z, x, z) || (mustArrive ? [[x, z]] : null); // desk trips never give up
