@@ -126,7 +126,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
   // ---------- places to hang out when idle ----------
   const P = (x, z, yaw, act) => { const [i, j] = nearestFree(x, z); return { x: cx(i), z: cz(j), yaw, act }; };
   const POIS = [
-    P(-18.5, 7.6, Math.PI / 2, 'coffee'), P(-18.5, 9.4, Math.PI / 2, 'coffee'), P(-18.5, 8.5, Math.PI / 2, 'coffee'),
+    P(-18.5, 7.6, Math.PI / 2, 'coffee'), P(-18.5, 8.2, Math.PI / 2, 'coffee'), // coffee machine only; no sink stops (Chris, HQ #20)
     P(-6, -13.1, 0, 'window'), P(6, -13.1, 0, 'window'), P(-15, -13.1, 0, 'window'), P(15, -13.1, 0, 'window'), P(-2.5, -13.1, 0.1, 'window'),
     P(19.1, -6, -Math.PI / 2, 'window'), P(19.1, -2, -Math.PI / 2, 'window'),
     P(-12.8, 11.7, Math.PI, 'phone'), P(-14.6, 10, -Math.PI / 2, 'think'), P(-11, 9.6, Math.PI * 0.75, 'phone'),
