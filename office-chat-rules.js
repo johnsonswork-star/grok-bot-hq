@@ -73,7 +73,8 @@ export function triage(raw, { to = OFFICE_TO, near = null } = {}) {
   const cre = new RegExp(CASUAL.source.replace(/^\^/, ''), 'i'); let rem = bare, hit = false;
   for (let i = 0, m; i < 4 && (m = rem.match(cre)); i++) { hit = true; rem = rem.replace(m[0], ' '); }
   const left = hit ? rem.replace(/\b(team|guys|everyone|everybody|all|y'?all|so|much|again|today|there|too|and|you|u|man|dude|bud|buddy|folks|gang|office|dunder|mifflin|lol|haha|please|pls)\b/g, ' ').trim().split(/\s+/).filter(Boolean).length : 99;
-  const casual = forceOffice || (!order && left <= 1);
+  const callOut = named.some(id => !station(id)?.hero) && !bare.replace(/\s+/g, '').length; // just a name ("Andy?") = calling someone over to chat
+  const casual = forceOffice || callOut || (!order && left <= 1);
   if (casual) return { route: 'office', kind: 'casual', cmds: [], speaker, why: forceOffice ? '/office prefix' : 'small talk' };
   return { route: 'grok', kind: 'order', cmds: [], speaker: 'grok', why: order ? 'real order / question' : 'not clearly small talk' };
 }
@@ -114,11 +115,14 @@ const CASUAL_BY = {
   how: { inbox: 'Pretty good! Phones are quiet.', cos: 'Living the dream.', assist: 'Operating at peak efficiency.', icons: 'Fantastic! Like a Cornell reunion!', onpad: 'Oh, can\'t complain, dear.', builder: 'Counting down to five.', faith: 'Fine. Kevin is chewing loudly.', broker: 'Good, actually. Quiet day.', conn: 'Hungry.', review: 'Better than my parole officer.', kids: 'Hungover. Great!', designer: 'Literally amazing. Ask me why.', profile: 'Oh. Nobody asks. Okay, thanks.', grok: 'Fantastic. Best day ever. Every day.' },
   bye: { inbox: 'Bye! Have a good one.', cos: 'Later.', assist: 'Farewell. Stay vigilant.', icons: 'Peace out!', onpad: 'Bye, sweetie!', builder: 'Finally.', faith: 'Goodbye.', broker: 'See you.', conn: 'Bye.', review: 'You never saw me.', kids: 'Byeee.', designer: 'Bye! Text me!', profile: 'Bye. Sorry.', grok: 'Don\'t go! Okay, go.' },
 };
+const CALL = { grok: 'You rang? The boss is in.', inbox: 'Yes? Front desk.', cos: 'Yep? What\'s up?', assist: 'State your business.', icons: 'Yo! Nard Dog, at your service!', onpad: 'Yes, dear?',
+  builder: 'What.', faith: 'What is it?', broker: 'Yeah? What\'s up?', conn: 'Huh? Me?', review: 'Who\'s asking?', kids: 'Yeah, babe?', designer: 'Omg yes? What?', profile: 'Oh. Me? Yes. Sorry.' };
 export function casualLine(bot, text, seed = Date.now()) {
   const t = String(text || '').toLowerCase();
   const k = /joke|she said/.test(t) ? 'joke' : /\b(thanks?|thx|ty|appreciate)\b/.test(t) ? 'thanks' : /\b(bye|later|good ?night|night|see (ya|you)|gn)\b/.test(t) ? 'bye'
     : /\b(good (job|work|stuff)|great|nice|awesome|well done|nailed|rock|love|bravo)\b/.test(t) ? 'praise' : /\bhow\b|what'?s (up|good)|wh?at up/.test(t) ? 'how'
     : /\b(hi|hello|hey|heya|yo|sup|howdy|morning|gm)\b/.test(t) ? 'hi' : /pretzel/.test(t) ? 'pretzel' : /bears|beets/.test(t) ? 'beets' : 'other';
+  if (k === 'other' && !t.replace(nameRe, '').replace(/[^a-z]/g, '')) return CALL[bot] || 'Yes?';
   if (k === 'joke') return pick(JOKES, seed);
   if (k === 'pretzel') return bot === 'builder' ? 'Pretzel day? Did I hear pretzel day?' : 'Stanley\'s going to lose it.';
   if (k === 'beets') return bot === 'assist' ? 'Bears. Beets. Battlestar Galactica. Correct.' : 'Identity theft is not a joke, Jim!';
