@@ -1,6 +1,8 @@
 // HQ chat delivery: gets Chris's messages to Grok Bot + the team, instantly, with no login and no token on the device.
 // The UI (chat.js) only calls:
-//   send({ to, text, sentAt }) -> { status: 'delivered' | 'failed', ref?, error? }
+//   send({ to, text, sentAt, shot? }) -> { status: 'delivered' | 'failed', ref?, shot: bool, error? }
+//     shot = optional JPEG data URL of the 3D view. It is sealed inside the same encrypted envelope; big envelopes
+//     become ntfy attachments (bridge fetches them). If the send with a shot fails, it retries text-only.
 //   fetchReplies() -> [{ ref, id, from, text, at }]
 //   isLinked() -> bool
 //
@@ -37,17 +39,28 @@ function device() {
 }
 export const isLinked = () => !!(globalThis.crypto && crypto.subtle);
 
-export async function send({ to, text, sentAt }) {
+const SHOT_MAX = 1.5e6; // chars of data URL (~1.1 MB JPEG); bigger shots are dropped, text still goes
+
+export async function send({ to, text, sentAt, shot }) {
   try {
     const d = await device();
     const mid = randomId(9);
-    const env = await seal({ v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(),
-      device: { id: d.id, topic: d.topic, pub: d.pubJwk }, ua: navigator.userAgent.slice(0, 120) }, INBOX_PUB);
-    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(env) });
-    if (!r.ok) throw new Error('relay ' + r.status);
-    return { status: 'delivered', ref: mid };
+    const post = async withShot => {
+      const msg = { v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(),
+        device: { id: d.id, topic: d.topic, pub: d.pubJwk }, ua: navigator.userAgent.slice(0, 120) };
+      if (withShot) msg.shot = shot;
+      const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+      if (!r.ok) throw new Error('relay ' + r.status);
+    };
+    const useShot = typeof shot === 'string' && shot.startsWith('data:image/') && shot.length < SHOT_MAX;
+    if (useShot) {
+      try { await post(true); return { status: 'delivered', ref: mid, shot: true }; }
+      catch (e) { /* relay refused the big one: fall through to text-only (same mid, bridge de-dupes) */ }
+    }
+    await post(false);
+    return { status: 'delivered', ref: mid, shot: false };
   } catch (e) {
-    return { status: 'failed', error: e.message };
+    return { status: 'failed', error: e.message, shot: false };
   }
 }
 

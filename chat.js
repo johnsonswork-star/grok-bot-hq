@@ -5,7 +5,7 @@ const LOG = 'hq.chatLog';
 const CHIPS = ['Status update?', "What's next today?", 'Anything need me?', 'Good work, team'];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function createChat({ stations, onOpenChange }) {
+export function createChat({ stations, onOpenChange, snapshot }) {
   const el = document.getElementById('chat');
   const $ = s => el.querySelector(s);
   const log = $('.log'), input = $('input'), sel = $('select'), chipsEl = $('.chips'), status = $('.cstatus');
@@ -15,11 +15,13 @@ export function createChat({ stations, onOpenChange }) {
   let entries = []; try { entries = JSON.parse(localStorage.getItem(LOG) || '[]'); } catch (e) {}
   const save = () => { try { localStorage.setItem(LOG, JSON.stringify(entries.slice(-80))); } catch (e) {} };
 
+  // m.shot: 'on' = view screenshot rode along, 'off' = capture failed/too big (text still sent)
+  const shotNote = m => m.shot === 'on' ? ' · 📸 view attached' : m.shot === 'off' ? ' · <span class="noshot">no view shot</span>' : '';
   function render() {
     log.innerHTML = entries.length ? entries.map(m => {
       if (m.kind === 'me') return `<div class="msg me"><div class="who">You → ${esc(m.to)}</div><div class="txt">${esc(m.text)}</div>
-        <div class="st ${m.status}">${m.status === 'delivered' ? '✓ Delivered to Grok Bot &amp; team'
-          : m.status === 'sending' ? 'Sending…'
+        <div class="st ${m.status}">${m.status === 'delivered' ? '✓ Delivered to Grok Bot &amp; team' + shotNote(m)
+          : m.status === 'sending' ? 'Sending…' + (m.shot === 'on' ? ' 📸' : '')
           : `<a href="#" class="retry" data-at="${m.at}">⚠ Not sent (no signal?). Tap to retry</a>`}</div></div>`;
       return `<div class="msg bot"><div class="who">${esc(m.from)}</div><div class="txt">${esc(m.text)}</div></div>`;
     }).join('') : `<div class="empty">Messages go straight to Grok Bot and the team. Replies show up here.</div>`;
@@ -37,9 +39,11 @@ export function createChat({ stations, onOpenChange }) {
     await deliver(m);
   }
   async function deliver(m) {
-    m.status = 'sending'; render();
-    const r = await link.send({ to: m.to, text: m.text, sentAt: new Date(m.at) });
-    Object.assign(m, { status: r.status, ref: r.ref }); save(); render();
+    // Screenshot of the 3D view rides along so Grok Bot can see what Chris sees. Never blocks the text.
+    let shot = null; try { shot = snapshot?.() || null; } catch (e) {}
+    m.status = 'sending'; m.shot = shot ? 'on' : 'off'; render();
+    const r = await link.send({ to: m.to, text: m.text, sentAt: new Date(m.at), shot });
+    Object.assign(m, { status: r.status, ref: r.ref, shot: r.shot ? 'on' : 'off' }); save(); render();
   }
   log.addEventListener('click', e => {
     const a = e.target.closest('a.retry'); if (!a) return; e.preventDefault();

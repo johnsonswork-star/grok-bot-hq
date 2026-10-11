@@ -1,3 +1,6 @@
 node_modules/
 shots/
 *.log
+tools/hq-webhook.env
+tools/slack.env
+*.bak

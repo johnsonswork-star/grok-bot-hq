@@ -579,7 +579,20 @@ function nextStation(dir = 1) {
   player.travel = { from: player.pos.clone(), to: new THREE.Vector3(s.stand.x, 0, s.stand.z), yaw0: player.yaw, yaw1: s.yaw, t: 0 };
 }
 // ---------- HQ chat ----------
-const chat = createChat({ stations, onOpenChange: o => {
+// Grab what Chris is looking at (3D view only, no HUD/chat) as a small JPEG data URL for HQ chat.
+// Renders a fresh frame and copies it in the same task, so no preserveDrawingBuffer is needed. Returns null on any failure.
+function snapshot(maxW = 1280, q = 0.7) {
+  try {
+    renderer.render(scene, camera);
+    const src = renderer.domElement, sc = Math.min(1, maxW / src.width);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(src.width * sc)); c.height = Math.max(1, Math.round(src.height * sc));
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', q);
+    return /^data:image\/jpeg;base64,/.test(url) && url.length > 2000 ? url : null;
+  } catch (e) { return null; }
+}
+const chat = createChat({ stations, snapshot, onOpenChange: o => {
   if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
 } });
 // who you talk to: open panel > desk you're looking at > last desk you used > Grok Bot
@@ -670,7 +683,7 @@ camera.position.set(player.pos.x, EYE, player.pos.z);
 setPaused(true);
 tick();
 // debug hook for automated screenshots
-window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat };
+window.__office = { player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

@@ -22,6 +22,89 @@ const saveState = s => { try { fs.mkdirSync(DIR, { recursive: true }); const d =
   fs.writeFileSync(STATE, JSON.stringify({ ...d, ...s, done: uniq(d.done, s.done), relayed: uniq(d.relayed, s.relayed) })); } catch {} };
 const chicago = iso => { try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' }) + ' CT'; } catch { return iso; } };
 
+// Instant wake: POST each newly filed HQ message to the Grok Bot webhook routine `hq-chat-instant-wake`.
+// Config (first found wins, per key): env WEBHOOK_URL / WEBHOOK_KEY, then ~/.config/grok-bot-hq/hq-webhook.env,
+// then tools/hq-webhook.env. See tools/hq-webhook.env.example. Missing URL => silent no-op (logged once).
+function loadWebhook() {
+  const out = { url: process.env.WEBHOOK_URL || '', key: process.env.WEBHOOK_KEY || '', header: process.env.WEBHOOK_KEY_HEADER || '' };
+  for (const f of [`${DIR}/hq-webhook.env`, new URL('./hq-webhook.env', import.meta.url).pathname]) {
+    let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    for (const line of txt.split('\n')) {
+      const m = line.match(/^\s*(WEBHOOK_URL|WEBHOOK_KEY|WEBHOOK_KEY_HEADER)\s*=\s*(.*?)\s*$/); if (!m) continue;
+      const v = m[2].replace(/^['"]|['"]$/g, ''), k = { WEBHOOK_URL: 'url', WEBHOOK_KEY: 'key', WEBHOOK_KEY_HEADER: 'header' }[m[1]];
+      if (v && !out[k]) out[k] = v;
+    }
+  }
+  return out;
+}
+// Email wake (alternative to webhook): if WAKE_EMAIL=<agent inbox> is set in hq-webhook.env (or env), ask ntfy.sh to
+// email that inbox for each new HQ message, so an email-triggered routine on that inbox wakes Grok Bot instantly.
+// Only the issue number/link is emailed (message text stays in the private GitHub inbox). ntfy.sh anonymous email is rate-limited.
+function loadWakeEmail() {
+  if (process.env.WAKE_EMAIL) return process.env.WAKE_EMAIL;
+  for (const f of [`${DIR}/hq-webhook.env`, new URL('./hq-webhook.env', import.meta.url).pathname]) {
+    try { const m = fs.readFileSync(f, 'utf8').match(/^\s*WAKE_EMAIL\s*=\s*['"]?([^'"\s]+)/m); if (m) return m[1]; } catch {}
+  }
+  return '';
+}
+async function fireEmail(p) {
+  const to = loadWakeEmail(); if (!to || p.test === undefined && !p.issue) return;
+  try {
+    const topic = 'hqwake-' + cfg().inboxTopic.slice(-12);
+    const r = await fetch(`${RELAY}/${topic}`, { method: 'POST', headers: { Email: to, Title: `HQ chat #${p.issue} for ${p.to}` },
+      body: `New Bot HQ chat message #${p.issue} for ${p.to}. Run tools/hq-inbox.sh pending and reply. ${p.url}`, signal: AbortSignal.timeout(10000) });
+    log('email wake for issue', p.issue, '->', r.status);
+  } catch (e) { log('email wake error', e.message); }
+}
+// Slack wake: post each new HQ message to Slack #hq-chat so a Slack-triggered Grok Bot routine wakes instantly.
+// Config (env first, then ~/.config/grok-bot-hq/slack.env, then tools/slack.env). See tools/slack.env.example.
+//   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...      (incoming webhook; simplest), and/or
+//   SLACK_BOT_TOKEN=xoxb-...  + SLACK_CHANNEL_ID=C0123456789     (chat.postMessage via Web API)
+// Nothing configured => silent no-op (logged once).
+function loadSlack() {
+  const keys = ['SLACK_WEBHOOK_URL', 'SLACK_BOT_TOKEN', 'SLACK_CHANNEL_ID'];
+  const out = Object.fromEntries(keys.map(k => [k, process.env[k] || '']));
+  for (const f of [`${DIR}/slack.env`, new URL('./slack.env', import.meta.url).pathname]) {
+    let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    for (const line of txt.split('\n')) {
+      const m = line.match(/^\s*(SLACK_WEBHOOK_URL|SLACK_BOT_TOKEN|SLACK_CHANNEL_ID)\s*=\s*(.*?)\s*$/); if (!m) continue;
+      const v = m[2].replace(/^['"]|['"]$/g, ''); if (v && !out[m[1]]) out[m[1]] = v;
+    }
+  }
+  return out;
+}
+let slackWarned = false;
+async function fireSlack(p) {
+  const s = loadSlack();
+  const text = `:speech_balloon: *HQ chat #${p.issue}* from Chris → *${p.to}*\n>${String(p.text || '').replace(/\n/g, '\n>')}\n` +
+    (p.shot ? `:camera: View screenshot: \`${p.shot}\` (on the box; open with Read)\n` : '') + (p.url || '');
+  const sent = [];
+  try {
+    if (s.SLACK_WEBHOOK_URL) {
+      const r = await fetch(s.SLACK_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }), signal: AbortSignal.timeout(10000) });
+      sent.push('webhook ' + r.status);
+    } else if (s.SLACK_BOT_TOKEN && s.SLACK_CHANNEL_ID) {
+      const r = await fetch('https://slack.com/api/chat.postMessage', { method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8', Authorization: `Bearer ${s.SLACK_BOT_TOKEN}` },
+        body: JSON.stringify({ channel: s.SLACK_CHANNEL_ID, text }), signal: AbortSignal.timeout(10000) });
+      const j = await r.json().catch(() => ({})); sent.push('api ' + (j.ok ? 'ok' : j.error || r.status));
+    } else { if (!slackWarned) { slackWarned = true; log('slack not configured (no SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN+SLACK_CHANNEL_ID); skipping slack wake'); } return; }
+    log('slack wake for issue', p.issue, '->', sent.join(', '));
+  } catch (e) { log('slack wake error', e.message); }
+}
+let webhookWarned = false;
+async function fireWebhook(payload) {
+  const w = loadWebhook();
+  if (!w.url) { if (!webhookWarned) { webhookWarned = true; log('webhook not configured (no WEBHOOK_URL); skipping instant wake'); } return; }
+  const headers = { 'Content-Type': 'application/json' };
+  if (w.key) { const h = w.header || 'Authorization'; headers[h] = h.toLowerCase() === 'authorization' && !/^\w+\s/.test(w.key) ? `Bearer ${w.key}` : w.key; }
+  try {
+    const r = await fetch(w.url, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(10000) });
+    log('webhook fired for issue', payload.issue, '->', r.status);
+  } catch (e) { log('webhook error', e.message); }
+}
+
 let labelOk = false;
 function ensureLabel() {
   if (labelOk) return; labelOk = true;
@@ -32,20 +115,60 @@ function alreadyFiled(mid, st) {
   try { return gh('issue', 'list', '--repo', REPO, '--state', 'all', '--search', `"hq-mid:${mid}" in:body`, '--json', 'number', '-q', 'length') !== '0'; }
   catch { return false; }
 }
+// Screenshots: the iPad seals a JPEG of the 3D view inside the message (p.shot = data URL). Envelopes > 4 KB arrive
+// as ntfy attachments (m.attachment.url, kept ~3 h), so fetch those. Each shot is saved to
+// ~/.config/grok-bot-hq/shots/<mid>.jpg (Grok Bot opens it with Read) and, best effort, committed to the private
+// inbox repo under shots/ so it also shows inline on the GitHub issue.
+const SHOTS = `${DIR}/shots`;
+async function envelopeText(m) {
+  if (m.attachment?.url) {
+    const r = await fetch(m.attachment.url, { signal: AbortSignal.timeout(30000) });
+    if (!r.ok) throw new Error('attachment ' + r.status);
+    return await r.text();
+  }
+  return m.message;
+}
+function saveShot(mid, dataUrl) {
+  const mm = String(dataUrl || '').match(/^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/); if (!mm) return null;
+  const ext = mm[1] === 'png' ? 'png' : 'jpg', name = `${String(mid).replace(/[^\w-]/g, '')}.${ext}`;
+  const file = `${SHOTS}/${name}`;
+  try { fs.mkdirSync(SHOTS, { recursive: true, mode: 0o700 }); fs.writeFileSync(file, Buffer.from(mm[2], 'base64'), { mode: 0o600 }); }
+  catch (e) { log('shot save error', e.message); return null; }
+  let repoUrl = '';
+  try {
+    const tmp = `${SHOTS}/.put-${name}.json`; // body via file: base64 is too long for one argv string
+    fs.writeFileSync(tmp, JSON.stringify({ message: `HQ shot ${name}`, content: mm[2] }), { mode: 0o600 });
+    try { gh('api', '-X', 'PUT', `repos/${REPO}/contents/shots/${name}`, '--input', tmp, '--jq', '.content.path'); }
+    finally { try { fs.unlinkSync(tmp); } catch {} }
+    repoUrl = `https://github.com/${REPO}/blob/main/shots/${name}?raw=true`;
+  } catch (e) { log('shot repo upload failed (local copy kept)', String(e.stderr || e.message).slice(0, 160)); }
+  return { file, repoUrl };
+}
 async function handle(m, priv, st) {
-  if (m.event !== 'message' || !m.message) return;
-  let p; try { p = await open(JSON.parse(m.message), priv); } catch { return log('skip undecryptable', m.id); }
+  if (m.event !== 'message' || !(m.message || m.attachment?.url)) return;
+  let p; try { p = await open(JSON.parse(await envelopeText(m)), priv); } catch { return log('skip undecryptable', m.id); }
   if (!p.mid || alreadyFiled(p.mid, st)) return;
+  const shot = p.shot ? saveShot(p.mid, p.shot) : null;
+  if (p.shot && shot) log('shot saved', shot.file);
   const to = String(p.to || 'Grok Bot').slice(0, 60), text = String(p.text || '');
   const snippet = text.replace(/\s+/g, ' ').slice(0, 60) + (text.length > 60 ? '…' : '');
   const team = to === 'Grok Bot' ? 'Grok Bot (+ team)' : `${to} (via Grok Bot + team)`;
   const meta = { mid: p.mid, ntfy: m.id, device: p.device };
-  const body = `**From:** Chris (Bot HQ)\n**To:** ${team}\n**Sent:** ${chicago(p.ts)} (${p.ts})\n\n---\n\n${text}\n\n---\n` +
+  const shotMd = shot ? `\n\n**📸 Chris's view when he sent this:**\n` + (shot.repoUrl ? `![HQ view](${shot.repoUrl})\n` : '') +
+      `Local copy on Grok Bot's box: \`${shot.file}\` (open with Read)` : p.shot ? '\n\n_📸 Screenshot came in but could not be saved._' : '';
+  const body = `**From:** Chris (Bot HQ)\n**To:** ${team}\n**Sent:** ${chicago(p.ts)} (${p.ts})\n\n---\n\n${text}${shotMd}\n\n---\n` +
     `_Reply with \`tools/hq-inbox.sh reply <n> "text" [Bot Name]\` (or comment here, start with \`**Bot Name:**\`). Replies show up in the HQ chat on Chris's iPad._\n\n<!-- hq-mid:${p.mid} -->\n<!-- hq-meta ${JSON.stringify(meta)} -->`;
   ensureLabel();
   const url = gh('issue', 'create', '--repo', REPO, '--title', `HQ chat → ${to}: ${snippet}`, '--body', body, '--label', LABEL);
   st.done.push(p.mid); saveState(st);
   log('filed', url);
+  // Wake queue: one JSON line per new HQ message so Grok Bot's poll routine (or anything else) can pick it up.
+  const evt = { source: 'grok-bot-hq', event: 'hq-chat', issue: +url.split('/').pop(), url, to, text, ts: p.ts, filedAt: new Date().toISOString(),
+    ...(shot ? { shot: shot.file } : {}) };
+  try { fs.appendFileSync(`${DIR}/queue.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
+  await fireWebhook(evt);
+  await fireEmail(evt);
+  await fireSlack(evt);
 }
 
 async function once(since = '12h') {
@@ -111,6 +234,8 @@ async function relayComment(issueBody, c) {
 
 const [cmd, a, b] = process.argv.slice(2);
 if (cmd === 'watch') await watch();
+else if (cmd === 'webhook-test') { const w = loadWebhook(); log('webhook configured:', !!w.url, 'key:', !!w.key); await fireWebhook({ source: 'grok-bot-hq', event: 'hq-chat-test', issue: 0, url: '', to: 'Grok Bot', text: 'webhook test (ignore)', ts: new Date().toISOString(), test: true }); }
+else if (cmd === 'slack-test') { const s = loadSlack(); log('slack webhook:', !!s.SLACK_WEBHOOK_URL, 'token:', !!s.SLACK_BOT_TOKEN, 'channel:', s.SLACK_CHANNEL_ID || '-'); await fireSlack({ issue: 0, url: '', to: 'Grok Bot', text: a || 'Slack wake test from Bot HQ bridge (ignore)' }); }
 else if (cmd === 'once') await once(a);
 else if (cmd === 'relay') {
   const body = gh('issue', 'view', a, '--repo', REPO, '--json', 'body', '-q', '.body');
@@ -119,4 +244,4 @@ else if (cmd === 'relay') {
 } else if (cmd === 'relay-event') {
   const ev = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   await relayComment(ev.issue.body, { ...ev.comment, issue: ev.issue.number });
-} else console.log('usage: hq-bridge.mjs watch | once [since] | relay <issue> <commentId> | relay-event');
+} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | once [since] | relay <issue> <commentId> | relay-event');

@@ -72,9 +72,16 @@ How it works (v2, end-to-end encrypted):
 3. Each device creates its own keypair + private reply topic on first use (localStorage `hq.device`). The public half rides inside the encrypted message and is stored in a hidden `hq-meta` comment in the issue.
 4. Replies are issue comments. They're encrypted to that device's key and posted to its reply topic, both by `hq-inbox.sh reply` (immediately) and by the bridge's comment sweep (every 20 s; this also catches comments made on github.com). The chat panel polls its reply topic every 15 s while open and decrypts locally.
 
-Grok Bot side: `tools/hq-inbox.sh` (list / read / reply / done / bridge). `list` also restarts the bridge if it isn't running and does a catch-up pass. The relay keeps messages for 12 h, so a bridge restart within 12 h loses nothing. Bridge log: `~/.config/grok-bot-hq/bridge.log`.
+Grok Bot side: `tools/hq-inbox.sh` (list / read / reply / shot / done / bridge). `list` also restarts the bridge if it isn't running and does a catch-up pass. The relay keeps messages for 12 h, so a bridge restart within 12 h loses nothing. Bridge log: `~/.config/grok-bot-hq/bridge.log`.
 
 If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
+
+**📸 View screenshot rides along.** Every send grabs the current 3D view (the WebGL canvas only, no HUD or chat panel), scaled to max 1280 px wide as a JPEG at quality 0.7 (usually 60 to 150 KB). It goes inside the same encrypted envelope as the text. An envelope over 4 KB arrives at ntfy as an attachment (kept about 3 h); the bridge downloads and decrypts it. The bridge then:
+- saves it to `~/.config/grok-bot-hq/shots/<mid>.jpg` on Grok Bot's box (Grok Bot opens it with Read),
+- commits a copy to `shots/` in the private inbox repo and embeds it in the issue body, so it shows inline on github.com,
+- adds the path to the Slack `#hq-chat` ping and to `queue.jsonl` (`shot` field).
+
+`tools/hq-inbox.sh shot <n>` prints the screenshot path for issue n (and pulls it from the inbox repo if the local copy is gone). The chat shows "✓ Delivered · 📸 view attached". If capture fails or the big send is refused, the text is sent alone ("no view shot") and nothing blocks. In `chat.js`/`main.js`, `snapshot()` renders a fresh frame and copies it in the same task, so `preserveDrawingBuffer` isn't needed. The scene uses only same-origin, procedural textures, so the canvas is never tainted.
 
 Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
@@ -117,3 +124,19 @@ The scene uses about 600 small meshes, one shadow-casting light (2048 shadow map
 - Meeting mode in the conference room: summon several bots into one thread
 - Haptics on interact, button remapping, and a sensitivity slider
 - Optional VR / multiplayer later
+
+### Instant wake (webhook)
+After filing each new HQ issue, the bridge POSTs `{source, event:"hq-chat", issue, url, to, text, ts, filedAt}` to the Grok Bot webhook routine `hq-chat-instant-wake`. Put `WEBHOOK_URL` / `WEBHOOK_KEY` (copied from the Grok Bot app: Routines → hq-chat-instant-wake → Webhook trigger) in `~/.config/grok-bot-hq/hq-webhook.env` (see `tools/hq-webhook.env.example`), then restart the bridge (`pkill -f "hq-bridge.mjs watch"; tools/hq-inbox.sh bridge`). Without it the bridge just skips the POST. Test: `node tools/hq-bridge.mjs webhook-test`.
+
+## HQ auto-reply watcher (full AI replies, no app routine)
+
+`tools/hq-watcher.mjs` runs on Grok Bot's box and answers every new HQ chat message within seconds.
+
+- `tools/hq-inbox.sh watcher start|stop|status|log` (`bridge` also restarts it unless stopped on purpose).
+- Polls `hq-inbox.sh pending` every 3 s (gh only, free). Each new message = one LLM call, posted with `hq-inbox.sh reply`.
+- LLM order: `XAI_API_KEY` / `OPENAI_API_KEY` in `~/.config/grok-bot-hq/llm.env` if present (pennies/month at chat volume),
+  else a private local model on the box (llama.cpp + Qwen2.5-3B-Instruct in `~/.local/share/grok-bot-hq/llm`, free,
+  ~5-15 s per reply, loaded on demand and unloaded after 15 idle minutes), else a contextual fallback.
+- Background facts the replies may use: `~/.config/grok-bot-hq/hq-context.md`.
+- Approval asks (buy/send/delete/...) get a "reply yes to confirm" answer plus a line in `~/.config/grok-bot-hq/needs-chris.jsonl`.
+- Every handled message is logged to `~/.config/grok-bot-hq/tasks.jsonl` so the full Grok Bot session can do the real work.
