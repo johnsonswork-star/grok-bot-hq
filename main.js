@@ -168,7 +168,7 @@ function moved(dx, dz, fn) {
 // Layout = Dunder Mifflin Scranton, modeled on the set from The Office (HQ #30 / #36 / #38 / #42). Front door + Pam's reception on the
 // south wall, Michael's glass office in the south-east corner with the conference room right behind it, the annex past that,
 // the bullpen in the middle with desks butted together, kitchen + break room in the back west corner.
-const LAYOUT = 'scranton-6-roomy'; // bump when the floor plan changes: live reload then drops Chris at the front door instead of inside a new wall
+const LAYOUT = 'scranton-7-warehouse'; // bump when the floor plan changes: live reload then drops Chris at the front door instead of inside a new wall
 // HQ #42: set scale 18 x 12 m. HQ #43: a bit roomier, 22 x 15 m (was 26 x 18, before that 40 x 28) with >= 1.2 m aisles;
 // the extra room all went into the bullpen aisles + walkways, rooms keep their show proportions. 3 m drop ceiling.
 const W = 22, D = 15, H = 3.0, X0 = -11, X1 = 11, Z0 = -7.5, Z1 = 7.5;
@@ -204,18 +204,32 @@ function windowWall(axis, fixed, from, to, inwardSign) {
 }
 windowWall('z', Z0, X0, X1, 1);   // north: full glass
 windowWall('x', X1, Z0, Z1, -1);  // east: full glass
-// west wall solid (emergency exit + water cooler live on it)
-box(0.2, H, D, M.wall, X0, H / 2, 0, scene, false);
+// west wall (water cooler on it). HQ #73: the old emergency exit is now an open doorway into the warehouse (z -0.3..1.1)
+const WH_DOOR = [-0.3, 1.1];
+box(0.2, H, WH_DOOR[0] - Z0, M.wall, X0, H / 2, (Z0 + WH_DOOR[0]) / 2, scene, false);
+box(0.2, H, Z1 - WH_DOOR[1], M.wall, X0, H / 2, (WH_DOOR[1] + Z1) / 2, scene, false);
+box(0.2, H - 2.4, WH_DOOR[1] - WH_DOOR[0], M.wall, X0, (2.4 + H) / 2, (WH_DOOR[0] + WH_DOOR[1]) / 2, scene, false);
 // south wall with the glass front door at x -0.8..0.8
 box(X1 - 0.8, H, 0.2, M.wall, (0.8 + X1) / 2, H / 2, Z1, scene, false);
 box(0.8 - X0, H, 0.2, M.wall, (X0 - 0.8) / 2, H / 2, Z1, scene, false);
 box(1.6, H - 2.4, 0.2, M.wall, 0, (2.4 + H) / 2, Z1, scene, false);
-box(1.5, 2.4, 0.05, M.glass, 0, 1.2, Z1, scene, false);
 box(0.06, 2.4, 0.12, M.mullion, -0.78, 1.2, Z1, scene, false); box(0.06, 2.4, 0.12, M.mullion, 0.78, 1.2, Z1, scene, false);
-box(0.05, 0.05, 0.6, M.steel, 0.5, 1.05, Z1 - 0.08, scene, false);
-// room bounds
-colliders.push({ minX: -100, maxX: X0 + 0.1, minZ: -100, maxZ: 100 }, { minX: X1 - 0.1, maxX: 100, minZ: -100, maxZ: 100 },
-  { minX: -100, maxX: 100, minZ: -100, maxZ: Z0 + 0.1 }, { minX: -100, maxX: 100, minZ: Z1 - 0.1, maxZ: 100 });
+// HQ #73: the glass front doors stand open (swung out onto the sidewalk) so you can walk out to the parking lot
+for (const sx of [-1, 1]) {
+  const leaf = new THREE.Group(); leaf.position.set(sx * 0.74, 0, Z1 + 0.06); leaf.rotation.y = sx * 1.35; scene.add(leaf);
+  box(0.72, 2.36, 0.04, M.glass, -sx * 0.37, 1.19, 0, leaf, false); box(0.72, 0.08, 0.06, M.mullion, -sx * 0.37, 0.04, 0, leaf, false);
+  box(0.72, 0.06, 0.06, M.mullion, -sx * 0.37, 2.34, 0, leaf, false); box(0.04, 0.05, 0.45, M.steel, -sx * 0.6, 1.05, 0.05, leaf, false);
+  addCollider(sx * 0.66, Z1 + 0.42, 0.2, 0.74);
+}
+// HQ #73: real exterior walls (the site outside is walkable now: warehouse west, parking lot south + east)
+const SITE = { x0: -20.2, x1: 19.8, z0: -9.8, z1: 14.0 };
+colliders.push(
+  { minX: X0 - 0.12, maxX: X1 + 0.12, minZ: Z0 - 0.12, maxZ: Z0 + 0.1 },                 // north window wall
+  { minX: X1 - 0.1, maxX: X1 + 0.12, minZ: Z0 - 0.12, maxZ: Z1 + 0.12 },                 // east window wall
+  { minX: X0 - 0.12, maxX: -0.8, minZ: Z1 - 0.1, maxZ: Z1 + 0.12 }, { minX: 0.8, maxX: X1 + 0.12, minZ: Z1 - 0.1, maxZ: Z1 + 0.12 }, // front wall + door gap
+  { minX: X0 - 0.12, maxX: X0 + 0.1, minZ: Z0 - 0.12, maxZ: WH_DOOR[0] }, { minX: X0 - 0.12, maxX: X0 + 0.1, minZ: WH_DOOR[1], maxZ: Z1 + 0.12 }, // west wall + warehouse door
+  { minX: -100, maxX: SITE.x0, minZ: -100, maxZ: 100 }, { minX: SITE.x1, maxX: 100, minZ: -100, maxZ: 100 },   // edge of the property
+  { minX: -100, maxX: 100, minZ: -100, maxZ: SITE.z0 }, { minX: -100, maxX: 100, minZ: SITE.z1, maxZ: 100 });
 
 // interior wall from (ax,az) to (bx,bz) (axis-aligned) with door gaps [[a,b],...] measured along the wall.
 // glass: full-height glass (0..2.4) with mullions + header; blinds: half-drawn Office-style blinds on the glass.
@@ -307,6 +321,10 @@ const ROOMS = [
   { id: 'kitchen', name: 'kitchen',                          x0: -11,  x1: -8.4, z0: -7.5, z1: -4.5 },
   { id: 'break',   name: 'break room',                       x0: -8.4, x1: -6,   z0: -7.5, z1: -4.5 },
   { id: 'annex',   name: 'the annex',                        x0: 6.5,  x1: 11,   z0: -7.5, z1: -2.5 },
+  // HQ #73: outside the office
+  { id: 'warehouse', name: 'the warehouse',                    x0: -19.5, x1: -11, z0: -7.5, z1: 5.5, outside: true },
+  { id: 'lot',     name: 'the parking lot',                    x0: -20,  x1: 20,   z0: 7.5,  z1: 14, outside: true },
+  { id: 'lotE',    name: 'the parking lot (east side)',        x0: 11,   x1: 20,   z0: -9.8, z1: 7.5, outside: true },
 ];
 // Michael's office (south-east corner, 4.5 x 4 m): glass + blinds onto the bullpen, door right by Jim, Dwight + Pam
 wall(6.5, 2.5, 6.5, 7.5, { glass: true, blinds: true, gaps: [[5.4, 6.6]] });
@@ -344,15 +362,17 @@ for (const [x, z] of COLUMNS) {
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), M.ground);
 ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; scene.add(ground);
 box(60, 0.02, 6, M.paving, 0, -0.01, -11, scene, false);
-box(6, 0.02, 60, M.paving, 14.5, -0.01, 0, scene, false);
+box(4, 0.02, 60, M.paving, 22.6, -0.01, 0, scene, false); // road past the east lot (HQ #73)
 {
   const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.2, 2, 6), std('#6b4f3a'), 40);
   const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 0), M.leaf, 40);
   const m4 = new THREE.Matrix4(); let i = 0;
   const spots = [];
   for (let x = -40; x <= 40; x += 7) spots.push([x + (Math.random() - .5) * 3, -20 - Math.random() * 10]);
-  for (let z = -30; z <= 30; z += 7) spots.push([24 + Math.random() * 10, z + (Math.random() - .5) * 3]);
+  for (let z = -30; z <= 30; z += 7) spots.push([27 + Math.random() * 8, z + (Math.random() - .5) * 3]);
+  for (let x = -30; x <= 30; x += 8) spots.push([x + (Math.random() - .5) * 3, 17.5 + Math.random() * 6]); // behind the parking lot
   for (const [x, z] of spots.slice(0, 40)) {
+    if (x > -22 && x < 21 && z > -10 && z < 15.5) continue; // nothing growing on the warehouse or the lot
     const s = 0.8 + Math.random() * 0.7;
     m4.makeScale(s, s, s).setPosition(x, 1 * s, z); trunk.setMatrixAt(i, m4);
     m4.makeScale(s, s * 1.2, s).setPosition(x, 2.6 * s, z); crown.setMatrixAt(i, m4); i++;
@@ -571,8 +591,8 @@ const paintBuilding = (g, w, h) => { // Pam's watercolor of the office building
   // company plaque on the front wall (you see it when you turn around from Pam) + a second one hung over reception
   pngSign('dunder-mifflin', 3.0, 1.95, Z1 - 0.115, Math.PI, 2.3);
   hangPlate((x, y, z, ry) => pngSign('dunder-mifflin', x, y, z, ry, 1.6), p.x, 2.66, p.z - 0.7, 0, 1.6);
-  // the warehouse is downstairs: stairs / elevator plate by the door
-  plate('WAREHOUSE', -1.45, 2.05, Z1 - 0.115, Math.PI, { w: 0.62, sub: '↓ STAIRS · ELEVATOR' });
+  // HQ #73: the warehouse is through the west door now (plate by the front door points the way)
+  plate('WAREHOUSE', -1.45, 2.05, Z1 - 0.115, Math.PI, { w: 0.62, sub: '← WEST DOOR · BY THE COOLER' });
   // Pam's framed watercolor on the reception counter + her teapot from Jim
   framed(rx - 1.43, 1.26, rz - 0.75, Math.PI / 2, 0.22, 0.17, paintBuilding);
   { const tp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), std('#f4f1ea', 0.4)); tp.scale.y = 0.8; tp.position.set(rx + 1.43, 1.22, rz - 0.4); scene.add(tp); }
@@ -770,14 +790,162 @@ moved(-2, -1.5, () => {
   }
 });
 
-// ---------- emergency exit (west wall) ----------
-// The warehouse is downstairs off the elevator lobby (plate by the front door), so this west door is the set's Emerg. Exit.
+// ---------- warehouse door (west wall) ----------
+// HQ #73: the old emergency exit is the doorway to the warehouse now. Steel door propped open against the wall.
 {
-  box(0.08, 2.25, 1.2, M.whDoor, X0 + 0.12, 1.125, 0.4, scene, false);
-  box(0.1, 2.35, 0.08, M.walnut, X0 + 0.12, 1.175, -0.24, scene, false); box(0.1, 2.35, 0.08, M.walnut, X0 + 0.12, 1.175, 1.04, scene, false);
-  box(0.06, 0.06, 0.75, M.steel, X0 + 0.2, 1.05, 0.4, scene, false);
-  sign('EXIT', X0 + 0.13, 2.55, 0.4, Math.PI / 2, { w: 0.5, h: 0.2, bg: '#b71c1c', fg: '#ffffff' });
-  sign('EMERGENCY EXIT ONLY · ALARM WILL SOUND', X0 + 0.17, 1.55, 0.4, Math.PI / 2, { w: 0.5, h: 0.2, bg: '#fff', fg: '#b71c1c', weight: 700 });
+  const zc = (WH_DOOR[0] + WH_DOOR[1]) / 2;
+  for (const z of WH_DOOR) box(0.26, 2.42, 0.08, M.walnut, X0, 1.21, z, scene, false);
+  box(0.26, 0.08, WH_DOOR[1] - WH_DOOR[0] + 0.08, M.walnut, X0, 2.42, zc, scene, false);
+  box(1.3, 2.25, 0.06, M.whDoor, X0 - 0.75, 1.125, WH_DOOR[1] + 0.06, scene, false); addCollider(X0 - 0.75, WH_DOOR[1] + 0.06, 1.3, 0.1);
+  plate('WAREHOUSE', X0 + 0.115, 2.72, zc, Math.PI / 2, { w: 0.85, sub: 'AUTHORIZED PERSONNEL' });
+}
+
+// ---------- the warehouse (HQ #73) ----------
+// Show-style Dunder Mifflin warehouse bolted onto the west side: bare concrete, orange pallet racking full of paper,
+// Darryl's foreman desk, forklift + pallet jack, the basketball hoop, the loading dock with a DM box truck backed up to it.
+const WH = { x0: -19.5, x1: X0, z0: Z0, z1: 5.5, h: 4.6 };
+{
+  const conc = std('#a9a8a3', 0.95), block = std('#c9c6bd', 0.92), rackOr = std('#e2701f', 0.55, 0.3), rackBl = std('#2a5ca8', 0.55, 0.3);
+  const yel = new THREE.MeshBasicMaterial({ color: '#e8c21c' }), cx = (WH.x0 + WH.x1) / 2, cz = (WH.z0 + WH.z1) / 2, ww = WH.x1 - WH.x0, wd = WH.z1 - WH.z0;
+  box(ww, 0.02, wd, conc, cx, 0.0, cz, scene, false);                                       // concrete slab
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(ww, wd), std('#9aa0a6', 0.9, 0, { emissive: '#c8c8c2', emissiveIntensity: 0.35 }));
+  roof.rotation.x = Math.PI / 2; roof.position.set(cx, WH.h, cz); scene.add(roof);
+  // walls: block, taller than the office. North + west solid; south has the loading dock roll-up door (x -17.6..-14.6)
+  const t = 0.24, DK = [-17.6, -14.6], dh = 3.3;
+  box(ww + t, WH.h, t, block, cx, WH.h / 2, WH.z0, scene, true);
+  box(t, WH.h, wd, block, WH.x0, WH.h / 2, cz, scene, true);
+  box(t, WH.h - H, wd, block, WH.x1, (WH.h + H) / 2, cz, scene, false);                     // over the office's shared wall
+  box(DK[0] - WH.x0, WH.h, t, block, (WH.x0 + DK[0]) / 2, WH.h / 2, WH.z1, scene, true);
+  box(WH.x1 - DK[1], WH.h, t, block, (DK[1] + WH.x1) / 2, WH.h / 2, WH.z1, scene, true);
+  box(DK[1] - DK[0], WH.h - dh, t, block, (DK[0] + DK[1]) / 2, (WH.h + dh) / 2, WH.z1, scene, false);
+  const roll = std('#c4c8cc', 0.5, 0.5);
+  box(DK[1] - DK[0], dh, 0.08, roll, (DK[0] + DK[1]) / 2, dh / 2, WH.z1, scene, false);  // roll-up door (down)
+  for (let y = 0.25; y < dh; y += 0.25) box(DK[1] - DK[0], 0.03, 0.1, std('#9ea3a8', 0.5, 0.5), (DK[0] + DK[1]) / 2, y, WH.z1, scene, false);
+  box(DK[1] - DK[0] + 0.3, 0.4, 0.5, std('#3a3a3a', 0.8), (DK[0] + DK[1]) / 2, 3.5, WH.z1 - 0.2, scene, false); // roller housing
+  for (const x of DK) box(0.25, 0.4, 0.2, std('#111', 0.9), x + (x === DK[0] ? 0.25 : -0.25), 0.9, WH.z1 + 0.2, scene, false); // dock bumpers
+  colliders.push(
+    { minX: WH.x0 - t / 2, maxX: WH.x1, minZ: WH.z0 - t / 2, maxZ: WH.z0 + t / 2 + 0.02 },
+    { minX: WH.x0 - t / 2, maxX: WH.x0 + t / 2 + 0.02, minZ: WH.z0, maxZ: WH.z1 + t / 2 },
+    { minX: WH.x0, maxX: WH.x1 + 0.1, minZ: WH.z1 - t / 2 - 0.02, maxZ: WH.z1 + t / 2 });
+  // high-bay lamps + one warm work light so it reads lit without shadows
+  for (const [lx, lz] of [[-17, -4.5], [-13.5, -4.5], [-17, 1.5], [-13.5, 1.5]]) {
+    box(0.03, 0.6, 0.03, M.steel, lx, WH.h - 0.3, lz, scene, false);
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.38, 0.3, 14, 1, true), std('#5d6166', 0.5, 0.6)); sh.position.set(lx, WH.h - 0.7, lz); scene.add(sh);
+    const bulb = new THREE.Mesh(new THREE.CircleGeometry(0.34, 14), M.light); bulb.rotation.x = Math.PI / 2; bulb.position.set(lx, WH.h - 0.84, lz); scene.add(bulb);
+  }
+  const whLight = new THREE.PointLight('#fff1d6', 9, 16, 2); whLight.position.set(cx, WH.h - 0.6, cz); scene.add(whLight);
+  // yellow safety lines + forklift aisle
+  box(0.08, 0.005, 10.5, yel, -14.25, 0.015, -1.8, scene, false); box(0.08, 0.005, 10.5, yel, -12.3, 0.015, -1.8, scene, false);
+  box(1.95, 0.005, 0.08, yel, -13.28, 0.015, 3.45, scene, false);
+  // pallet racking: tall orange uprights + blue beams, three levels of boxed paper. Loads are single textured blocks (cheap on iPad)
+  const loadTex = paperTex.clone(); loadTex.wrapS = loadTex.wrapT = THREE.RepeatWrapping; loadTex.repeat.set(3, 2); loadTex.needsUpdate = true;
+  const load = std('#ffffff', 0.85, 0, { map: loadTex }), shrink = new THREE.MeshStandardMaterial({ color: '#eef3f6', roughness: 0.3, transparent: true, opacity: 0.35, depthWrite: false });
+  function rack(x, z0, z1, depth, levels = [0.15, 1.55, 2.95]) {
+    const n = Math.round((z1 - z0) / 2.6);
+    for (let i = 0; i <= n; i++) { const z = z0 + (z1 - z0) * i / n; for (const dx of [-depth / 2, depth / 2]) box(0.09, 4.0, 0.09, rackOr, x + dx, 2.0, z, scene, false); }
+    for (const y of levels.slice(1)) for (const dx of [-depth / 2, depth / 2]) box(0.07, 0.14, z1 - z0, rackBl, x + dx, y - 0.07, (z0 + z1) / 2, scene, false);
+    for (let i = 0; i < n; i++) {
+      const zm = z0 + (z1 - z0) * (i + 0.5) / n, bw = (z1 - z0) / n - 0.25;
+      levels.forEach((y, li) => {
+        if ((i * 7 + li * 3) % 5 === 4) return; // a few empty slots
+        box(depth - 0.1, 0.12, bw, M.pallet, x, y + 0.06, zm, scene, false);
+        const hgt = 0.9 + ((i + li) % 3) * 0.15; box(depth - 0.2, hgt, bw - 0.12, load, x, y + 0.12 + hgt / 2, zm, scene, li === 0);
+        box(depth - 0.16, hgt + 0.02, bw - 0.08, shrink, x, y + 0.12 + hgt / 2, zm, scene, false);
+      });
+    }
+    addCollider(x, (z0 + z1) / 2, depth + 0.12, z1 - z0 + 0.12);
+  }
+  rack(-18.85, -6.9, 3.5, 1.1);   // along the west wall
+  rack(-16.0, -6.0, 1.8, 1.1);    // free-standing middle run
+  // Darryl's foreman desk in the north-east corner + plate, clipboard, radio
+  box(1.4, 0.05, 0.7, M.oak, -12.0, 0.74, -6.55); box(1.35, 0.7, 0.05, M.steel, -12.0, 0.36, -6.88); addCollider(-12.0, -6.55, 1.4, 0.7);
+  chair(scene, -12.0, -5.95, Math.PI);
+  box(0.24, 0.02, 0.32, std('#7a5a35', 0.8), -12.3, 0.77, -6.5, scene, false); box(0.06, 0.16, 0.04, std('#222', 0.6), -11.6, 0.85, -6.6, scene, false);
+  plate('WAREHOUSE FOREMAN', -12.0, 2.1, Z0 + 0.13, 0, { w: 0.85, sub: 'D. PHILBIN' });
+  sign('0 DAYS WITHOUT AN ACCIDENT', -14.0, 2.45, Z0 + 0.13, 0, { w: 1.5, h: 0.42, bg: '#1b5e20', fg: '#ffffff', weight: 800 });
+  // the basketball hoop (Basketball, S1) on the north wall over the open floor
+  { const hx = -13.4, hz = Z0 + 0.13; box(1.2, 0.8, 0.04, M.white, hx, 3.25, hz + 0.1, scene, false); box(0.46, 0.34, 0.045, std('#c62828', 0.6), hx, 3.12, hz + 0.11, scene, false);
+    box(0.4, 0.3, 0.05, M.white, hx, 3.12, hz + 0.115, scene, false);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.015, 6, 20), std('#e65100', 0.4, 0.5)); rim.rotation.x = Math.PI / 2; rim.position.set(hx, 2.95, hz + 0.42); scene.add(rim);
+    const net = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.14, 0.35, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#fafafa', wireframe: true })); net.position.set(hx, 2.77, hz + 0.42); scene.add(net);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 10), std('#d35400', 0.7)); ball.position.set(-13.0, 0.12, -4.9); scene.add(ball); }
+  // forklift (yellow, mast + forks, overhead guard) parked in the aisle
+  { const g = new THREE.Group(); g.position.set(-13.3, 0, -1.6); g.rotation.y = 0.1; scene.add(g);
+    const fy = std('#f2b705', 0.5, 0.2), blk = std('#1f1f1f', 0.8);
+    box(1.1, 0.75, 1.7, fy, 0, 0.6, 0.15, g); box(1.0, 0.5, 0.5, blk, 0, 0.55, 1.05, g);       // body + counterweight
+    box(0.5, 0.12, 0.5, blk, 0, 1.05, 0.35, g); box(0.45, 0.5, 0.08, blk, 0, 1.35, 0.6, g);   // seat
+    for (const sx of [-0.5, 0.5]) { box(0.06, 1.5, 0.06, blk, sx, 1.7, -0.35, g); box(0.06, 1.5, 0.06, blk, sx, 1.7, 0.85, g); }
+    box(1.06, 0.06, 1.3, blk, 0, 2.45, 0.25, g);                                               // overhead guard
+    for (const sx of [-0.3, 0.3]) box(0.08, 2.4, 0.1, std('#444', 0.5, 0.5), sx, 1.2, -0.72, g);  // mast
+    for (const sx of [-0.3, 0.3]) box(0.12, 0.05, 1.1, std('#333', 0.5, 0.6), sx, 0.12, -1.3, g); // forks
+    const wg = new THREE.CylinderGeometry(0.26, 0.26, 0.2, 14);
+    for (const [wx, wz] of [[-0.58, -0.35], [0.58, -0.35], [-0.58, 0.75], [0.58, 0.75]]) { const w = new THREE.Mesh(wg, blk); w.rotation.z = Math.PI / 2; w.position.set(wx, 0.26, wz); g.add(w); }
+    addCollider(-13.3, -1.85, 1.3, 2.9, 0.1); }
+  // pallet jack + a few loaded pallets by the dock, ready to go out
+  { const g = new THREE.Group(); g.position.set(-13.0, 0, 3.2); g.rotation.y = -0.4; scene.add(g);
+    const red = std('#c62828', 0.5, 0.3); box(0.55, 0.08, 1.2, red, 0, 0.08, 0, g); box(0.2, 0.3, 0.2, red, 0, 0.25, 0.65, g);
+    const hdl = box(0.04, 1.1, 0.04, std('#222', 0.5, 0.5), 0, 0.8, 0.8, g); hdl.rotation.x = 0.3; addCollider(-13.0, 3.2, 0.8, 1.4, -0.4); }
+  paperStack(-16.4, 4.2, 2, 3, 4); paperStack(-17.9, 4.2, 2, 2, 3); paperStack(-11.9, 1.9, 2, 2, 2);
+  plate('LOADING DOCK', -16.1, 4.15, WH.z1 - 0.14, Math.PI, { w: 1.1 });
+  plate('DUNDER MIFFLIN', -15.25, 3.7, WH.z1 + 0.14, 0, { w: 1.8, sub: 'WAREHOUSE · SHIPPING & RECEIVING' });
+}
+
+// ---------- parking lot (HQ #73) ----------
+// Asphalt out front (south) and down the east side under Michael's windows. Painted stalls, Michael's reserved spot,
+// the cast's cars, and the Dunder Mifflin box truck backed up to the warehouse dock.
+{
+  const asph = std('#3a3c40', 0.95), walk = std('#bdb8ae', 0.95), paint = new THREE.MeshBasicMaterial({ color: '#f2f2ee' }), curb = std('#d0ccc4', 0.9);
+  box(39.6, 0.02, 6.4, asph, 0, -0.005, 10.75, scene, false);                 // south lot (z 7.55..13.95)
+  box(8.6, 0.02, 17.3, asph, 15.5, -0.005, -1.0, scene, false);               // east lot (x 11.2..19.8)
+  box(4.2, 0.02, 2.4, asph, -15.6, -0.004, 6.6, scene, false);                // dock apron
+  box(22.6, 0.035, 1.4, walk, 0.3, 0.0, 8.3, scene, false);                   // sidewalk along the front of the office
+  box(22.6, 0.12, 0.15, curb, 0.3, 0.06, 9.0, scene, false);
+  // south stalls: nose-in toward the building
+  for (let x = -10.5; x <= 11.5; x += 2.75) box(0.1, 0.005, 4.4, paint, x, 0.012, 11.7, scene, false);
+  // east stalls: nose-in toward Michael's windows
+  for (let z = -8.6; z <= 7.7; z += 2.7) box(4.4, 0.005, 0.1, paint, 14.6, 0.012, z, scene, false);
+  // handicap stall + reserved sign
+  { const hc = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#1565c0'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = '700 84px system-ui,Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('♿', w / 2, h / 2 + 4); });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), new THREE.MeshBasicMaterial({ map: hc, toneMapped: false })); m.rotation.x = -Math.PI / 2; m.position.set(-0.875, 0.015, 11.7); scene.add(m); }
+  function postSign(text, sub, x, z, ry) {
+    box(0.05, 1.6, 0.05, M.steel, x, 0.8, z); addCollider(x, z, 0.2, 0.2);
+    const nx = 0.035 * Math.sin(ry), nz = 0.035 * Math.cos(ry);
+    plate(text, x + nx, 1.75, z + nz, ry, { w: 0.55, sub }); plate(text, x - nx, 1.75, z - nz, ry + Math.PI, { w: 0.55, sub });
+  }
+  postSign('RESERVED', 'REGIONAL MANAGER', 11.85, 6.25, Math.PI / 2);
+  postSign('RESERVED', 'ASST. TO THE R.M.', 11.85, 3.55, Math.PI / 2);
+  postSign('VISITOR', 'DUNDER MIFFLIN', 1.875, 13.8, Math.PI);
+  // cars: low-poly body + cabin + wheels (one collider each)
+  const wheel = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14), tire = std('#151515', 0.9), glassC = std('#2b3a48', 0.15, 0.4);
+  function car(x, z, ry, color, { len = 4.4, wid = 1.8, cab = 2.1, low = false } = {}) {
+    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g);
+    const paintM = std(color, 0.35, 0.45), bh = low ? 0.55 : 0.65;
+    box(wid, bh, len, paintM, 0, 0.3 + bh / 2, 0, g);
+    box(wid - 0.14, low ? 0.42 : 0.55, cab, glassC, 0, 0.3 + bh + (low ? 0.21 : 0.275), -0.1, g);
+    box(wid - 0.1, 0.05, cab - 0.3, paintM, 0, 0.3 + bh + (low ? 0.44 : 0.57), -0.1, g, false);
+    for (const sx of [-1, 1]) { box(0.3, 0.12, 0.04, std('#fff6cc', 0.3, 0, { emissive: '#fff2b0', emissiveIntensity: 0.4 }), sx * (wid / 2 - 0.3), 0.75, -len / 2, g, false);
+      box(0.3, 0.12, 0.04, std('#a31515', 0.4), sx * (wid / 2 - 0.3), 0.75, len / 2, g, false); }
+    for (const [wx, wz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const w = new THREE.Mesh(wheel, tire); w.rotation.z = Math.PI / 2; w.position.set(wx * (wid / 2 - 0.05), 0.34, wz * (len / 2 - 0.8)); w.castShadow = true; g.add(w); }
+    addCollider(x, z, wid + 0.1, len + 0.1, ry);
+  }
+  car(14.75, 6.25, Math.PI / 2, '#b7bcc2', { low: true });           // Michael's silver Sebring (reserved spot)
+  car(14.75, 3.55, Math.PI / 2, '#7b1e1e', { len: 4.8, low: true });   // Dwight's Trans Am
+  car(-3.625, 11.6, 0, '#2f4f7a');                                       // Jim's
+  car(4.625, 11.6, 0, '#d8d2c2', { len: 4.2 });                          // Pam's
+  car(10.125, 11.55, 0, '#355e3b', { len: 4.9, wid: 1.95, cab: 2.6 });     // Stanley's
+  // Dunder Mifflin box truck backed up to the loading dock
+  { const tx = -16.1, tz = 9.6, g = new THREE.Group(); g.position.set(tx, 0, tz); scene.add(g);
+    const white = std('#f1f1ee', 0.6), cabM = std('#e9e9e4', 0.5, 0.3);
+    box(2.4, 2.5, 5.0, white, 0, 2.0, -1.2, g);                                     // box
+    box(2.3, 1.7, 1.8, cabM, 0, 1.55, 2.3, g); box(2.2, 0.7, 0.05, glassC, 0, 1.95, 3.21, g, false); // cab + windshield
+    box(2.4, 0.3, 6.8, std('#2a2a2a', 0.8), 0, 0.6, 0, g);                           // chassis
+    for (const [wx, wz] of [[-1.05, 2.3], [1.05, 2.3], [-1.05, -2.2], [1.05, -2.2], [-1.05, -2.9], [1.05, -2.9]]) { const w = new THREE.Mesh(wheel, tire); w.rotation.z = Math.PI / 2; w.position.set(wx, 0.4, wz); w.scale.set(1.25, 1, 1.25); g.add(w); }
+    const lt = canvasTex(512, 160, (c, w, h) => { c.fillStyle = '#f1f1ee'; c.fillRect(0, 0, w, h); c.fillStyle = '#1d1d1d'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.font = '800 70px Oswald,"Arial Narrow",Arial'; c.fillText('DUNDER MIFFLIN', w / 2, h * 0.42); c.font = '600 30px Arial'; c.fillText('PAPER COMPANY · SCRANTON, PA', w / 2, h * 0.78); });
+    for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 1.44), new THREE.MeshBasicMaterial({ map: lt, toneMapped: false })); m.position.set(sx * 1.21, 2.1, -1.2); m.rotation.y = sx * Math.PI / 2; g.add(m); }
+    addCollider(tx, tz, 2.5, 6.9); }
+  // lamp posts
+  for (const [lx, lz] of [[-8, 13.7], [8, 13.7], [19.5, -3], [19.5, 6]]) { box(0.12, 5, 0.12, M.steel, lx, 2.5, lz); box(0.8, 0.12, 0.3, M.steel, lx - (lx > 19 ? 0.4 : 0), 5, lz - (lx > 19 ? 0 : 0.4)); addCollider(lx, lz, 0.25, 0.25); }
 }
 
 // water cooler on the west wall in the bullpen, outside the kitchen (workers stop here when idle; the only place they drink)
@@ -832,6 +1000,8 @@ const IDLE_SPOTS = [ // HQ #43: re-placed for the 22 x 15 m floor
   // water cooler on the west wall: stand in front, face the cooler
   [COOLER.x + 0.85, COOLER.z, PI / 2, 'water'], [COOLER.x + 0.85, COOLER.z + 1.0, Math.atan2(0.85, 1.0), 'water'],
   [COOLER.x + 0.85, COOLER.z - 0.6, Math.atan2(0.85, -0.6), 'water'], [COOLER.x + 1.75, COOLER.z, PI / 2, 'water'],
+  // HQ #73 warehouse: chatting with Darryl at the foreman desk, shooting the breeze under the hoop, checking stock
+  [-12.6, -5.2, 0.4, 'chat'], [-13.6, -4.2, 0, 'think'], [-14.9, 1.0, PI / 2, 'phone'],
 ];
 
 // (created after every prop so their nav grid knows about walls, desks, kitchen, cooler, rooms)
@@ -1089,7 +1259,7 @@ function whereAmI() {
   const near = stations.map(s => ({ s, d: Math.hypot(s.x - player.pos.x, s.z - player.pos.z) })).sort((a, b) => a.d - b.d)[0];
   const { x, z } = player.pos;
   const room = ROOMS.find(r => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
-  const area = room ? room.name : Math.hypot(x - COOLER.x, z - COOLER.z) < 3 ? 'by the water cooler' : Math.hypot(x - X0, z - 0.4) < 2.2 ? 'by the emergency exit'
+  const area = room ? room.name : Math.hypot(x - COOLER.x, z - COOLER.z) < 3 ? 'by the water cooler' : Math.hypot(x - X0, z - 0.4) < 2.2 ? 'by the warehouse door'
     : z > 2.6 ? (x > 2.6 ? 'by Jim + Dwight (outside Michael\'s office)' : 'reception (Pam\'s desk)') : x > -5.6 && x < -1.6 && z > -3.0 && z < 0.4 ? 'accounting' : z < -4.8 ? 'back of the bullpen (window side)' : 'the bullpen';
   return { x, z, heading, facing, area, near: near && near.d < 4 ? near : null };
 }
@@ -1104,15 +1274,20 @@ function stampWhere(g, w, h) {
   g.fillText(line1, 24 * k, 18 * k);
   g.fillStyle = '#ffd59a'; g.font = `500 ${Math.round(19 * k)}px system-ui,Arial`; g.fillText(line2, 24 * k, 44 * k);
   // mini floor map (top-down, north up): Scranton floor plan rooms, desks, cooler, Chris + view cone
-  const mw = 220 * k, mh = mw * D / W, mx = w - mw - 12 * k, my = 30 * k, sx = mw / W, sz = mh / D;
-  const P = (x, z) => [mx + (x - X0) * sx, my + (z - Z0) * sz];
+  // HQ #73: map covers the whole site (warehouse west, parking lot south + east), office drawn inside it
+  const SW = SITE.x1 - SITE.x0, SD = SITE.z1 - SITE.z0;
+  const mw = 260 * k, mh = mw * SD / SW, mx = w - mw - 12 * k, my = 30 * k, sx = mw / SW, sz = mh / SD;
+  const P = (x, z) => [mx + (x - SITE.x0) * sx, my + (z - SITE.z0) * sz];
   g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(mx - 6 * k, my - 6 * k, mw + 12 * k, mh + 12 * k);
-  g.fillStyle = '#b9c2cc'; g.fillRect(mx, my, mw, mh);
-  g.fillStyle = '#7fc4ff'; g.fillRect(mx, my, mw, 3 * k); g.fillRect(mx + mw - 3 * k, my, 3 * k, mh); // windows N + E
+  g.fillStyle = '#8fae6b'; g.fillRect(mx, my, mw, mh);                                              // grass
+  g.fillStyle = '#4a4c50'; g.fillRect(...P(-19.8, 7.55), 39.6 * sx, 6.4 * sz); g.fillRect(...P(11.2, -9.65), 8.6 * sx, 17.3 * sz); // lot
+  g.fillStyle = '#9a9890'; g.fillRect(...P(WH.x0, WH.z0), (WH.x1 - WH.x0) * sx, (WH.z1 - WH.z0) * sz); // warehouse
+  g.fillStyle = '#b9c2cc'; g.fillRect(...P(X0, Z0), W * sx, D * sz);                                 // office
+  g.fillStyle = '#7fc4ff'; g.fillRect(...P(X0, Z0), W * sx, 3 * k); g.fillRect(P(X1, 0)[0] - 3 * k, P(0, Z0)[1], 3 * k, D * sz); // windows N + E
   g.fillStyle = '#fff'; g.fillRect(...P(-0.8, Z1 - 0.3), 1.6 * sx, 0.6 * sz);                     // front door
-  g.fillStyle = '#d32f2f'; g.fillRect(mx, my + (-0.2 - Z0) * sz, 3 * k, 1.2 * sz);                   // emergency exit
+  g.fillStyle = '#e8c21c'; g.fillRect(P(X0, 0)[0] - 1.5 * k, P(0, WH_DOOR[0])[1], 3 * k, (WH_DOOR[1] - WH_DOOR[0]) * sz); // warehouse door
   g.strokeStyle = 'rgba(40,50,70,.9)'; g.lineWidth = 1.5 * k;
-  for (const r of ROOMS) g.strokeRect(...P(r.x0, r.z0), (r.x1 - r.x0) * sx, (r.z1 - r.z0) * sz);
+  for (const r of ROOMS) if (!r.outside || r.id === 'warehouse') g.strokeRect(...P(r.x0, r.z0), (r.x1 - r.x0) * sx, (r.z1 - r.z0) * sz);
   for (const s of stations) { const [a, b] = P(s.x, s.z); g.fillStyle = s.color; g.fillRect(a - 3 * k, b - 3 * k, 6 * k, 6 * k); }
   { const [a, b] = P(COOLER.x, COOLER.z); g.fillStyle = '#1e6fe0'; g.beginPath(); g.arc(a + 3 * k, b, 4 * k, 0, 7); g.fill(); }
   const [px, pz] = P(p.x, p.z), ang = Math.atan2(-Math.cos(player.yaw), -Math.sin(player.yaw)); // canvas angle of facing
@@ -1397,7 +1572,7 @@ if (resume) {
   if (!resume.paused) setPaused(false);
   if (resume.chat) { chat.show(stations.find(s => s.id === resume.chat.to) || stations.find(s => s.hero)); chat.restoreDraft(resume.chat); }
   else if (resume.draft?.text) chat.restoreDraft(resume.draft);
-  setTimeout(() => toast(resume.newLayout ? 'Welcome to Dunder Mifflin Scranton: tighter, set-size floor' : 'Office updated'), 300);
+  setTimeout(() => toast(resume.newLayout ? 'New: warehouse through the west door (by the cooler) + parking lot out front' : 'Office updated'), 300);
 }
 function toast(msg) {
   let el = document.getElementById('livetoast');

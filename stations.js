@@ -14,8 +14,8 @@ export const STATIONS = [
   { id: 'grok',     name: 'Michael Scott',   bot: 'Grok Bot',             short: 'MICHAEL', color: '#e8a33d', x: 8.2,  z: 4.6,  ry: PI / 2, hero: true, desk: "Regional Manager's office",
     job: 'MANAGER / CHIEF OF STAFF',
     role: 'Michael = the real Grok Bot (Regional Manager + Chief of Staff). Main HQ tab; routes work to every desk and covers Accounting.' },
-  // Reception, right inside the front door
-  { id: 'inbox',    name: 'Pam Beesly',      bot: 'Reception', teammate: true, aka: ['Family Inbox'],         short: 'PAM',     color: '#3fb6a8', x: -0.2, z: 5.0,  ry: PI,     desk: 'reception',
+  // Reception, right inside the front door (HQ #73: scooted 0.8 m back from the door, z 5.0 -> 4.2, roomier entry aisle)
+  { id: 'inbox',    name: 'Pam Beesly',      bot: 'Reception', teammate: true, aka: ['Family Inbox'],         short: 'PAM',     color: '#3fb6a8', x: -0.2, z: 4.2,  ry: PI,     desk: 'reception',
     job: 'RECEPTION',
     role: 'Reception: watches the family Gmail, flags what needs you, takes messages.' },
   // Jim + Dwight: face-to-face right outside Michael's office windows, next to reception
