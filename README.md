@@ -76,7 +76,7 @@ Grok Bot side: `tools/hq-inbox.sh` (list / read / reply / shot / done / bridge).
 
 If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
 
-**📸 View screenshot rides along.** Every send grabs the current 3D view (the WebGL canvas only, no HUD or chat panel), scaled to max 1280 px wide as a JPEG at quality 0.7 (usually 60 to 150 KB). It goes inside the same encrypted envelope as the text. An envelope over 4 KB arrives at ntfy as an attachment (kept about 3 h); the bridge downloads and decrypts it. The bridge then:
+**📸 View screenshot rides along (automatic, no button).** Every typed send grabs the current 3D view (the WebGL canvas only, no HUD or chat panel), scaled to max 1280 px wide as a JPEG at quality 0.7 (usually 60 to 150 KB). Canned quick-chip messages ("Status update?" etc.) skip it since they never need visuals. It goes inside the same encrypted envelope as the text. An envelope over 4 KB arrives at ntfy as an attachment (kept about 3 h); the bridge downloads and decrypts it. The bridge then:
 - saves it to `~/.config/grok-bot-hq/shots/<mid>.jpg` on Grok Bot's box (Grok Bot opens it with Read),
 - commits a copy to `shots/` in the private inbox repo and embeds it in the issue body, so it shows inline on github.com,
 - adds the path to the Slack `#hq-chat` ping and to `queue.jsonl` (`shot` field).

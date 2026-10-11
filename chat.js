@@ -32,18 +32,19 @@ export function createChat({ stations, onOpenChange, snapshot }) {
   function setTarget(s) { target = s || target; sel.value = target.id; $('.cname').textContent = target.name; $('.cdot').style.background = target.color; input.placeholder = `Message ${target.name}${target.hero ? '' : ' (via Grok Bot)'}…`; }
   sel.addEventListener('change', () => setTarget(stations.find(s => s.id === sel.value)));
 
-  async function send(text) {
+  // Typed messages carry a shot of the 3D view (could be a "change this" ask); canned quick chips don't need one.
+  async function send(text, noShot = CHIPS.includes(String(text || '').trim())) {
     text = (text || '').trim(); if (!text) return;
-    const m = { kind: 'me', to: target.name, text, at: Date.now(), status: 'sending' };
+    const m = { kind: 'me', to: target.name, text, at: Date.now(), status: 'sending', noShot };
     entries.push(m); render();
     await deliver(m);
   }
   async function deliver(m) {
     // Screenshot of the 3D view rides along so Grok Bot can see what Chris sees. Never blocks the text.
-    let shot = null; try { shot = snapshot?.() || null; } catch (e) {}
-    m.status = 'sending'; m.shot = shot ? 'on' : 'off'; render();
+    let shot = null; if (!m.noShot) try { shot = snapshot?.() || null; } catch (e) {}
+    m.status = 'sending'; m.shot = m.noShot ? '' : shot ? 'on' : 'off'; render();
     const r = await link.send({ to: m.to, text: m.text, sentAt: new Date(m.at), shot });
-    Object.assign(m, { status: r.status, ref: r.ref, shot: r.shot ? 'on' : 'off' }); save(); render();
+    Object.assign(m, { status: r.status, ref: r.ref, shot: m.noShot ? '' : r.shot ? 'on' : 'off' }); save(); render();
   }
   log.addEventListener('click', e => {
     const a = e.target.closest('a.retry'); if (!a) return; e.preventDefault();
