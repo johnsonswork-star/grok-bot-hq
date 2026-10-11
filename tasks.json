@@ -19,6 +19,11 @@
       "task": "App / office builds",
       "since": "2026-10-11T01:52:20.148Z",
       "until": "2026-10-11T04:52:20.149Z"
+    },
+    "designer": {
+      "task": "Atom Family designs",
+      "since": "2026-10-11T01:52:21.638Z",
+      "until": "2026-10-11T04:52:21.638Z"
     }
   }
 }
