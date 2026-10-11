@@ -216,3 +216,21 @@ While a bot is busy (tasks.json) and has a live feed under 3 h old, its monitor 
   - `--dir` watches a folder (recursive) and new images become thumbnails plus a "new image:" line. `--log-file` follows a bot's markdown progress log ("Current step:", "watching folder:", and the bullets under "## Last progress lines").
 - Publisher: `node tools/work-live.mjs watch` (started by `tools/hq-inbox.sh bridge` / `pending`, log `~/.config/grok-bot-hq/work-live.log`). It's plain node with no AI. It checks every 4 s and pushes on change, at most every 15 s, plus a keep-alive every 2.5 h. The bundle (thumbnails are ~220 px JPEGs) is **encrypted to each HQ device** and posted to `<device topic>_work`, the same privacy model as the inbox and bank feeds. Nothing goes in this public repo. Feeds over 4 KB ride as an ntfy attachment (CORS-open, about 3 h). The iPad reads only `since=latest`, keeps its last copy, and polls every 12 s.
 - Wired now: **Atom Family Designer** follows `atom-family-clothing-co/DESIGNER_DESK_LOG.md` and watches `designs/mascot/desk-options-oct10/` (badge options + contact sheet). **App Builder** gets a line on every `./deploy.sh`.
+
+## Dunder Mifflin cast (HQ #37)
+The office is skinned as Dunder Mifflin Scranton. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
+but shows an Office character as `name`; `bot` is the real bot behind it, and HQ chat still routes to `bot` (Grok Bot answers as Grok Bot).
+
+| id | character | bot |
+|---|---|---|
+| grok | Michael Scott (office, SE corner) | Grok Bot |
+| inbox | Pam Beesly (reception) | Family Inbox |
+| cos / assist | Jim Halpert / Dwight Schrute (outside Michael's office) | Chief of Staff / Family Assistance |
+| icons | Andy Bernard | Icon Shop |
+| onpad / builder | Phyllis Vance / Stanley Hudson | OnPad Chat / App Builder |
+| faith / broker / conn | Angela / Oscar / Kevin (accounting) | Faith Lands / Web Brokerage / Connectivity |
+| review / kids | Creed / Meredith | App Review / Kids Tech |
+| designer / profile | Kelly / Toby (annex) | Atom Family Designer / Profile & Settings |
+
+Layout `scranton-2`: conference room now shares a wall with Michael's office (whiteboard on that wall), west bullpen door is the
+emergency exit (the warehouse is downstairs, signed by the front door), supply closet front-west.

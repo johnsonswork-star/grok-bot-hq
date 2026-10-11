@@ -127,7 +127,7 @@ function draw(g, st) {
   g.globalAlpha = 1;
 
   // title
-  text(g, 'HQ BOARD', 46, 92, 76, INK.black, { tilt: -0.015 });
+  text(g, fit(g, 'JOHNSON CO', 42, 420), 46, 88, 42, INK.black, { tilt: -0.015 });
   pen(g, INK.red, 7); line(g, 44, 112, 400, 106, 'title-ul', 4);
 
   // ---- clock (CT) ----
@@ -211,8 +211,9 @@ function draw(g, st) {
     team.slice(0, max).forEach((b, i) => {
       const y = ty + 108 + i * 40;
       g.fillStyle = b.color; g.beginPath(); g.arc(tx + 34, y - 9, 9, 0, 7); g.fill();
+      const off = Math.max(78, b.short.length * 17 + 10); // character names (HQ #37) are longer than the old bot initials
       text(g, b.short, tx + 52, y, 26, INK.black);
-      text(g, fit(g, b.task, 24, tw - 150), tx + 130, y, 24, INK.grey);
+      text(g, fit(g, b.task, 24, tw - 62 - off), tx + 52 + off, y, 24, INK.grey);
     });
     if (team.length > max) text(g, `+${team.length - max} more`, tx + 52, ty + 108 + max * 40, 24, INK.grey);
   }

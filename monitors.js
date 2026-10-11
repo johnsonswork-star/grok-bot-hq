@@ -100,7 +100,7 @@ function drawDesk(g, s, m, t) {
   g.fillStyle = '#121620'; g.fillRect(0, 0, w, h);
   header(g, w, s, m.busy, (m.busy ? 'WORKING · ' : 'IDLE · ') + s.short, hh);
   g.textAlign = 'left'; g.textBaseline = 'top';
-  g.fillStyle = 'rgba(255,255,255,.8)'; g.font = `600 28px ${FONT}`; g.fillText(s.name, pad, hh + 16);
+  g.fillStyle = 'rgba(255,255,255,.8)'; g.font = `600 28px ${FONT}`; g.fillText(s.bot ? `${s.name} · ${s.bot}` : s.name, pad, hh + 16);
   if (m.busy) {
     g.fillStyle = '#ffb74d'; g.font = `800 20px ${FONT}`; g.fillText('CURRENT TASK', pad, hh + 62);
     g.fillStyle = '#fff'; g.font = `700 44px ${FONT}`;
@@ -113,7 +113,7 @@ function drawDesk(g, s, m, t) {
     if (m.until) bits.push(`until ${hm(m.until)}`);
     g.fillText(bits.join('  ·  '), pad, h - 22);
   } else {
-    g.fillStyle = s.color; g.globalAlpha = 0.22; g.font = `900 ${s.short.length > 3 ? 120 : 150}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = s.color; g.globalAlpha = 0.22; { let fs = s.short.length > 3 ? 120 : 150; g.font = `900 ${fs}px ${FONT}`; while (g.measureText(s.short).width > w - 40 && fs > 40) { fs -= 6; g.font = `900 ${fs}px ${FONT}`; } } g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(s.short, w / 2, h / 2 + 30); g.globalAlpha = 1;
     g.fillStyle = '#7CFC9A'; g.font = `800 44px ${FONT}`; g.fillText('Idle · roaming the floor', w / 2, h / 2 + 10);
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 27px ${FONT}`; g.fillText('No task right now. Ready when you need it.', w / 2, h / 2 + 66);

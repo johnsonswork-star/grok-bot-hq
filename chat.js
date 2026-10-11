@@ -9,7 +9,7 @@ export function createChat({ stations, onOpenChange, snapshot, onLog }) {
   const el = document.getElementById('chat');
   const $ = s => el.querySelector(s);
   const log = $('.log'), input = $('input'), sel = $('select'), chipsEl = $('.chips'), status = $('.cstatus');
-  sel.innerHTML = stations.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  sel.innerHTML = stations.map(s => `<option value="${s.id}">${esc(s.name)}${s.bot ? ' · ' + esc(s.bot) : ''}</option>`).join('');
   chipsEl.innerHTML = CHIPS.map((c, i) => `<button type="button" data-i="${i}">${esc(c)}</button>`).join('');
   let open = false, chipIdx = -1, target = stations.find(s => s.hero) || stations[0], pollT = null;
   let entries = []; try { entries = JSON.parse(localStorage.getItem(LOG) || '[]'); } catch (e) {}
@@ -30,13 +30,13 @@ export function createChat({ stations, onOpenChange, snapshot, onLog }) {
     status.innerHTML = link.isLinked() ? '<span class="ok">● Live to Grok Bot + team (encrypted)</span>'
       : '<span class="warn">● This browser can\'t encrypt messages. Update iPadOS / Safari</span>';
   }
-  function setTarget(s) { target = s || target; sel.value = target.id; $('.cname').textContent = target.name; $('.cdot').style.background = target.color; input.placeholder = `Message ${target.name}${target.hero ? '' : ' (via Grok Bot)'}…`; }
+  function setTarget(s) { target = s || target; sel.value = target.id; $('.cname').textContent = target.bot ? `${target.name} · ${target.bot}` : target.name; $('.cdot').style.background = target.color; input.placeholder = `Message ${target.bot || target.name}${target.hero ? '' : ' (via Grok Bot)'}…`; }
   sel.addEventListener('change', () => setTarget(stations.find(s => s.id === sel.value)));
 
   // Typed messages carry a shot of the 3D view (could be a "change this" ask); canned quick chips don't need one.
   async function send(text, noShot = CHIPS.includes(String(text || '').trim())) {
     text = (text || '').trim(); if (!text) return;
-    const m = { kind: 'me', to: target.name, text, at: Date.now(), status: 'sending', noShot };
+    const m = { kind: 'me', to: target.bot || target.name, text, at: Date.now(), status: 'sending', noShot };
     entries.push(m); render();
     await deliver(m);
   }
