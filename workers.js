@@ -3,6 +3,7 @@
 // Busy  -> walks to its own desk, sits, and types until the task clears.
 // "Busy" comes from tasks.json (polled), ?busy=id,id URL override, or window.__office.workers.setBusy(id, task).
 import * as THREE from './vendor/three.module.js';
+import { buildCharacter } from './characters.js';
 
 const CELL = 0.4, GX0 = -20, GZ0 = -14, GW = 100, GD = 70; // nav grid over the room
 const R = 0.3;              // worker radius for nav
@@ -29,26 +30,9 @@ const mat = c => { if (!matCache.has(c)) matCache.set(c, new THREE.MeshStandardM
 
 function hash(s) { let h = 2166136261; for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; }
 
+// Office cast models live in characters.js (HQ #46). Same rig shape as before, so all the animation below still applies.
 function buildPerson(st) {
-  const h = hash(st.id), pick = (a, k) => a[(h >>> k) % a.length];
-  const root = new THREE.Group();
-  const body = new THREE.Group(); root.add(body); // body bobs/sinks; root holds position + yaw
-  const hip = 0.8;
-  const torso = new THREE.Mesh(G.torso, mat(st.color)); torso.position.y = hip + 0.3; torso.castShadow = true; body.add(torso);
-  const headG = new THREE.Group(); headG.position.y = hip + 0.72; body.add(headG);
-  const head = new THREE.Mesh(G.head, mat(pick(SKIN, 3))); head.castShadow = true; headG.add(head);
-  const hair = new THREE.Mesh(G.hair, mat(pick(HAIR, 7))); hair.position.set(0, 0.012, 0.01); hair.rotation.x = -0.25; headG.add(hair);
-  const pants = mat(pick(PANTS, 11));
-  const legL = new THREE.Mesh(G.leg, pants), legR = new THREE.Mesh(G.leg, pants);
-  legL.position.set(-0.08, hip, 0); legR.position.set(0.08, hip, 0); body.add(legL, legR);
-  const sleeve = mat(st.color);
-  const armL = new THREE.Mesh(G.arm, sleeve), armR = new THREE.Mesh(G.arm, sleeve);
-  armL.position.set(-0.22, hip + 0.54, 0); armR.position.set(0.22, hip + 0.54, 0); body.add(armL, armR);
-  // props held in the right hand (hidden unless in use)
-  const cup = new THREE.Mesh(G.cup, mat('#f2f2f0')); cup.position.set(0, -0.56, -0.04); cup.visible = false; armR.add(cup);
-  const phone = new THREE.Mesh(G.phone, mat('#16181c')); phone.position.set(0, -0.56, -0.05); phone.rotation.x = Math.PI / 2; phone.visible = false; armR.add(phone);
-  if (st.hero) root.scale.setScalar(1.06);
-  return { root, body, headG, legL, legR, armL, armR, cup, phone };
+  return buildCharacter(st, { cupGeo: G.cup, phoneGeo: G.phone, cupMat: mat('#f2f2f0'), phoneMat: mat('#16181c') });
 }
 
 function tagSprite(st) {
@@ -276,6 +260,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
       w.legL.rotation.x = swing * (1 - s) + s * 1.45; w.legR.rotation.x = -swing * (1 - s) + s * 1.45;
       let aLx = -swing * 0.9, aRx = swing * 0.9, aLz = 0.06, aRz = -0.06, hx = 0, hy = 0;
       w.cup.visible = false; w.phone.visible = false;
+      for (const e of w.extras || []) e.obj.visible = !(e.standOnly && s > 0.4); // Michael's mug goes on the desk when he sits
       if (w.state === 'act' && !moving) {
         const a = w.act;
         if (a === 'water') { w.cup.visible = true; const sip = Math.max(0, Math.sin(t * 0.9 + w.phase)) ** 6; aRx = 0.9 + sip * 1.1; aRz = -0.15; hx = -sip * 0.3; }
