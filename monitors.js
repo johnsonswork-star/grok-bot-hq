@@ -652,6 +652,7 @@ export function createMonitors({ stations, onPick }) {
       const i = L.cells.findIndex(c => inR(c)); return i >= 0 && i < pk.options.length ? pk.options[i].k : null;
     },
     needs: () => needsList(mons, feedNeeds),
+    pickSel: id => [...(mons.get(id)?.sel || [])].sort(), // HQ #54: what you just picked (the character reacts to it)
     hasPick: id => { const m = mons.get(id); return !!(m && liveWork(m) && m.work.pick && !m.work.pick.done); },
     pickInfo: id => { const m = mons.get(id); return m?.work?.pick ? { title: m.work.pick.title, n: m.sel?.size || 0, done: m.work.pick.done } : null; },
     setPickHover(id, key) { for (const m of mons.values()) { const v = m.s.id === id ? key || null : null; if ((m.pickHover || null) !== v) { m.pickHover = v; m.dirty = true; } } },

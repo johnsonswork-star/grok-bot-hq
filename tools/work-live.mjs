@@ -28,6 +28,8 @@
 //        rides in this feed as `needs` and shows on Toby's Profile & Settings screen (+ the Team Board count). Feeds that
 //        wait on Chris (waiting / open pick / review naming Chris) are listed there automatically, no `need` needed.
 //   node tools/work-live.mjs need done <id>  |  need list       close one / show the open ones
+//   node tools/work-live.mjs say <bot> "line"                  HQ #54: that teammate says this line in a speech bubble (in character,
+//        written by the bot for a real event; shown once on each iPad if < 10 min old). Free: no AI call in the office.
 //   node tools/work-live.mjs show                               print the bundle (no thumbnails)
 //   node tools/work-live.mjs push [--force]                     publish now
 //   node tools/work-live.mjs watch                              background publisher: checks every 4 s, pushes on change
@@ -54,6 +56,8 @@ fs.mkdirSync(THUMBS, { recursive: true, mode: 0o700 });
 // HQ #53: open "needs Chris" items. JSONL, newest line per id wins; { id, done: true } closes one.
 // Legacy hq-watcher lines { ts, issue, ask, status } count too (id issue-N).
 const NEEDS = `${DIR}/needs-chris.jsonl`;
+const SAYS = `${DIR}/says.jsonl`; // HQ #54: { id, bot, text, at } lines for speech bubbles; last 10 min ride in the feed
+function recentSays() { let t = ''; try { t = fs.readFileSync(SAYS, 'utf8'); } catch { return []; } return t.split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(x => x && Date.now() - x.at < 10 * 60e3).slice(-8); }
 function openNeeds() {
   const byId = new Map(); let txt = ''; try { txt = fs.readFileSync(NEEDS, 'utf8'); } catch { return []; }
   for (const l of txt.split('\n')) { let e; try { e = JSON.parse(l); } catch { continue; }
@@ -159,7 +163,7 @@ function bundle(withThumbs = true) {
     if (withThumbs) b.thumbs = imgs.slice(0, THUMBS_PER_BOT).map(p => ({ n: path.basename(p), d: thumb(p) })).filter(x => x.d);
     bots[bot] = b;
   }
-  return { type: 'work', v: 1, at: Date.now(), bots, needs: openNeeds() };
+  return { type: 'work', v: 1, at: Date.now(), bots, needs: openNeeds(), says: recentSays() };
 }
 
 let devCache = null, devAt = 0;
@@ -195,7 +199,8 @@ async function push() {
 function sig() {
   let files = []; try { files = fs.readdirSync(WORK).filter(f => f.endsWith('.json')); } catch {}
   let nm = 0; try { nm = fs.statSync(NEEDS).mtimeMs; } catch {}
-  return files.map(f => { try { return f + ':' + fs.statSync(`${WORK}/${f}`).mtimeMs; } catch { return f; } }).join('|') + '|needs:' + nm;
+  let sm = 0; try { sm = fs.statSync(SAYS).mtimeMs; } catch {}
+  return files.map(f => { try { return f + ':' + fs.statSync(`${WORK}/${f}`).mtimeMs; } catch { return f; } }).join('|') + '|needs:' + nm + '|says:' + sm;
 }
 async function watch() {
   log('work-live watcher up');
@@ -282,7 +287,8 @@ else if (cmd === 'need') {
     fs.appendFileSync(NEEDS, JSON.stringify(e) + '\n', { mode: 0o600 }); console.log('need', sub, id);
   } else { console.error('usage: need add <id> --title T [--who W] [--do D] [--bot B] [--issue N] | need done <id> | need list'); process.exit(2); }
 }
+else if (cmd === 'say' && bot && rest[0]) { const e = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), bot, text: clip(rest.join(' '), 200), at: Date.now() }; fs.appendFileSync(SAYS, JSON.stringify(e) + '\n', { mode: 0o600 }); console.log(bot, 'says:', e.text); }
 else if (cmd === 'show') console.log(JSON.stringify(bundle(rest.includes('--thumbs') || bot === '--thumbs'), null, 1));
 else if (cmd === 'push') process.exit((await push()) ? 0 : 1);
 else if (cmd === 'watch') await watch();
-else console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 25).map(l => l.replace(/^\/\/ ?/, '')).join('\n'));
+else console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 27).map(l => l.replace(/^\/\/ ?/, '')).join('\n'));

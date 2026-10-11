@@ -3,6 +3,7 @@ import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
 import { createWorkers } from './workers.js';
 import { createMonitors } from './monitors.js';
+import { createTalk } from './talk.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
 import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, requestRefresh, requestPick } from './hq-link.js';
@@ -835,11 +836,15 @@ const IDLE_SPOTS = [ // HQ #43: re-placed for the 22 x 15 m floor
 
 // (created after every prop so their nav grid knows about walls, desks, kitchen, cooler, rooms)
 // worker characters (one per bot): wander when idle, sit + type at their desk when busy (tasks.json)
+let needsT = 0, talk = null; // HQ #54 speech bubbles (talk.js), created right after the workers
 const workers = createWorkers({ scene, stations, colliders, pois: IDLE_SPOTS, onStatus: (s, busy, task, meta = {}) => {
   const st = stations.find(x => x.id === s.id); if (!st) return;
   st.busy = busy; st.task = task; monitors.setStatus(st.id, busy, task, meta.since, meta.until, { stage: meta.stage, pct: meta.pct, waiting: meta.waiting });
+  talk?.onStatus(st, busy, task, meta);
   if (panelOpen === st) showPanel(st);
 } });
+// HQ #54: speech bubbles above whoever is talking; each teammate reacts in character to real events (voices.js, local, free)
+talk = createTalk({ scene, workers, stations, camera });
 
 
 // ---------- player ----------
@@ -1163,7 +1168,7 @@ function pickFeedback(id, r) {
   else if (r === 'submit') toast(`📌 Sending your picks to ${who}…`);
   else if (r === 'already') toast(`${who} already has those picks`);
   else if (r === 'locked') toast('Picks sent. Waiting for the desk to confirm');
-  if (r === 'submit') setTimeout(() => workPoll?.(), 20000);
+  if (r === 'submit') { setTimeout(() => workPoll?.(), 20000); talk?.onPickSent(id, monitors.pickSel(id)); }
 }
 let workPoll = null;
 function tapAt(x, y) {
@@ -1256,12 +1261,12 @@ const refreshCtl = (() => {
 // image thumbnails). Last copy kept on this device; the monitor shows it only while that bot is busy in tasks.json.
 (function workFeed() {
   const KEY = 'hq.workFeed';
-  try { const f = JSON.parse(localStorage.getItem(KEY) || 'null'); if (f) monitors.setWork(f); } catch (e) {}
+  try { const f = JSON.parse(localStorage.getItem(KEY) || 'null'); if (f) { monitors.setWork(f); talk?.onWork(f); } } catch (e) {}
   async function poll() {
     if (document.hidden) return;
     const r = await fetchWorkFeed(); if (!r || r.same || !r.feed) return;
     try { localStorage.setItem(KEY, JSON.stringify(r.feed)); } catch (e) {}
-    monitors.setWork(r.feed);
+    monitors.setWork(r.feed); talk?.onWork(r.feed);
   }
   workPoll = poll; poll(); setInterval(poll, 12000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
@@ -1274,7 +1279,7 @@ for (const s of stations) {
   cv.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (t && hit(t.clientX, t.clientY)) { e.preventDefault(); e.stopPropagation(); } }, { passive: false });
   cv.addEventListener('click', e => { if (e.pointerType === 'touch') return; if (hit(e.clientX, e.clientY)) e.stopPropagation(); });
 }
-const chat = createChat({ stations, snapshot, onLog: entries => monitors.setLog(entries), onOpenChange: o => {
+const chat = createChat({ stations, snapshot, onLog: entries => { monitors.setLog(entries); talk?.onChat(entries); }, onOpenChange: o => {
   if (o) { closePanel(); touch.move = touch.look = null; touch.mx = touch.mz = 0; showKnob(null); if (document.pointerLockElement) document.exitPointerLock(); }
 } });
 // who you talk to: open panel > desk you're looking at > last desk you used > Grok Bot
@@ -1356,6 +1361,8 @@ function tick() {
   camera.position.set(player.pos.x, EYE + bob, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
   workers.update(dt, clock.elapsedTime, player);
+  talk.update(dt, player);
+  if ((needsT += dt) > 2) { needsT = 0; talk.onNeeds(monitors.needs()); }
   if (!hoverKind) setFocus(paused ? null : findFocus()); else if (paused) setFocus(null);
   updateHover();
   monitors.tick(performance.now(), player.pos, (panelOpen || focused)?.id);
@@ -1393,7 +1400,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
+window.__office = { talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

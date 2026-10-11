@@ -286,3 +286,30 @@ One shared list (`needsList()` in `monitors.js`) feeds the board panel, the head
 - anything else: `node tools/work-live.mjs need add <id> --title "Approve X" --who "Andy · Shop" --do "Reply yes in HQ chat (#44)" [--bot <station>] [--issue N]`, closed with `need done <id>` (`need list` shows the open ones). Stored in `~/.config/grok-bot-hq/needs-chris.jsonl` on the box, sent only inside the encrypted work feed.
 
 Live: rides the existing work-feed publisher (`work-live.mjs watch`, pushes within ~15 s of a change) and the iPad's 12 s poll. No reload.
+
+## Speech bubbles + teammates talking in character (HQ #54)
+
+`talk.js` + `voices.js`. When someone has something to say, a speech bubble (their name in their color, white card, tail
+pointing at them) floats above their head, fades in, holds 3.5–8.5 s depending on length, and fades out. It works seated or
+standing, scales up a little with distance so it stays readable on the iPad, and stacks above a neighbour who's already talking.
+One bubble per person, at most 3 on screen at once, the rest wait in a short queue (lines older than 90 s are dropped).
+If the speaker is off-screen or more than 12 m away, the line also shows as a small caption at the bottom of the screen.
+
+**When they talk (real events only):**
+- tasks.json: sits down on a new task, stage changes (queued / working / review / done / blocked), starts waiting on you, gets up free
+- live work feed: stage change, pick cards go up ("ask"), your picks land ("picked", e.g. Kelly: "OMG, H, I and K?! You have SUCH good taste."), waiting on Chris
+- you tap SUBMIT on pick cards: that teammate reacts right away (once, not again when the feed confirms)
+- Needs you: a new item -> its owner asks for you; an item cleared -> a thank-you
+- HQ chat: you message someone -> they acknowledge in character; a reply attributed to them (`hq-inbox.sh reply N "text" "Kelly Kapoor"`, or Grok Bot -> Michael) -> they say the first ~120 characters, sometimes with an in-character opener
+- `node tools/work-live.mjs say <bot> "line"`: a bot's own custom line for a real event (rides the encrypted work feed, shown once per device, only if < 10 min old)
+- idle: very rare (4–8 min apart) one-liner from an idle teammate within 9 m of you. Full random banter is HQ #56.
+
+Guards: nothing speaks in the first 6 s after load (it seeds from the current state, so a reload doesn't replay old news),
+feed events older than 10 min are ignored, one line per person per 25 s for routine status, same line never twice in 2 min.
+
+**Cost: zero.** Every line is a local template from `voices.js` (14 characters x 13 events, written in each character's
+show voice: Michael, Pam, Jim, Dwight, Andy, Phyllis, Stanley, Angela, Oscar, Kevin, Creed, Meredith, Kelly, Toby).
+The office makes no AI calls. We deliberately did NOT wire the llm.env API key in here: the only "AI" lines are ones a bot
+writes while it's already working on the real event (`work-live.mjs say`), so no extra allowance is ever spent and an idle office costs nothing.
+Turn bubbles off on a device: add `?quiet=1` to the URL or `localStorage.setItem('hq.talk','off')` (HQ chat replies still show).
+Console: `__office.talk.say('designer', 'Hi!')`, `__office.talk.react('assist', 'done', { task: 'resume' }, { force: true })`.
