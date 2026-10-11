@@ -630,7 +630,7 @@ moved(2, 1.5, () => {
   // HQ #48: live team board (open tasks, owner, stage, %) from the same feeds as the desk screens (monitors.js)
   const brief = monitors.board({ x: tx, z: -2.38 });
   const bs = new THREE.Mesh(new THREE.PlaneGeometry(1.52, 0.86), new THREE.MeshBasicMaterial({ map: brief, toneMapped: false }));
-  bs.position.set(tx, 1.65, -2.335); scene.add(bs);
+  bs.position.set(tx, 1.65, -2.335); scene.add(bs); monitors.boardMesh = bs; // HQ #52: tappable pick cards on the TV
   // HQ #42: CONFERENCE ROOM door plate beside the door (Icon Shop art) + a matching one over the door
   pngSign('conference', 6.42, 1.6, 0.05, -Math.PI / 2, 0.42);
   plate('CONFERENCE ROOM', 6.42, 2.7, 1.0, -Math.PI / 2, { w: 0.95 });
@@ -1139,9 +1139,11 @@ let hoverKind = null;
 function refreshHit() {
   const targets = [whiteboard.surface]; if (inboxSt) targets.push(inboxSt.screen);
   for (const s of stations) if (!s.hero && monitors.hasPick(s.id)) targets.push(s.screen); // HQ #50 pick cards
+  if (monitors.boardMesh && monitors.boardHasPick()) targets.push(monitors.boardMesh);          // HQ #52 same cards on the Team Board TV
   raycaster.far = 10;
   const h = raycaster.intersectObjects(targets, false)[0]; if (!h) return null;
   if (h.object === whiteboard.surface) return whiteboard.hitTest(h.uv);
+  if (h.object === monitors.boardMesh) { const b = h.distance < 8 && monitors.boardPickHit(h.uv); return b ? `bpick:${b.id}:${b.key}` : null; }
   if (h.distance >= 5) return null;
   if (inboxSt && h.object === inboxSt.screen) return monitors.hitTest('inbox', h.uv);
   const ps = stations.find(s => s.screen === h.object); const k = ps && monitors.pickHit(ps.id, h.uv);
@@ -1150,7 +1152,7 @@ function refreshHit() {
 // one place for "press this on-screen control": REFRESH kinds or HQ #50 pick cards ('pick:<bot>:<H|submit>')
 function act(kind) {
   if (!kind) return;
-  if (!kind.startsWith('pick:')) return refreshCtl.request(kind);
+  if (!/^b?pick:/.test(kind)) return refreshCtl.request(kind);
   const [, id, key] = kind.split(':'); pickAct(id, key);
 }
 function pickAct(id, key) { pickFeedback(id, monitors.pickTap(id, key)); }
@@ -1176,9 +1178,10 @@ function updateHover() {
   if (!paused && !chat.isOpen() && !panelOpen) { camera.getWorldDirection(tmpV); raycaster.set(camera.position, tmpV); k = refreshHit(); }
   if (k === hoverKind) return;
   hoverKind = k;
-  const pk = k && k.startsWith('pick:') ? k.split(':') : null;
+  const pk = k && /^b?pick:/.test(k) ? k.split(':') : null, onBoard = pk && pk[0] === 'bpick';
   whiteboard.setHover(k === 'bank'); monitors.setHover(k === 'inbox' ? 'inbox' : null, true);
-  if (!panelOpen) monitors.setPickHover(pk ? pk[1] : null, pk ? pk[2] : null);
+  if (!panelOpen) monitors.setPickHover(pk && !onBoard ? pk[1] : null, pk && !onBoard ? pk[2] : null);
+  monitors.setBoardPickHover(onBoard ? pk[2] : null);
   if (pk) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = pk[2] === 'submit' ? '📌 Submit your picks  ·  A / E / tap' : `Pick / unpick ${pk[2]}  ·  A / E / tap`; }
   else if (k) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = `⟳ Refresh ${k === 'bank' ? 'bank balances' : 'Family Inbox'}  ·  A / E / tap`; }
   else { const f = focused; focused = null; ui.reticle.classList.remove('hot'); ui.focus.classList.remove('show'); setFocus(f); }

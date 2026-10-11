@@ -354,7 +354,54 @@ function boardRows(mons) {
   }
   return rows.sort((a, b) => !!b.wait - !!a.wait || STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage] || (b.at || 0) - (a.at || 0));
 }
-function drawBoard(g, rows, t) {
+// HQ #52: the same pick cards as the desk (same selection / SUBMIT state, same onPick relay), as a panel on the Team Board TV
+const BPK = { x: 30, h: 240, head: 38, foot: 52, gap: 10 };
+function boardPickM(mons) {
+  for (const m of mons.values()) { const pk = !m.s.hero && m.work?.pick; if (pk && liveWork(m) && (!pk.done || Date.now() - (pk.pickedAt || 0) < 3 * 3600e3)) return m; }
+  return null;
+}
+function boardPickLayout(n, top) {
+  const x = BPK.x, w = BOARD_W - BPK.x * 2, cols = n + 1, cw = (w - 20 - BPK.gap * (cols - 1)) / cols, ch = BPK.h - BPK.head - BPK.foot - 6, cells = [];
+  for (let i = 0; i < cols; i++) cells.push({ x: x + 10 + i * (cw + BPK.gap), y: top + BPK.head, w: cw, h: ch });
+  return { panel: { x, y: top, w, h: BPK.h }, cells, submit: { x: x + w - 10 - 320, y: top + BPK.h - BPK.foot + 2, w: 320, h: BPK.foot - 10 } };
+}
+function drawBoardPick(g, m, top, t, hover) {
+  const pk = m.work.pick, done = pk.done, sel = done ? new Set(pk.picked) : m.sel || new Set(), L = boardPickLayout(pk.options.length, top), P = L.panel, who = m.s.name.split(' ')[0];
+  rr(g, P.x, P.y, P.w, P.h, 14); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill(); g.lineWidth = 3;
+  g.globalAlpha = done ? 1 : 0.75 + 0.25 * Math.sin(t / 300); g.strokeStyle = done ? STAGE_COL.done : WAIT_COL; g.stroke(); g.globalAlpha = 1;
+  g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `900 21px ${FONT}`; g.fillStyle = done ? STAGE_COL.done : WAIT_COL;
+  g.fillText(wrapOne(g, done ? `✓ YOU PICKED ${pk.picked.join(', ')} · ${who} is on it` : `⏳ YOUR PICK · ${who}'s ${pk.title} · tap your favorites, then SUBMIT`, P.w - 30), P.x + 14, P.y + BPK.head / 2 + 2);
+  pk.options.forEach((o, i) => {
+    const c = L.cells[i], on = sel.has(o.k), hot = !done && hover === o.k, img = m.pickImgs?.[o.k];
+    rr(g, c.x, c.y, c.w, c.h, 10); g.fillStyle = on ? 'rgba(232,163,61,.30)' : 'rgba(255,255,255,.07)'; g.fill();
+    g.lineWidth = on ? 5 : 2; g.strokeStyle = on ? '#e8a33d' : 'rgba(255,255,255,.2)'; g.stroke();
+    if (hot) { rr(g, c.x - 4, c.y - 4, c.w + 8, c.h + 8, 12); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke(); }
+    const isz = Math.min(c.w - 14, c.h - 52), ix = c.x + (c.w - isz) / 2, iy = c.y + 7;
+    rr(g, ix, iy, isz, isz, 8); g.fillStyle = '#f3efe6'; g.fill();
+    if (img && img.complete && img.naturalWidth) { const ar = img.naturalWidth / img.naturalHeight, b = isz - 8, dw = ar > 1 ? b : b * ar, dh = ar > 1 ? b / ar : b; g.drawImage(img, ix + (isz - dw) / 2, iy + (isz - dh) / 2, dw, dh); }
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.font = '900 26px Georgia,serif'; g.fillStyle = on ? '#ffcf86' : '#fff'; g.fillText(o.k, c.x + 8, c.y + c.h - 22);
+    g.font = `800 14px ${FONT}`; g.fillStyle = '#eef2f7'; g.fillText(wrapOne(g, o.t, c.w - 40), c.x + 32, c.y + c.h - 26);
+    g.font = `500 11px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.55)'; g.fillText(wrapOne(g, o.sub, c.w - 16), c.x + 8, c.y + c.h - 8);
+    const bx = c.x + c.w - 16, by = c.y + 16; g.beginPath(); g.arc(bx, by, 12, 0, 7);
+    if (on) { g.fillStyle = '#e8a33d'; g.fill(); g.fillStyle = '#1a1206'; g.font = `900 15px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('✓', bx, by + 1); }
+    else { g.fillStyle = 'rgba(0,0,0,.35)'; g.fill(); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.6)'; g.stroke(); }
+  });
+  const sc = L.cells[pk.options.length], sh = m.pickSheet;
+  if (sc && sh && sh.complete && sh.naturalWidth) {
+    rr(g, sc.x, sc.y, sc.w, sc.h, 10); g.fillStyle = '#f3efe6'; g.fill();
+    const ar = sh.naturalWidth / sh.naturalHeight, bw = sc.w - 8, bh = sc.h - 24, dw = Math.min(bw, bh * ar), dh = dw / ar; g.drawImage(sh, sc.x + (sc.w - dw) / 2, sc.y + 4 + (bh - dh) / 2, dw, dh);
+    g.fillStyle = '#1B2A4A'; g.font = `800 12px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('CONTACT SHEET', sc.x + sc.w / 2, sc.y + sc.h - 5);
+  }
+  const r = L.submit, n = sel.size, st = done ? 'done' : m.pickSent?.state, dots = '.'.repeat(1 + (t / 450 | 0) % 3);
+  g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `700 19px ${FONT}`; g.fillStyle = n ? '#ffcf86' : 'rgba(255,255,255,.65)';
+  g.fillText(wrapOne(g, done ? `Sent ${hm(pk.pickedAt)} · same picks ${who} got at her desk` : n ? `Picked: ${[...sel].sort().join(', ')} · tap again to unpick` : `Tap the cards you like · more than one is fine`, r.x - P.x - 30), P.x + 14, r.y + r.h / 2);
+  const bg = st === 'done' || st === 'sent' ? '#1f8a4c' : st === 'sending' ? '#1d4fb8' : st === 'failed' ? '#b3261e' : n ? '#e8a33d' : 'rgba(255,255,255,.12)';
+  rr(g, r.x, r.y, r.w, r.h, 12); g.fillStyle = bg; g.fill(); if (!done && hover === 'submit') { g.lineWidth = 5; g.strokeStyle = '#fff'; g.stroke(); }
+  g.fillStyle = !st && n ? '#1a1206' : !st ? 'rgba(255,255,255,.45)' : '#fff'; g.font = `900 21px ${FONT}`; g.textAlign = 'center';
+  g.fillText(st === 'done' ? `✓ PICKS IN · ${who.toUpperCase()} ON IT` : st === 'sent' ? `SENT ✓ ${who.toUpperCase()} HAS THEM` : st === 'sending' ? 'SENDING' + dots : st === 'failed' ? 'NOT SENT · TAP AGAIN' : `SUBMIT PICKS${n ? ' (' + n + ')' : ''} ▶`, r.x + r.w / 2, r.y + r.h / 2 + 1);
+  return BPK.h + 6;
+}
+function drawBoard(g, rows, t, pm, hover) {
   const w = BOARD_W, h = BOARD_H, pad = 30, hh = 78;
   const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#16202b'); grd.addColorStop(1, '#2c2118'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
   g.textBaseline = 'middle'; g.textAlign = 'left';
@@ -369,7 +416,7 @@ function drawBoard(g, rows, t) {
   for (const k of ['working', 'blocked', 'review', 'queued', 'done']) { const n = cnt(k); if (!n && k === 'blocked') continue; const lbl = `${STAGE_LABEL[k]} ${n}`, tw = g.measureText(lbl).width + 26;
     rr(g, cx, hh + 4, tw, 30, 15); g.fillStyle = n ? STAGE_COL[k] : 'rgba(255,255,255,.08)'; g.fill(); g.fillStyle = n ? '#10141c' : 'rgba(255,255,255,.45)'; g.fillText(lbl, cx + 13, hh + 20); cx += tw + 10; }
   g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(pad, hh + 44, w - pad * 2, 2);
-  const top = hh + 52, rowH = 62, fit = Math.floor((h - top - 8) / rowH), more = rows.length > fit ? rows.length - (fit - 1) : 0, shown = rows.slice(0, more ? fit - 1 : fit);
+  const top = hh + 52 + (pm ? drawBoardPick(g, pm, hh + 52, t, hover) : 0), rowH = 62, fit = Math.floor((h - top - 8) / rowH), more = rows.length > fit ? rows.length - (fit - 1) : 0, shown = rows.slice(0, more ? fit - 1 : fit);
   if (!rows.length) { g.textAlign = 'center'; g.fillStyle = '#7CFC9A'; g.font = `800 40px ${FONT}`; g.fillText('No open tasks · everyone roaming', w / 2, top + 150); }
   shown.forEach((r, i) => {
     const y = top + i * rowH, col = STAGE_COL[r.stage] || STAGE_COL.working;
@@ -380,7 +427,7 @@ function drawBoard(g, rows, t) {
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = `500 16px ${FONT}`; g.fillText(wrapOne(g, r.bot, 230), pad, y + 45);
     const tx = pad + 245, tw = w - pad - 310 - tx - 16;
     g.fillStyle = '#eef2f7'; g.font = `700 22px ${FONT}`; g.fillText(wrapOne(g, r.task, tw), tx, y + 21);
-    if (r.wait) { g.fillStyle = WAIT_COL; g.font = `800 17px ${FONT}`; g.fillText(wrapOne(g, r.pick ? `⏳ YOUR PICK · ${r.pick} on ${r.who.split(' ')[0]}'s desk` : `⏳ WAITING ON YOU · ${r.sub || 'needs your call'}`, tw), tx, y + 45); }
+    if (r.wait) { g.fillStyle = WAIT_COL; g.font = `800 17px ${FONT}`; g.fillText(wrapOne(g, r.pick ? `⏳ YOUR PICK · tap ${r.pick} in the cards above` : `⏳ WAITING ON YOU · ${r.sub || 'needs your call'}`, tw), tx, y + 45); }
     else { g.fillStyle = 'rgba(255,255,255,.6)'; g.font = `500 17px ${FONT}`; g.fillText(wrapOne(g, r.sub || (r.at ? `since ${hm(r.at)}` : ''), tw), tx, y + 45); }
     // stage pill (current one pulses) + mini progress bar
     const px = w - pad - 310, pw = 140; rr(g, px, y + 9, pw, 28, 14);
@@ -428,8 +475,17 @@ export function createMonitors({ stations, onPick }) {
     board({ x, z }) {
       const c = document.createElement('canvas'); c.width = BOARD_W; c.height = BOARD_H;
       const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-      board = { c, g: c.getContext('2d'), tex, x, z, sig: '' }; return tex;
+      board = { c, g: c.getContext('2d'), tex, x, z, sig: '', hover: null }; return tex;
     },
+    // HQ #52: pick cards on the Team Board TV. uv on the TV -> { id, key } (key = option letter | 'submit'), same pickTap() as the desk
+    boardPickHit(uv) {
+      const pm = boardPickM(mons); if (!pm || pm.work.pick.done || !uv) return null;
+      const px = uv.x * BOARD_W, py = (1 - uv.y) * BOARD_H, L = boardPickLayout(pm.work.pick.options.length, 78 + 52), inR = (r, k = 4) => px > r.x - k && px < r.x + r.w + k && py > r.y - k && py < r.y + r.h + k;
+      if (inR(L.submit, 10)) return { id: pm.s.id, key: 'submit' };
+      const i = L.cells.findIndex(c => inR(c)); return i >= 0 && i < pm.work.pick.options.length ? { id: pm.s.id, key: pm.work.pick.options[i].k } : null;
+    },
+    boardHasPick: () => { const pm = boardPickM(mons); return !!(pm && !pm.work.pick.done); },
+    setBoardPickHover(key) { if (board && (board.hover || null) !== (key || null)) { board.hover = key || null; board.sig = ''; } },
     canvas: id => mons.get(id)?.c,
     setStatus(id, busy, task, since, until, extra = {}) {
       const m = mons.get(id); if (!m) return;
@@ -523,8 +579,9 @@ export function createMonitors({ stations, onPick }) {
       if (now < nextAt) return; nextAt = now + FRAME_MS;
       const min = new Date().getMinutes(); const minuteTick = min !== lastMinute; lastMinute = min;
       if (board) {
-        const rows = boardRows(mons), sig = JSON.stringify(rows), near = Math.hypot(board.x - pos.x, board.z - pos.z) < 9;
-        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now); board.tex.needsUpdate = true; }
+        const rows = boardRows(mons), pm = boardPickM(mons), near = Math.hypot(board.x - pos.x, board.z - pos.z) < 9;
+        const sig = JSON.stringify([rows, pm && [pm.psig, [...(pm.sel || [])], pm.pickSent, pm.work.pick.done, Object.values(pm.pickImgs || {}).filter(i => i?.complete).length, !!pm.pickSheet?.complete], board.hover]);
+        if (sig !== board.sig || minuteTick || (near && rows.length)) { board.sig = sig; drawBoard(board.g, rows, now, pm, board.hover); board.tex.needsUpdate = true; }
       }
       for (const m of mons.values()) {
         const focused = m.s.id === focusedId, d = Math.hypot(m.s.x - pos.x, m.s.z - pos.z), near = focused || d < NEAR;
