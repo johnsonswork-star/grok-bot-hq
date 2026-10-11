@@ -85,7 +85,7 @@ If a send fails (no signal), the message shows "⚠ Not sent. Tap to retry".
 
 Swap transports by replacing `hq-link.js` (`send()` / `fetchReplies()`); the UI in `chat.js` doesn't change.
 
-## Layout: Dunder Mifflin Scranton (HQ #30 / #36)
+## Layout: Johnson Co Bot HQ, Scranton-style floor plan (HQ #30 / #36 / #38)
 
 North = the big window wall. You spawn at the south front door, facing Pam's reception. The floor plan follows The Office (Scranton branch); `LAYOUT` in `main.js` is bumped when it changes so a live reload drops you at the front door instead of inside a new wall.
 
@@ -104,7 +104,9 @@ North = the big window wall. You spawn at the south front door, facing Pam's rec
 
 Rooms: conference room west of reception (glass + blinds, long table, HQ Briefing TV on the west wall, live whiteboard on the south wall with clock / weather / markets / TEAM ON IT / BANK + REFRESH); kitchen + break room in the back west corner (counter, fridge, microwave, coffee, snack + soda machines, round tables); the annex in the back east corner with Ryan's closet; copier by reception; filing cabinets; water cooler on the west wall just outside the kitchen (the only place workers drink); warehouse = a labeled door on the west wall with pallets of paper (no downstairs floor, to keep iPad frame rate up).
 
-Shots: `shots/scranton-*.png`.
+Layout `scranton-3-compact` (HQ #38): floor shrunk from 40 x 28 m to 26 x 18 m and desks packed like the show's bullpen. Jim/Dwight face-to-face right outside Michael's door, Phyllis/Stanley right behind them, accounting (Angela + Oscar side by side, Kevin facing) packed under the sign, Creed/Meredith by the back windows, reception about 3 m inside the front door. Every desk's stand spot and every worker idle spot is checked to be reachable from the front door. Pressing Y picks the first clear spot behind each desk (`freeStand`).
+
+Shots: `shots/s38/*.png` (compact), older `shots/scranton-*.png`.
 
 ## Files
 
@@ -217,8 +219,8 @@ While a bot is busy (tasks.json) and has a live feed under 3 h old, its monitor 
 - Publisher: `node tools/work-live.mjs watch` (started by `tools/hq-inbox.sh bridge` / `pending`, log `~/.config/grok-bot-hq/work-live.log`). It's plain node with no AI. It checks every 4 s and pushes on change, at most every 15 s, plus a keep-alive every 2.5 h. The bundle (thumbnails are ~220 px JPEGs) is **encrypted to each HQ device** and posted to `<device topic>_work`, the same privacy model as the inbox and bank feeds. Nothing goes in this public repo. Feeds over 4 KB ride as an ntfy attachment (CORS-open, about 3 h). The iPad reads only `since=latest`, keeps its last copy, and polls every 12 s.
 - Wired now: **Atom Family Designer** follows `atom-family-clothing-co/DESIGNER_DESK_LOG.md` and watches `designs/mascot/desk-options-oct10/` (badge options + contact sheet). **App Builder** gets a line on every `./deploy.sh`.
 
-## Dunder Mifflin cast (HQ #37)
-The office is skinned as Dunder Mifflin Scranton. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
+## The Office cast at Johnson Co (HQ #37 / #39)
+Company branding is **Johnson Co · Bot HQ** (HQ #39: page title, logo board, reception sign, whiteboard, meeting TV, softball sign, sticky note, welcome toast). People keep The Office character names. Each desk keeps its stable bot `id` (tasks.json, work-live, inbox/bank feeds)
 but shows an Office character as `name`; `bot` is the real bot behind it, and HQ chat still routes to `bot` (Grok Bot answers as Grok Bot).
 
 | id | character | bot |

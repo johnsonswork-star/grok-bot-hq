@@ -43,7 +43,7 @@ const sun = new THREE.DirectionalLight('#fff1dc', 1.6);
 sun.position.set(6, 20, -8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(IS_MOBILE ? 1024 : 2048, IS_MOBILE ? 1024 : 2048);
-Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 16, bottom: -16, near: 1, far: 50 });
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 12, bottom: -12, near: 1, far: 50 });
 sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.02;
@@ -53,7 +53,7 @@ const winFill = new THREE.DirectionalLight('#dbeaff', 0.55);
 winFill.position.set(10, 6, -30);
 scene.add(winFill);
 const warm = new THREE.PointLight('#ffcf94', 6, 14, 2);
-warm.position.set(-1, 2.8, 10); // warm spill over Pam's reception
+warm.position.set(-1, 2.8, 6.5); // warm spill over Pam's reception
 scene.add(warm);
 
 // ---------- helpers ----------
@@ -86,7 +86,7 @@ function roundRect(ctx, x, y, w, h, r) {
 const std = (color, rough = 0.7, metal = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
 
 // ---------- materials ----------
-// commercial carpet tiles (the Dunder Mifflin floor): blue-grey, speckled, quarter-turned tiles
+// commercial carpet tiles (the Johnson Co floor): blue-grey, speckled, quarter-turned tiles
 const carpetTex = canvasTex(512, 512, (g, w, h) => {
   const n = 4, t = w / n;
   for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
@@ -156,11 +156,12 @@ function addCollider(x, z, w, d, ry = 0) {
 }
 
 // ---------- shell: floor, ceiling, walls, windows ----------
-// Layout = the Dunder Mifflin Scranton office (The Office), HQ #30 / #36. Front door + Pam's reception on the south wall,
+// Layout = Johnson Co Bot HQ, modeled on the Scranton office set from The Office, HQ #30 / #36 / #38 (compact). Front door + Pam's reception on the south wall,
 // conference room to the west of reception, Michael's glass corner office to the east, bullpen desk pairs behind,
 // kitchen + break room in the back west corner, the annex in the back east corner, warehouse door on the west wall.
-const LAYOUT = 'scranton-2'; // bump when the floor plan changes: live reload then drops Chris at the front door instead of inside a new wall
-const W = 40, D = 28, H = 3.4, X0 = -20, X1 = 20, Z0 = -14, Z1 = 14;
+const LAYOUT = 'scranton-3-compact'; // bump when the floor plan changes: live reload then drops Chris at the front door instead of inside a new wall
+// HQ #38: the show's office is cramped, so the floor is 26 x 18 m (was 40 x 28) with desks packed in pairs like the set.
+const W = 26, D = 18, H = 3.4, X0 = -13, X1 = 13, Z0 = -9, Z1 = 9;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), M.floor);
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), M.ceiling);
@@ -168,7 +169,7 @@ ceil.rotation.x = Math.PI / 2; ceil.position.y = H; scene.add(ceil);
 
 // drop-ceiling fluorescent panels (one instanced mesh, one draw call)
 {
-  const spots = []; for (let x = -16; x <= 16; x += 4) for (let z = -11; z <= 11; z += 4) spots.push([x, z]);
+  const spots = []; for (let x = -11; x <= 11; x += 3.6) for (let z = -7; z <= 7; z += 3.4) spots.push([x, z]);
   const lp = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.2, 0.6), M.light, spots.length), m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
   spots.forEach(([x, z], i) => lp.setMatrixAt(i, m4.compose(new THREE.Vector3(x, H - 0.01, z), q, new THREE.Vector3(1, 1, 1))));
   scene.add(lp);
@@ -254,58 +255,59 @@ function sign(text, x, y, z, ry, { w = 1.6, h = 0.32, bg = '#1f2a44', fg = '#fff
 // HQ #37 accuracy pass (set plans: Michael's office + conference room share a wall and both look onto the bullpen;
 // reception sits between them and the front door; the warehouse is downstairs off the elevator lobby, not a bullpen door).
 const ROOMS = [
-  { id: 'closet',  name: "Ryan's closet (annex)",             x0: 17.4, x1: 20,  z0: -14, z1: -11.4 },
-  { id: 'michael', name: "Michael Scott's office (Grok Bot)", x0: 10,   x1: 20,  z0: 4,   z1: 14 },
-  { id: 'conf',    name: 'conference room',                  x0: 10,   x1: 20,  z0: -5,  z1: 4 },
-  { id: 'supply',  name: 'supply closet',                    x0: -20,  x1: -16, z0: 10,  z1: 14 },
-  { id: 'kitchen', name: 'kitchen',                          x0: -20,  x1: -13, z0: -14, z1: -7 },
-  { id: 'break',   name: 'break room',                       x0: -13,  x1: -8,  z0: -14, z1: -7 },
-  { id: 'annex',   name: 'the annex',                        x0: 12,   x1: 20,  z0: -14, z1: -5 },
+  { id: 'closet',  name: "Ryan's closet (annex)",             x0: 11.2, x1: 13,    z0: -9,   z1: -7.2 },
+  { id: 'michael', name: "Michael Scott's office (Grok Bot)", x0: 6,    x1: 13,    z0: 3,    z1: 9 },
+  { id: 'conf',    name: 'conference room',                  x0: 6,    x1: 13,    z0: -3.5, z1: 3 },
+  { id: 'supply',  name: 'supply closet',                    x0: -13,  x1: -10.5, z0: 6.5,  z1: 9 },
+  { id: 'kitchen', name: 'kitchen',                          x0: -13,  x1: -8.5,  z0: -9,   z1: -4.5 },
+  { id: 'break',   name: 'break room',                       x0: -8.5, x1: -5,    z0: -9,   z1: -4.5 },
+  { id: 'annex',   name: 'the annex',                        x0: 8.5,  x1: 13,    z0: -9,   z1: -3.5 },
 ];
 // Michael's office (south-east corner): glass + blinds onto the bullpen, door on the west side right by Jim, Dwight + Pam
-wall(10, 4, 10, 14, { glass: true, blinds: true, gaps: [[5.0, 6.6]] });
+wall(6, 3, 6, 9, { glass: true, blinds: true, gaps: [[3.6, 5.0]] });
 // shared wall Michael's office | conference room (solid: the live whiteboard hangs on the conference side)
-wall(10, 4, 20, 4);
+wall(6, 3, 13, 3);
 // conference room right next to Michael's office: glass + blinds onto the bullpen, door near Jim + Dwight
-wall(10, -5, 10, 4, { glass: true, blinds: true, gaps: [[1.6, 3.2]] });
-wall(10, -5, 20, -5);
+wall(6, -3.5, 6, 3, { glass: true, blinds: true, gaps: [[1.4, 2.6]] });
+wall(6, -3.5, 13, -3.5);
 // kitchen + break room (back west corner)
-wall(-20, -7, -8, -7, { gaps: [[-17.4, -15.8], [-11.6, -10.0]] });
-wall(-8, -14, -8, -7);
-wall(-13, -14, -13, -7, { gaps: [[-9.6, -8.0]] });
+wall(-13, -4.5, -5, -4.5, { gaps: [[-11.4, -10.2], [-7.6, -6.4]] });
+wall(-5, -9, -5, -4.5);
+wall(-8.5, -9, -8.5, -4.5, { gaps: [[-6.4, -5.3]] });
 // the annex (back east corner, behind the conference room): opening on its west side off the bullpen
-wall(12, -14, 12, -5, { gaps: [[-8.4, -6.8]] });
+wall(8.5, -9, 8.5, -3.5, { gaps: [[-6.2, -5.0]] });
 // Ryan's closet in the annex corner
-wall(17.4, -14, 17.4, -11.4); wall(17.4, -11.4, 20, -11.4, { gaps: [[18.0, 19.4]] });
+wall(11.2, -9, 11.2, -7.2); wall(11.2, -7.2, 13, -7.2, { gaps: [[11.6, 12.6]] });
 // supply closet (front west corner, by reception)
-wall(-20, 10, -16, 10, { gaps: [[-18.4, -17.0]] }); wall(-16, 10, -16, 14);
+wall(-13, 6.5, -10.5, 6.5, { gaps: [[-12.2, -11.2]] }); wall(-10.5, 6.5, -10.5, 9);
 
 // structural columns in the bullpen
-for (const [x, z] of [[-7.4, -1.6], [2.6, -1.6]]) {
+const COLUMNS = [[-5.4, -0.4], [1.6, -3.4]];
+for (const [x, z] of COLUMNS) {
   const col = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, H, 16), M.wall);
   col.position.set(x, H / 2, z); col.castShadow = col.receiveShadow = true; scene.add(col);
   addCollider(x, z, 0.6, 0.6);
 }
 // floor finishes: vinyl in the kitchen / break room, rug in Michael's office, accounting carpet patch, conference carpet
 {
-  const k = box(12, 0.006, 7, M.vinyl, -14, 0.004, -10.5, scene, false); k.castShadow = false;
-  const r = box(4.4, 0.008, 3.4, M.rug, 15.6, 0.005, 9.2, scene, false); r.castShadow = false;
-  const a = box(5.4, 0.006, 4.6, M.carpetWarm, -3.5, 0.003, -5.3, scene, false); a.castShadow = false;
-  const c = box(9.8, 0.006, 8.8, M.carpet, 15, 0.003, -0.5, scene, false); c.castShadow = false;
+  const k = box(8, 0.006, 4.5, M.vinyl, -9, 0.004, -6.75, scene, false); k.castShadow = false;
+  const r = box(3.4, 0.008, 4.2, M.rug, 10.0, 0.005, 6.0, scene, false); r.castShadow = false;
+  const a = box(4.4, 0.006, 3.6, M.carpetWarm, -2.4, 0.003, -1.9, scene, false); a.castShadow = false;
+  const c = box(6.9, 0.006, 6.4, M.carpet, 9.5, 0.003, -0.25, scene, false); c.castShadow = false;
 }
 
 // ---------- outside view ----------
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), M.ground);
 ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; scene.add(ground);
-box(60, 0.02, 6, M.paving, 0, -0.01, -18, scene, false);
-box(6, 0.02, 60, M.paving, 24, -0.01, 0, scene, false);
+box(60, 0.02, 6, M.paving, 0, -0.01, -13, scene, false);
+box(6, 0.02, 60, M.paving, 17, -0.01, 0, scene, false);
 {
   const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.2, 2, 6), std('#6b4f3a'), 40);
   const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 0), M.leaf, 40);
   const m4 = new THREE.Matrix4(); let i = 0;
   const spots = [];
-  for (let x = -40; x <= 40; x += 7) spots.push([x + (Math.random() - .5) * 3, -26 - Math.random() * 10]);
-  for (let z = -30; z <= 30; z += 7) spots.push([32 + Math.random() * 10, z + (Math.random() - .5) * 3]);
+  for (let x = -40; x <= 40; x += 7) spots.push([x + (Math.random() - .5) * 3, -20 - Math.random() * 10]);
+  for (let z = -30; z <= 30; z += 7) spots.push([24 + Math.random() * 10, z + (Math.random() - .5) * 3]);
   for (const [x, z] of spots.slice(0, 40)) {
     const s = 0.8 + Math.random() * 0.7;
     m4.makeScale(s, s, s).setPosition(x, 1 * s, z); trunk.setMatrixAt(i, m4);
@@ -349,7 +351,7 @@ function roundTable(x, z, seats = 3) {
   for (let i = 0; i < seats; i++) { const a = i / seats * Math.PI * 2 + 0.4; chair(scene, x + Math.sin(a) * 0.95, z + Math.cos(a) * 0.95, a); }
   addCollider(x, z, 1.25, 1.25);
 }
-function paperStack(x, z, rows, cols, layers) { // Dunder Mifflin-style paper boxes on a pallet
+function paperStack(x, z, rows, cols, layers) { // paper boxes (The Office-style) on a pallet
   box(cols * 0.46 + 0.1, 0.14, rows * 0.32 + 0.1, M.pallet, x, 0.07, z);
   for (let l = 0; l < layers; l++) for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
     box(0.44, 0.27, 0.3, M.paperBox, x + (c - (cols - 1) / 2) * 0.46, 0.14 + 0.135 + l * 0.275, z + (r - (rows - 1) / 2) * 0.32, scene, l === layers - 1);
@@ -452,9 +454,9 @@ for (const st of STATIONS) {
   // offset to one side so a worker sitting at the desk doesn't block the monitor (over-the-shoulder view)
   const standLocal = new THREE.Vector3(0.6 * s, 0, dd / 2 + 1.7);
   const stand = standLocal.applyMatrix4(g.matrixWorld);
-  const mon = new THREE.Vector3(0, 0, mz).applyMatrix4(g.matrixWorld);
+  const mon = new THREE.Vector3(0, 0, mz).applyMatrix4(g.matrixWorld); st.monitor = mon;
   const yaw = Math.atan2(-(mon.x - stand.x), -(mon.z - stand.z));
-  stations.push({ ...st, group: g, screen, frame, plate, bounds, stand, yaw, center: new THREE.Vector3(st.x, 1, st.z) });
+  stations.push({ ...st, group: g, screen, frame, plate, bounds, stand, yaw, center: new THREE.Vector3(st.x, 1, st.z), dd, s });
 }
 const ST = id => STATIONS.find(s => s.id === id);
 
@@ -486,15 +488,15 @@ const paintBuilding = (g, w, h) => { // Pam's watercolor of the office building
   g.fillStyle = '#6a8c4e'; for (let i = 0; i < 5; i++) { g.beginPath(); g.arc(w * (0.08 + i * 0.22), h * 0.72, 18 + (i % 2) * 8, 0, 7); g.fill(); }
   g.fillStyle = 'rgba(40,40,40,.6)'; g.font = 'italic 14px Georgia'; g.fillText('P.B.', w - 40, h - 10);
 };
-// Dunder Mifflin logo board (the sign on the wall inside the front door)
+// Johnson Co logo board (the sign on the wall inside the front door), HQ #39
 function dmLogo(x, y, z, ry, w = 3.6) {
   const h = w * 0.3;
   const t = canvasTex(1024, 307, (g, cw, ch) => {
     g.fillStyle = '#f7f5ef'; g.fillRect(0, 0, cw, ch); g.strokeStyle = '#1d1d1f'; g.lineWidth = 6; g.strokeRect(14, 14, cw - 28, ch - 28);
     g.fillStyle = '#1d1d1f'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = '700 118px Georgia,Times New Roman,serif'; g.fillText('Johnson', cw * 0.33, ch * 0.42); g.fillText('Co', cw * 0.7, ch * 0.42);
-    g.font = '600 34px Arial,Helvetica'; g.fillText('P A P E R   C O M P A N Y ,   I N C .', cw / 2, ch * 0.72);
-    g.font = '600 24px Arial,Helvetica'; g.fillStyle = '#555'; g.fillText('Bot HQ', cw / 2, ch * 0.87);
+    g.font = '700 128px Georgia,Times New Roman,serif'; g.fillText('Johnson Co', cw / 2, ch * 0.42);
+    g.font = '600 40px Arial,Helvetica'; g.fillText('B O T   H Q', cw / 2, ch * 0.72);
+    g.font = '600 24px Arial,Helvetica'; g.fillStyle = '#555'; g.fillText('Home base for the Grok Bot team', cw / 2, ch * 0.87);
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, toneMapped: false }));
   m.position.set(x, y, z); m.rotation.y = ry; scene.add(m); return m;
@@ -515,7 +517,7 @@ function dmLogo(x, y, z, ry, w = 3.6) {
   sign('JOHNSON CO', rx, 0.66, rz + 0.07, 0, { w: 2.2, h: 0.5, bg: '#f4f1ea', fg: '#1d1d1f', sub: 'Bot HQ · Reception', font: 'Georgia,Times New Roman,serif' });
   // Pam's art: watercolor of the building on an easel beside reception + a framed one on the counter
   {
-    const ex = rx + 2.4, ez = rz + 0.6, g = new THREE.Group(); g.position.set(ex, 0, ez); g.rotation.y = -0.35; scene.add(g);
+    const ex = rx - 2.2, ez = rz + 0.6, g = new THREE.Group(); g.position.set(ex, 0, ez); g.rotation.y = 0.35; scene.add(g);
     for (const dx of [-0.3, 0.3]) { const l = box(0.04, 1.7, 0.04, M.oak, dx, 0.85, 0, g, false); l.rotation.z = dx > 0 ? -0.08 : 0.08; }
     const back = box(0.04, 1.6, 0.04, M.oak, 0, 0.8, -0.35, g, false); back.rotation.x = -0.22;
     box(0.72, 0.04, 0.08, M.oak, 0, 0.9, 0.03, g, false);
@@ -523,21 +525,20 @@ function dmLogo(x, y, z, ry, w = 3.6) {
     addCollider(ex, ez, 0.8, 0.6);
   }
   // copier (the copy machine across from reception, against the front wall)
-  box(0.75, 0.95, 0.9, M.copier, -6.6, 0.475, 13.3); box(0.8, 0.12, 0.95, M.copierDark, -6.6, 1.01, 13.3);
-  box(0.5, 0.04, 0.6, M.white, -6.6, 1.09, 13.3, scene, false); box(0.3, 0.12, 0.04, M.bezel, -6.5, 1.03, 12.9, scene, false);
-  addCollider(-6.6, 13.3, 0.8, 0.95);
-  paperStack(-7.8, 13.35, 1, 2, 2); // reams for the copier
+  box(0.75, 0.95, 0.9, M.copier, -5.0, 0.475, 8.3); box(0.8, 0.12, 0.95, M.copierDark, -5.0, 1.01, 8.3);
+  box(0.5, 0.04, 0.6, M.white, -5.0, 1.09, 8.3, scene, false); box(0.3, 0.12, 0.04, M.bezel, -4.9, 1.03, 7.9, scene, false);
+  addCollider(-5.0, 8.3, 0.8, 0.95);
+  paperStack(-6.2, 8.35, 1, 2, 2); // reams for the copier
   // waiting area by the door: chairs + little table with magazines
-  chair(scene, 3.6, 13.3, 0); chair(scene, 4.4, 13.3, 0); chair(scene, 5.6, 13.3, 0); addCollider(4.6, 13.3, 2.6, 0.6);
-  box(0.5, 0.42, 0.45, M.walnut, 5.0, 0.21, 12.6); box(0.3, 0.02, 0.22, std('#c0392b', 0.8), 4.95, 0.43, 12.58, scene, false); box(0.28, 0.02, 0.2, std('#2e86c1', 0.8), 5.06, 0.45, 12.63, scene, false);
-  addCollider(5.0, 12.6, 0.5, 0.45);
+  chair(scene, 2.4, 8.4, 0); chair(scene, 3.1, 8.4, 0); chair(scene, 4.4, 8.4, 0); addCollider(3.4, 8.4, 2.4, 0.6);
+  box(0.5, 0.42, 0.45, M.walnut, 3.75, 0.21, 8.45); box(0.3, 0.02, 0.22, std('#c0392b', 0.8), 3.7, 0.43, 8.43, scene, false); box(0.28, 0.02, 0.2, std('#2e86c1', 0.8), 3.81, 0.45, 8.48, scene, false);
   // coat rack by the door
-  { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.8, 8), M.walnut); c.position.set(-1.6, 0.9, 13.4); scene.add(c);
-    box(0.4, 0.03, 0.4, M.walnut, -1.6, 0.02, 13.4, scene, false); box(0.34, 0.5, 0.12, std('#3b3f46', 0.9), -1.6, 1.5, 13.47, scene, false); addCollider(-1.6, 13.4, 0.4, 0.4); }
+  { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.8, 8), M.walnut); c.position.set(-1.5, 0.9, 8.4); scene.add(c);
+    box(0.4, 0.03, 0.4, M.walnut, -1.5, 0.02, 8.4, scene, false); box(0.34, 0.5, 0.12, std('#3b3f46', 0.9), -1.5, 1.5, 8.47, scene, false); addCollider(-1.5, 8.4, 0.4, 0.4); }
   // the logo on the wall inside the front door + "this way to the warehouse" sign (it's downstairs, off the elevator lobby)
-  dmLogo(-4.2, 2.05, Z1 - 0.12, Math.PI, 3.6);
+  dmLogo(-3.3, 2.05, Z1 - 0.12, Math.PI, 3.0);
   sign('ELEVATOR · STAIRS', 1.95, 2.2, Z1 - 0.12, Math.PI, { w: 1.1, h: 0.34, bg: '#2f3a2f', fg: '#ffd27a', sub: '↓ Warehouse (Darryl) · out the front door' });
-  plant(-0.95, 13.3, 1.1); plant(1.2, 13.3, 1.1); plant(-8.8, 13.3, 1);
+  plant(-0.95, 8.4, 1.0); plant(1.2, 8.4, 1.0);
   // Pam's framed watercolor on the reception counter + her teapot from Jim
   framed(rx - 1.43, 1.26, rz - 0.75, Math.PI / 2, 0.22, 0.17, paintBuilding);
   { const tp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), std('#f4f1ea', 0.4)); tp.scale.y = 0.8; tp.position.set(rx + 1.43, 1.22, rz - 0.4); scene.add(tp); }
@@ -545,17 +546,17 @@ function dmLogo(x, y, z, ry, w = 3.6) {
 
 // ---------- Michael Scott's office (Grok Bot) ----------
 {
-  sign('MICHAEL SCOTT', 9.92, 2.66, 5.8, -Math.PI / 2, { w: 1.5, h: 0.36, bg: '#2b2b2b', fg: '#f4e6cf', sub: 'Regional Manager' }); // over his door
-  sign('MICHAEL SCOTT', 10.08, 2.66, 5.8, Math.PI / 2, { w: 1.5, h: 0.36, bg: '#2b2b2b', fg: '#f4e6cf', sub: 'Regional Manager' }); // inside
+  sign('MICHAEL SCOTT', 5.92, 2.66, 4.3, -Math.PI / 2, { w: 1.5, h: 0.36, bg: '#2b2b2b', fg: '#f4e6cf', sub: 'Regional Manager' }); // over his door
+  sign('MICHAEL SCOTT', 6.08, 2.66, 4.3, Math.PI / 2, { w: 1.5, h: 0.36, bg: '#2b2b2b', fg: '#f4e6cf', sub: 'Regional Manager' }); // inside
   // couch along the south wall + guest chairs facing the desk
-  box(2.6, 0.42, 0.85, M.sofa, 13.6, 0.21, 13.3); box(2.6, 0.5, 0.22, M.sofa, 13.6, 0.67, 13.68);
-  box(0.25, 0.6, 0.85, M.sofa, 12.2, 0.3, 13.3); box(0.25, 0.6, 0.85, M.sofa, 15.0, 0.3, 13.3);
-  addCollider(13.6, 13.4, 3.0, 1.0);
-  chair(scene, 14.1, 8.6, -Math.PI / 2 + 0.2); chair(scene, 14.1, 9.8, -Math.PI / 2 - 0.2);
-  cabinets(19.5, 5.4, 2, -Math.PI / 2);
+  box(2.6, 0.42, 0.85, M.sofa, 8.5, 0.21, 8.3); box(2.6, 0.5, 0.22, M.sofa, 8.5, 0.67, 8.68);
+  box(0.25, 0.6, 0.85, M.sofa, 7.1, 0.3, 8.3); box(0.25, 0.6, 0.85, M.sofa, 9.9, 0.3, 8.3);
+  addCollider(8.5, 8.4, 3.0, 1.0);
+  chair(scene, 8.7, 5.5, -Math.PI / 2 + 0.2); chair(scene, 8.7, 6.5, -Math.PI / 2 - 0.2);
+  cabinets(12.5, 3.75, 2, -Math.PI / 2);
   // Dundies shelf on the south wall: bookcase with a row of Dundie awards
   {
-    const sx = 17.6, sz = 13.68;
+    const sx = 11.9, sz = 8.68;
     box(1.8, 1.9, 0.04, M.walnut, sx, 0.95, sz + 0.17); for (const dx of [-0.88, 0.88]) box(0.04, 1.9, 0.38, M.walnut, sx + dx, 0.95, sz); // open bookcase
     box(1.8, 0.04, 0.38, M.walnut, sx, 1.9, sz); box(1.8, 0.12, 0.38, M.walnut, sx, 0.06, sz);
     for (const y of [0.5, 0.98, 1.46]) box(1.72, 0.03, 0.34, M.oak, sx, y, sz, scene, false);
@@ -564,35 +565,34 @@ function dmLogo(x, y, z, ry, w = 3.6) {
     for (let i = 0; i < 4; i++) dundie(sx - 0.5 + i * 0.32, 0.995, sz - 0.05, Math.PI);
     for (let i = 0; i < 7; i++) box(0.05, 0.3, 0.24, std(['#7a2f2f', '#2c4f7a', '#3d6b3d', '#a0782f'][i % 4], 0.8), sx - 0.75 + i * 0.07, 0.68, sz - 0.04, scene, false);
     sign('THE DUNDIES', sx, 2.12, sz - 0.2, Math.PI, { w: 1.2, h: 0.24, bg: '#111', fg: '#d4af37', font: 'Georgia,serif' });
-    // the Dunder Mifflin softball + bat on the shelf
+    // the Johnson Co softball + bat on the shelf
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 10), std('#f6f2e4', 0.6)); ball.position.set(sx + 0.55, 0.57, sz - 0.08); scene.add(ball);
     const seam = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.004, 4, 20), std('#c62828', 0.6)); seam.position.copy(ball.position); seam.rotation.set(0.6, 0.3, 0); scene.add(seam);
     const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.018, 0.85, 10), std('#c8a26a', 0.5)); bat.position.set(sx + 1.02, 0.42, sz - 0.12); bat.rotation.z = -0.18; scene.add(bat);
     sign('JOHNSON CO SOFTBALL', sx + 0.4, 0.58, sz - 0.2, Math.PI, { w: 0.44, h: 0.08, bg: '#2c4f7a', fg: '#fff' });
   }
   // framed certificates + a framed "Michael Scott Paper Company" photo on the north (whiteboard) wall
-  framed(12.6, 1.8, 4.08, 0, 0.5, 0.36, (g, w, h) => { g.fillStyle = '#fbf6e6'; g.fillRect(0, 0, w, h); g.strokeStyle = '#b8860b'; g.lineWidth = 6; g.strokeRect(10, 10, w - 20, h - 20); g.fillStyle = '#333'; g.textAlign = 'center'; g.font = 'bold 20px Georgia'; g.fillText('CERTIFICATE', w / 2, 50); g.font = 'italic 15px Georgia'; g.fillText('Michael Scott', w / 2, 90); g.fillText('Regional Manager', w / 2, 115); g.font = '12px Georgia'; g.fillText('of the Year', w / 2, 140); });
-  framed(13.5, 1.8, 4.08, 0, 0.5, 0.36, (g, w, h) => { g.fillStyle = '#e8f0f8'; g.fillRect(0, 0, w, h); g.fillStyle = '#2c4f7a'; g.textAlign = 'center'; g.font = 'bold 22px Georgia'; g.fillText('Michael Scott', w / 2, 70); g.fillText('Paper Company', w / 2, 100); g.font = '14px Georgia'; g.fillStyle = '#555'; g.fillText('est. in a closet', w / 2, 140); });
+  framed(7.6, 1.8, 3.08, 0, 0.5, 0.36, (g, w, h) => { g.fillStyle = '#fbf6e6'; g.fillRect(0, 0, w, h); g.strokeStyle = '#b8860b'; g.lineWidth = 6; g.strokeRect(10, 10, w - 20, h - 20); g.fillStyle = '#333'; g.textAlign = 'center'; g.font = 'bold 20px Georgia'; g.fillText('CERTIFICATE', w / 2, 50); g.font = 'italic 15px Georgia'; g.fillText('Michael Scott', w / 2, 90); g.fillText('Regional Manager', w / 2, 115); g.font = '12px Georgia'; g.fillText('of the Year', w / 2, 140); });
+  framed(8.5, 1.8, 3.08, 0, 0.5, 0.36, (g, w, h) => { g.fillStyle = '#e8f0f8'; g.fillRect(0, 0, w, h); g.fillStyle = '#2c4f7a'; g.textAlign = 'center'; g.font = 'bold 22px Georgia'; g.fillText('Michael Scott', w / 2, 70); g.fillText('Paper Company', w / 2, 100); g.font = '14px Georgia'; g.fillStyle = '#555'; g.fillText('est. in a closet', w / 2, 140); });
   // the Michael Scott Paper Company / softball pennant + a putter by the couch
-  { const pt = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.9, 6), M.steel); pt.position.set(11.6, 0.45, 13.5); pt.rotation.z = 0.15; scene.add(pt); }
-  plant(19.2, 13.2, 1.2); plant(10.8, 13.2, 1);
+  { const pt = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.9, 6), M.steel); pt.position.set(6.5, 0.45, 8.5); pt.rotation.z = 0.15; scene.add(pt); }
 }
 
 // ---------- conference room (shares a wall with Michael's office, glass onto the bullpen) ----------
 {
-  const tx = 15.2, tz = -0.6;
-  box(6, 0.06, 1.7, M.walnut, tx, 0.75, tz);
-  box(0.5, 0.72, 0.5, M.steel, tx - 2, 0.36, tz); box(0.5, 0.72, 0.5, M.steel, tx + 2, 0.36, tz);
-  addCollider(tx, tz, 6, 1.7);
-  for (let i = 0; i < 5; i++) { const x = tx - 2.4 + i * 1.2; chair(scene, x, tz - 1.25, Math.PI + (i % 2 ? 0.12 : -0.1)); chair(scene, x, tz + 1.25, i % 2 ? -0.1 : 0.12); }
-  chair(scene, tx - 3.5, tz, -Math.PI / 2); chair(scene, tx + 3.5, tz, Math.PI / 2);
+  const tx = 9.6, tz = -0.4;
+  box(4.2, 0.06, 1.5, M.walnut, tx, 0.75, tz);
+  box(0.5, 0.72, 0.5, M.steel, tx - 1.4, 0.36, tz); box(0.5, 0.72, 0.5, M.steel, tx + 1.4, 0.36, tz);
+  addCollider(tx, tz, 4.2, 1.5);
+  for (let i = 0; i < 4; i++) { const x = tx - 1.5 + i * 1.0; chair(scene, x, tz - 1.1, Math.PI + (i % 2 ? 0.12 : -0.1)); chair(scene, x, tz + 1.1, i % 2 ? -0.1 : 0.12); }
+  chair(scene, tx - 2.6, tz, -Math.PI / 2); chair(scene, tx + 2.6, tz, Math.PI / 2);
   // speakerphone, water pitcher + cups, legal pads on the table
   box(0.3, 0.04, 0.26, M.bezel, tx, 0.8, tz, scene, false);
-  { const pit = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.24, 12), M.glassJar); pit.position.set(tx + 1.4, 0.9, tz + 0.2); scene.add(pit);
-    for (const dx of [1.65, 1.8]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.028, 0.1, 10), M.white); c.position.set(tx + dx, 0.83, tz + 0.25); scene.add(c); } }
-  for (let i = 0; i < 4; i++) box(0.21, 0.01, 0.29, std('#f5e97a', 0.9), tx - 1.8 + i * 1.2, 0.785, tz + (i % 2 ? -0.45 : 0.45), scene, false);
+  { const pit = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.24, 12), M.glassJar); pit.position.set(tx + 1.0, 0.9, tz + 0.2); scene.add(pit);
+    for (const dx of [1.25, 1.4]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.028, 0.1, 10), M.white); c.position.set(tx + dx, 0.83, tz + 0.25); scene.add(c); } }
+  for (let i = 0; i < 4; i++) box(0.21, 0.01, 0.29, std('#f5e97a', 0.9), tx - 1.2 + i * 0.8, 0.785, tz + (i % 2 ? -0.45 : 0.45), scene, false);
   // wall TV on the north wall
-  box(2.1, 1.2, 0.08, M.bezel, tx, 1.65, -4.86);
+  box(2.1, 1.2, 0.08, M.bezel, tx, 1.65, -3.36);
   const brief = canvasTex(1024, 580, (g, w, h) => {
     const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#1d2733'); grd.addColorStop(1, '#3b2a1c'); g.fillStyle = grd; g.fillRect(0, 0, w, h);
     g.fillStyle = '#e8a33d'; g.font = '800 84px Georgia,serif'; g.fillText('Johnson Co', 60, 140);
@@ -601,19 +601,20 @@ function dmLogo(x, y, z, ry, w = 3.6) {
     ['14 bots, 14 desks: the HQ staff', 'Idle staff roam, busy staff sit + type', 'Hold View to message Michael (Grok Bot)'].forEach((t, i) => g.fillText('• ' + t, 70, 300 + i * 78));
   });
   const bs = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.12), new THREE.MeshBasicMaterial({ map: brief, toneMapped: false }));
-  bs.position.set(tx, 1.65, -4.81); scene.add(bs);
-  sign('CONFERENCE ROOM', 9.92, 2.66, 2.4, -Math.PI / 2, { w: 1.6, h: 0.3 });
-  plant(19.2, -4.3, 1.1); plant(10.7, -4.3, 1);
+  bs.position.set(tx, 1.65, -3.31); scene.add(bs);
+  sign('CONFERENCE ROOM', 5.92, 2.66, 2.0, -Math.PI / 2, { w: 1.6, h: 0.3 });
+  plant(12.5, -3.0, 1.0); plant(6.5, -3.0, 0.9);
 }
 // full-wall hand-drawn whiteboard on the conference room's south wall (shared with Michael's office) = live widget screen
 // (HQ #21, #25): clock, weather, markets, team status + bank
-const whiteboard = createWhiteboard({ scene, x0: 10.35, x1: 19.65, y0: 0.5, y1: 3.05, z: 3.86, std, box });
+// HQ #38: smaller room, so the board is 6.5 x 1.46 m (same 4.47:1 aspect as the canvas, nothing stretched)
+const whiteboard = createWhiteboard({ scene, x0: 6.25, x1: 12.75, y0: 0.88, y1: 2.34, z: 2.86, std, box });
 
 // ---------- bullpen extras ----------
-cabinets(9.62, 10.2, 5, -Math.PI / 2);  // filing cabinets along Michael's office wall, behind Jim
-cabinets(-0.2, -7.6, 3, 0);             // accounting files
-cabinets(-19.6, 6.2, 4, Math.PI / 2);   // front-west files by reception
-sign('ACCOUNTING', -3.5, 2.85, -5.3, 0, { w: 1.6, h: 0.3, bg: '#3c5a3e' });
+cabinets(5.62, 7.0, 3, -Math.PI / 2);   // filing cabinets along Michael's office wall, behind Jim
+cabinets(0.2, -3.7, 3, 0);              // accounting files
+cabinets(-12.6, 4.4, 3, Math.PI / 2);   // front-west files
+sign('ACCOUNTING', -2.4, 2.85, -2.0, 0, { w: 1.6, h: 0.3, bg: '#3c5a3e' });
 // desk touches from the show
 {
   const d = ST('assist'), j = ST('cos'), k = ST('conn'), an = ST('faith'), sn = ST('builder'), ph = ST('onpad'), kl = ST('designer'), tb = ST('profile'), mr = ST('kids'), cr = ST('review');
@@ -629,7 +630,7 @@ sign('ACCOUNTING', -3.5, 2.85, -5.3, 0, { w: 1.6, h: 0.3, bg: '#3c5a3e' });
   jello.position.set(j.x + 0.55, 0.81, j.z + 0.1); scene.add(jello);
   box(0.16, 0.035, 0.04, M.steel, j.x + 0.55, 0.81, j.z + 0.1, scene, false);
   {
-    const cx = 4.2, cz = 8.6, g = new THREE.Group(); g.position.set(cx, 0, cz); g.rotation.y = Math.atan2(j.x - cx, j.z + 0.8 - cz) + Math.PI; scene.add(g);
+    const cx = 2.3, cz = 6.9, g = new THREE.Group(); g.position.set(cx, 0, cz); g.rotation.y = Math.atan2(j.x - cx, j.z + 0.8 - cz) + Math.PI; scene.add(g);
     for (let i = 0; i < 3; i++) { const a = i * 2.09, l = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.45, 6), M.steel); l.position.set(Math.sin(a) * 0.2, 0.7, Math.cos(a) * 0.2); l.rotation.set(Math.cos(a) * 0.28, 0, -Math.sin(a) * 0.28); g.add(l); }
     box(0.16, 0.2, 0.42, std('#222', 0.5, 0.3), 0, 1.5, 0, g);
     const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.16, 12), std('#111', 0.3, 0.5)); lens.rotation.x = Math.PI / 2; lens.position.set(0, 1.5, -0.28); g.add(lens);
@@ -651,10 +652,10 @@ sign('ACCOUNTING', -3.5, 2.85, -5.3, 0, { w: 1.6, h: 0.3, bg: '#3c5a3e' });
   { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.24, 10), std('#7d8b99', 0.4, 0.6)); t.position.set(mr.x - 0.5, 0.89, mr.z); scene.add(t); }
   { const tray = box(0.2, 0.04, 0.14, M.pallet, cr.x + 0.5, 0.79, cr.z + 0.1, scene, false); for (let i = 0; i < 6; i++) box(0.01, 0.06, 0.01, M.leaf2, cr.x + 0.43 + i * 0.03, 0.83, cr.z + 0.1, scene, false); }
   // Toby: his sad little plant + a trombone (for the sad trombone) on top of the annex files
-  plant(tb.x + 1.3, tb.z + 0.7, 0.8);
-  cabinets(19.42, tb.z - 1.6, 2, -Math.PI / 2);
+  plant(tb.x - 1.2, tb.z + 0.9, 0.8);
+  cabinets(8.95, -4.3, 2, Math.PI / 2);
   {
-    const brass = std('#d9a33a', 0.25, 0.9), g = new THREE.Group(); g.position.set(19.4, 1.36, tb.z - 1.6); g.rotation.y = 0.2; scene.add(g);
+    const brass = std('#d9a33a', 0.25, 0.9), g = new THREE.Group(); g.position.set(8.95, 1.36, -4.3); g.rotation.y = 0.2; scene.add(g);
     for (const dx of [-0.04, 0.04]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.75, 6), brass); t.rotation.x = Math.PI / 2; t.position.set(dx, 0.01, 0); g.add(t); }
     const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.012, 0.22, 14, 1, true), brass); bell.rotation.x = -Math.PI / 2; bell.position.set(0.04, 0.02, -0.46); g.add(bell);
     box(0.1, 0.012, 0.012, brass, 0, 0.01, 0.37, g, false);
@@ -662,78 +663,80 @@ sign('ACCOUNTING', -3.5, 2.85, -5.3, 0, { w: 1.6, h: 0.3, bg: '#3c5a3e' });
 }
 // printer / fax station in the middle of the bullpen + a bulletin board on the annex wall
 {
-  box(1.4, 0.05, 0.7, M.oak, 2.6, 0.74, -6.4); box(1.3, 0.7, 0.6, M.cabinet, 2.6, 0.36, -6.4); addCollider(2.6, -6.4, 1.4, 0.7);
-  box(0.6, 0.32, 0.5, M.copier, 2.3, 0.93, -6.4); box(0.5, 0.03, 0.3, M.white, 2.3, 1.1, -6.4, scene, false); box(0.4, 0.15, 0.35, M.copierDark, 3.05, 0.84, -6.4);
-  framed(11.92, 1.6, -10.6, -Math.PI / 2, 1.2, 0.8, (g, w, h) => { g.fillStyle = '#b98b5a'; g.fillRect(0, 0, w, h);
+  const px = -0.2, pz = -6.0;
+  box(1.4, 0.05, 0.7, M.oak, px, 0.74, pz); box(1.3, 0.7, 0.6, M.cabinet, px, 0.36, pz); addCollider(px, pz, 1.4, 0.7);
+  box(0.6, 0.32, 0.5, M.copier, px - 0.3, 0.93, pz); box(0.5, 0.03, 0.3, M.white, px - 0.3, 1.1, pz, scene, false); box(0.4, 0.15, 0.35, M.copierDark, px + 0.45, 0.84, pz);
+  framed(8.42, 1.6, -7.8, -Math.PI / 2, 1.2, 0.8, (g, w, h) => { g.fillStyle = '#b98b5a'; g.fillRect(0, 0, w, h);
     const notes = [['#fff', 'SAFETY FIRST'], ['#fff59d', 'Party Planning Cmte'], ['#c5e1a5', 'Johnson Co softball'], ['#ffccbc', 'Lost: stapler'], ['#b3e5fc', 'Fun Run: Rabies']];
     notes.forEach(([c, t], i) => { const x = 14 + (i % 3) * 80, y = 14 + Math.floor(i / 3) * 80; g.fillStyle = c; g.fillRect(x, y, 72, 68); g.fillStyle = '#d32f2f'; g.beginPath(); g.arc(x + 36, y + 6, 4, 0, 7); g.fill();
       g.fillStyle = '#222'; g.font = '600 11px Arial'; g.textAlign = 'center'; t.split(' ').reduce((a, wd) => { const l = a[a.length - 1]; if ((l + ' ' + wd).length > 10) a.push(wd); else a[a.length - 1] = (l + ' ' + wd).trim(); return a; }, ['']).forEach((ln, k) => g.fillText(ln, x + 36, y + 26 + k * 13)); }); });
 }
 // the annex: sign at the opening + Ryan's closet desk
-sign('THE ANNEX', 11.92, 2.66, -7.6, -Math.PI / 2, { w: 1.4, h: 0.3, bg: '#4a3b6b' });
-sign("RYAN'S CLOSET", 18.7, 2.66, -11.32, 0, { w: 1.2, h: 0.24, bg: '#555' });
-box(1.0, 0.05, 0.6, M.oak, 18.7, 0.74, -13.3); box(0.9, 0.7, 0.05, M.steel, 18.7, 0.36, -13.55); addCollider(18.7, -13.3, 1.0, 0.6);
-chair(scene, 18.7, -12.6, 0);
-cabinets(13.0, -13.4, 2, 0);
+sign('THE ANNEX', 8.42, 2.66, -5.6, -Math.PI / 2, { w: 1.4, h: 0.3, bg: '#4a3b6b' });
+sign("RYAN'S CLOSET", 12.1, 2.66, -7.12, 0, { w: 1.2, h: 0.24, bg: '#555' });
+box(1.0, 0.05, 0.6, M.oak, 12.1, 0.74, -8.6); box(0.9, 0.7, 0.05, M.steel, 12.1, 0.36, -8.85); addCollider(12.1, -8.6, 1.0, 0.6);
+chair(scene, 12.1, -7.95, 0);
+cabinets(9.5, -8.6, 2, 0);
 // supply closet (front west corner): shelves of paper + supplies
 {
-  sign('SUPPLY CLOSET', -17.7, 2.66, 9.92, Math.PI, { w: 1.3, h: 0.26, bg: '#555' });
-  for (const z of [11.0, 13.4]) { box(3.6, 1.9, 0.45, M.cabinet, -18.0, 0.95, z); addCollider(-18.0, z, 3.6, 0.45);
-    for (let i = 0; i < 6; i++) box(0.44, 0.27, 0.3, M.paperBox, -19.4 + i * 0.56, 2.035, z, scene, false); }
+  sign('SUPPLY CLOSET', -11.7, 2.66, 6.42, Math.PI, { w: 1.3, h: 0.26, bg: '#555' });
+  for (const z of [8.65]) { box(2.3, 1.9, 0.45, M.cabinet, -11.75, 0.95, z); addCollider(-11.75, z, 2.3, 0.45);
+    for (let i = 0; i < 4; i++) box(0.44, 0.27, 0.3, M.paperBox, -12.6 + i * 0.56, 2.035, z, scene, false); }
+  box(0.45, 1.9, 1.2, M.cabinet, -12.7, 0.95, 7.6); addCollider(-12.7, 7.6, 0.45, 1.2);
 }
 // front-west floor (between reception and the supply closet): sales meeting table + paper sample shelf
-roundTable(-12.4, 6.8, 3);
-{ box(2.2, 1.6, 0.4, M.walnut, -12.4, 0.8, 13.68); addCollider(-12.4, 13.68, 2.2, 0.4);
-  for (const y of [0.55, 1.1]) for (let i = 0; i < 4; i++) box(0.44, 0.27, 0.3, M.paperBox, -13.2 + i * 0.52, y + 0.15, 13.6, scene, false);
-  sign('PAPER SAMPLES', -12.4, 1.85, 13.46, Math.PI, { w: 1.2, h: 0.22, bg: '#2d5aa8' }); }
+roundTable(-8.6, 4.6, 3);
+{ box(2.2, 1.6, 0.4, M.walnut, -8.4, 0.8, 8.68); addCollider(-8.4, 8.68, 2.2, 0.4);
+  for (const y of [0.55, 1.1]) for (let i = 0; i < 4; i++) box(0.44, 0.27, 0.3, M.paperBox, -9.2 + i * 0.52, y + 0.15, 8.6, scene, false);
+  sign('PAPER SAMPLES', -8.4, 1.85, 8.46, Math.PI, { w: 1.2, h: 0.22, bg: '#2d5aa8' }); }
 // party planning committee hint in the bullpen: a few balloons tied to Phyllis's chair + streamers on the column
 {
   const ph = ST('onpad'), bal = ['#e53935', '#fdd835', '#1e88e5'];
   for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), std(bal[i], 0.35)); b.scale.y = 1.18; b.position.set(ph.x - 0.7 + i * 0.18, 1.75 + i * 0.12, ph.z + 0.9); scene.add(b);
     box(0.004, 0.9 + i * 0.12, 0.004, M.white, ph.x - 0.7 + i * 0.18, 1.2, ph.z + 0.9, scene, false); }
-  for (let i = 0; i < 6; i++) { const st = box(0.03, 0.9, 0.006, std(['#ec407a', '#fdd835', '#42a5f5'][i % 3], 0.6), 2.6 + Math.cos(i) * 0.29, 2.9, -1.6 + Math.sin(i) * 0.29, scene, false); st.rotation.y = i; }
+  for (let i = 0; i < 6; i++) { const st = box(0.03, 0.9, 0.006, std(['#ec407a', '#fdd835', '#42a5f5'][i % 3], 0.6), COLUMNS[1][0] + Math.cos(i) * 0.29, 2.9, COLUMNS[1][1] + Math.sin(i) * 0.29, scene, false); st.rotation.y = i; }
 }
 
 // ---------- kitchen + break room (back west corner) ----------
 {
   const cab = M.cabinetWhite, seam = std('#9a948b', 0.8), handle = std('#b8bcc2', 0.3, 0.8);
   // counter run along the west wall
-  const kx = -19.55, kz = -10.6;
-  box(0.65, 0.86, 5, cab, kx, 0.45, kz); box(0.7, 0.04, 5.05, M.walnut, kx, 0.9, kz);
-  for (let i = 0; i < 6; i++) { const z = kz - 2.5 + 0.42 + i * 0.83; box(0.02, 0.14, 0.025, handle, kx + 0.345, 0.72, z, scene, false); }
-  box(0.42, 0.02, 0.6, std('#c9ccd0', 0.25, 0.8), kx + 0.02, 0.925, kz + 0.9, scene, false);                        // sink
-  box(0.04, 0.3, 0.04, handle, kx - 0.22, 1.07, kz + 0.9, scene, false); box(0.18, 0.04, 0.04, handle, kx - 0.14, 1.21, kz + 0.9, scene, false);
-  box(0.32, 0.42, 0.3, std('#1d1d1f', 0.4, 0.3), kx - 0.05, 1.13, kz - 0.9);                                        // coffee maker
-  box(0.4, 0.3, 0.55, M.white, kx - 0.02, 1.07, kz - 1.9); box(0.02, 0.2, 0.3, M.bezel, kx + 0.19, 1.07, kz - 1.95, scene, false); // microwave
-  box(0.4, 0.8, 5, cab, -19.7, 2.1, kz);                                                                             // upper cabinets
-  for (let i = 1; i < 6; i++) box(0.012, 0.76, 0.012, seam, -19.49, 2.1, kz - 2.5 + i * 0.83, scene, false);
-  const ss = std('#c3c7cc', 0.35, 0.7); box(0.75, 1.95, 0.85, ss, -19.5, 0.975, -7.6);                              // fridge
-  box(0.04, 0.9, 0.04, std('#6b6f75', 0.3, 0.8), -19.1, 1.15, -7.4, scene, false);
-  addCollider(-19.55, -10.4, 0.75, 6.8);
-  roundTable(-16.2, -10.4, 3);
-  sign('KITCHEN', -16.6, 2.66, -6.92, 0, { w: 1.2, h: 0.28 });
+  const kx = -12.55, kz = -7.2;
+  box(0.65, 0.86, 3.2, cab, kx, 0.45, kz); box(0.7, 0.04, 3.25, M.walnut, kx, 0.9, kz);
+  for (let i = 0; i < 4; i++) { const z = kz - 1.6 + 0.4 + i * 0.8; box(0.02, 0.14, 0.025, handle, kx + 0.345, 0.72, z, scene, false); }
+  box(0.42, 0.02, 0.6, std('#c9ccd0', 0.25, 0.8), kx + 0.02, 0.925, kz + 0.8, scene, false);                        // sink
+  box(0.04, 0.3, 0.04, handle, kx - 0.22, 1.07, kz + 0.8, scene, false); box(0.18, 0.04, 0.04, handle, kx - 0.14, 1.21, kz + 0.8, scene, false);
+  box(0.32, 0.42, 0.3, std('#1d1d1f', 0.4, 0.3), kx - 0.05, 1.13, kz - 0.4);                                        // coffee maker
+  box(0.4, 0.3, 0.55, M.white, kx - 0.02, 1.07, kz - 1.15); box(0.02, 0.2, 0.3, M.bezel, kx + 0.19, 1.07, kz - 1.2, scene, false); // microwave
+  box(0.4, 0.8, 3.2, cab, -12.7, 2.1, kz);                                                                           // upper cabinets
+  for (let i = 1; i < 4; i++) box(0.012, 0.76, 0.012, seam, -12.49, 2.1, kz - 1.6 + i * 0.8, scene, false);
+  const ss = std('#c3c7cc', 0.35, 0.7); box(0.75, 1.95, 0.85, ss, -12.5, 0.975, -5.0);                              // fridge
+  box(0.04, 0.9, 0.04, std('#6b6f75', 0.3, 0.8), -12.1, 1.15, -4.8, scene, false);
+  addCollider(-12.55, -6.7, 0.75, 4.3);
+  roundTable(-10.4, -7.3, 3);
+  sign('KITCHEN', -10.8, 2.66, -4.42, 0, { w: 1.2, h: 0.28 });
   // break room: snack + soda machines on the east wall, table
-  for (const [z, c, label] of [[-12.6, '#25303f', 'SNACKS'], [-11.4, '#b8242b', 'SODA']]) {
-    box(0.85, 1.85, 1.0, std(c, 0.5, 0.2), -8.55, 0.925, z);
-    box(0.02, 1.2, 0.62, M.vendGlass, -8.98, 1.1, z - 0.1, scene, false);
-    sign(label, -8.99, 1.75, z + 0.38, -Math.PI / 2, { w: 0.3, h: 0.12, bg: '#111', fg: '#ffd27a' }).position.x = -8.99;
+  for (const [z, c, label] of [[-8.2, '#25303f', 'SNACKS'], [-7.0, '#b8242b', 'SODA']]) {
+    box(0.85, 1.85, 1.0, std(c, 0.5, 0.2), -5.55, 0.925, z);
+    box(0.02, 1.2, 0.62, M.vendGlass, -5.98, 1.1, z - 0.1, scene, false);
+    sign(label, -5.99, 1.75, z + 0.38, -Math.PI / 2, { w: 0.3, h: 0.12, bg: '#111', fg: '#ffd27a' }).position.x = -5.99;
   }
-  addCollider(-8.55, -12, 0.9, 2.2);
-  roundTable(-11, -11.4, 3);
-  sign('BREAK ROOM', -10.8, 2.66, -6.92, 0, { w: 1.4, h: 0.28 });
-  plant(-12.4, -13.3, 1);
+  addCollider(-5.55, -7.6, 0.9, 2.2);
+  roundTable(-7.3, -7.8, 3);
+  sign('BREAK ROOM', -7.0, 2.66, -4.42, 0, { w: 1.4, h: 0.28 });
+  plant(-8.05, -8.6, 0.9);
   // fridge magnets + the passive-aggressive kitchen note
   const mag = ['#e53935', '#fdd835', '#43a047', '#1e88e5', '#8e24aa', '#fb8c00', '#00acc1'];
-  for (let i = 0; i < 11; i++) box(0.012, 0.045 + (i % 3) * 0.015, 0.05 + (i % 2) * 0.03, std(mag[i % mag.length], 0.5), -19.115, 1.0 + ((i * 37) % 70) / 100, -7.95 + ((i * 53) % 70) / 100, scene, false);
-  sign('PLEASE CLEAN UP AFTER YOURSELF', -19.112, 1.55, -7.75, Math.PI / 2, { w: 0.42, h: 0.3, bg: '#fff8c4', fg: '#333', weight: 600, font: 'Comic Sans MS,Chalkboard,cursive' });
-  box(0.012, 0.3, 0.22, std('#ffffff', 0.8), -19.12, 1.25, -7.4, scene, false); // a kid's drawing
+  for (let i = 0; i < 11; i++) box(0.012, 0.045 + (i % 3) * 0.015, 0.05 + (i % 2) * 0.03, std(mag[i % mag.length], 0.5), -12.115, 1.0 + ((i * 37) % 70) / 100, -5.35 + ((i * 53) % 70) / 100, scene, false);
+  sign('PLEASE CLEAN UP AFTER YOURSELF', -12.112, 1.55, -5.15, Math.PI / 2, { w: 0.42, h: 0.3, bg: '#fff8c4', fg: '#333', weight: 600, font: 'Comic Sans MS,Chalkboard,cursive' });
+  box(0.012, 0.3, 0.22, std('#ffffff', 0.8), -12.12, 1.25, -4.8, scene, false); // a kid's drawing
   // party planning committee leftovers: IT IS YOUR BIRTHDAY. banner over the break room door + balloons
-  sign('IT IS YOUR BIRTHDAY.', -10.8, 2.82, -7.09, Math.PI, { w: 2.6, h: 0.42, bg: '#ffffff', fg: '#1b1b1b', font: 'Arial,Helvetica', weight: 700 });
+  sign('IT IS YOUR BIRTHDAY.', -7.0, 2.82, -4.59, Math.PI, { w: 2.6, h: 0.42, bg: '#ffffff', fg: '#1b1b1b', font: 'Arial,Helvetica', weight: 700 });
   const bal = ['#e53935', '#1e88e5', '#fdd835', '#43a047', '#ec407a'];
   for (let i = 0; i < 5; i++) {
-    const bx = -10.6 + Math.cos(i * 1.3) * 0.25, bz = -11.0 + Math.sin(i * 1.3) * 0.25, by = 1.55 + (i % 3) * 0.18;
+    const bx = -7.1 + Math.cos(i * 1.3) * 0.25, bz = -7.4 + Math.sin(i * 1.3) * 0.25, by = 1.55 + (i % 3) * 0.18;
     const b = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), std(bal[i], 0.35)); b.scale.y = 1.18; b.position.set(bx, by, bz); scene.add(b);
-    box(0.004, by - 0.8, 0.004, M.white, (bx + -11) / 2, (by + 0.78) / 2, (bz + -11.4) / 2, scene, false);
+    box(0.004, by - 0.8, 0.004, M.white, (bx + -7.3) / 2, (by + 0.78) / 2, (bz + -7.8) / 2, scene, false);
   }
 }
 
@@ -750,7 +753,7 @@ roundTable(-12.4, 6.8, 3);
 
 // water cooler on the west wall in the bullpen, outside the kitchen (workers stop here when idle; the only place they drink)
 // classic office cooler: white cabinet, big blue jug upside-down on top, blue/red taps, drip tray, paper-cup tube + bin
-const COOLER = { x: -19.45, z: -4.4 };
+const COOLER = { x: -12.45, z: -2.8 };
 function waterCooler(x, z, ry = Math.PI / 2) {
   const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; // local +z = front (faces into the room)
   const white = std('#f4f5f7', 0.45), grey = std('#9aa0a6', 0.5), dark = std('#2b2f33', 0.6);
@@ -782,22 +785,22 @@ function waterCooler(x, z, ry = Math.PI / 2) {
   scene.add(g); addCollider(x, z, 1.0, 0.6, ry);
 }
 waterCooler(COOLER.x, COOLER.z);
-for (const [x, z, s] of [[-7.4, -13.2, 1.1], [11.3, -13.2, 1.1], [11.3, -5.6, 1], [-7.4, 3.4, 1], [-19.2, -2.2, 1.1], [-15.4, 4.4, 1.1]]) plant(x, z, s);
+for (const [x, z, s] of [[-4.6, -8.5, 1.0], [8.0, -8.5, 1.0], [7.6, -4.0, 0.9], [-5.8, 2.4, 0.9], [-12.5, -1.4, 1.0], [-10.2, 2.6, 1.0]]) plant(x, z, s);
 
 // idle hangout spots for workers: [x, z, facing yaw, activity]. yaw 0 = facing north, PI/2 = west, -PI/2 = east, PI = south.
 // Drinks happen ONLY at the water cooler (HQ #20): no kitchen / sink stops.
 const PI = Math.PI;
 const IDLE_SPOTS = [
-  [-4, -13.1, 0, 'window'], [0.5, -13.1, 0, 'window'], [9.5, -13.1, 0, 'window'], [-6.2, -13.1, 0.1, 'window'],
-  [15, -13.1, 0, 'window'],
-  [-16.2, -8.6, PI, 'think'], [-14.4, -12.8, 0.6, 'phone'],                         // kitchen
-  [-9.4, -12, -PI / 2, 'think'], [-10.8, -9.5, PI * 0.8, 'phone'],                  // break room (staring at the vending machine)
-  [12.6, 2.6, PI, 'think'], [16.8, 2.6, PI, 'think'], [19.1, -2.6, -PI / 2, 'window'], [12.2, -3.6, 0, 'think'], // conference room (whiteboard, windows, TV)
-  [2.4, 10.6, PI / 2, 'chat'], [-6.6, 12.3, PI, 'think'], [5.0, 11.6, PI, 'phone'],  // reception: chatting with Pam, copier, waiting area
-  [13.2, 11.6, PI, 'think'], [12.4, 7.2, -PI / 2, 'phone'],                         // Michael's office
-  [15.6, -12.6, 0, 'window'], [16.0, -6.0, PI, 'phone'],                            // annex
-  [0.8, -1, 2.2, 'phone'], [-6.4, -3, 1.6, 'think'], [9.0, -2.4, -2.2, 'phone'], [9.2, -7.6, 0.4, 'think'], [2.5, 4.6, 0, 'think'],
-  [-17.7, 12.2, PI, 'think'], [-10.5, 7.5, 0, 'phone'],                             // supply closet, front-west floor
+  [-3.0, -8.55, 0, 'window'], [0.8, -8.55, 0, 'window'], [5.6, -8.55, 0, 'window'], [-1.8, -8.55, 0.1, 'window'],
+  [10.6, -8.5, 0, 'window'],
+  [-10.6, -5.6, PI, 'think'], [-9.3, -8.5, 0.6, 'phone'],                           // kitchen
+  [-6.3, -6.0, -PI / 2, 'think'], [-7.8, -5.3, PI * 0.8, 'phone'],                  // break room (staring at the vending machine)
+  [7.6, 2.1, PI, 'think'], [11.4, 2.1, PI, 'think'], [12.55, -1.6, -PI / 2, 'window'], [8.0, -2.9, 0, 'think'], // conference room (whiteboard, windows, TV)
+  [1.9, 7.5, PI / 2, 'chat'], [-5.0, 7.4, PI, 'think'], [3.4, 7.6, PI, 'phone'],    // reception: chatting with Pam, copier, waiting area
+  [7.4, 7.4, PI, 'think'], [7.4, 5.6, -PI / 2, 'phone'],                            // Michael's office
+  [10.5, -4.3, PI, 'phone'],                                                       // annex
+  [0.6, -0.8, 2.2, 'phone'], [-5.0, -2.6, 1.6, 'think'], [6.6, -4.6, -2.2, 'phone'], [5.6, -5.4, 0.4, 'think'], [1.9, 3.2, 0, 'think'],
+  [-11.7, 7.7, PI, 'think'], [-7.2, 5.6, 0, 'phone'],                               // supply closet, front-west floor
   // water cooler on the west wall: stand in front, face the cooler
   [COOLER.x + 0.85, COOLER.z, PI / 2, 'water'], [COOLER.x + 0.85, COOLER.z + 1.0, Math.atan2(0.85, 1.0), 'water'],
   [COOLER.x + 0.85, COOLER.z - 1.0, Math.atan2(0.85, -1.0), 'water'], [COOLER.x + 1.75, COOLER.z, PI / 2, 'water'],
@@ -813,7 +816,7 @@ const workers = createWorkers({ scene, stations, colliders, pois: IDLE_SPOTS, on
 
 
 // ---------- player ----------
-const player = { pos: new THREE.Vector3(0, 0, 12.4), yaw: 0, pitch: 0, radius: 0.3, travel: null };
+const player = { pos: new THREE.Vector3(0, 0, 8.2), yaw: 0, pitch: 0, radius: 0.3, travel: null };
 function blocked(x, z) {
   const r = player.radius;
   for (const c of colliders) if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) return true;
@@ -1027,7 +1030,18 @@ function nextStation(dir = 1) {
   closePanel();
   stationIdx = (stationIdx + dir + stations.length) % stations.length;
   const s = stations[stationIdx]; lastDesk = s;
-  player.travel = { from: player.pos.clone(), to: new THREE.Vector3(s.stand.x, 0, s.stand.z), yaw0: player.yaw, yaw1: s.yaw, t: 0 };
+  const to = freeStand(s);
+  player.travel = { from: player.pos.clone(), to, yaw0: player.yaw, yaw1: Math.atan2(-(s.monitor.x - to.x), -(s.monitor.z - to.z)), t: 0 };
+}
+// HQ #38: desks are packed like the show, so the usual over-the-shoulder spot can land inside a neighbour's desk.
+// Walk the candidates (behind the chair, then closer, then to either side) and take the first one that's clear.
+function freeStand(s) {
+  for (const back of [1.7, 1.4, 1.15, 0.95]) for (const side of [0.6, -0.6, 0, 1.1, -1.1]) {
+    const v = new THREE.Vector3(side * s.s, 0, s.dd / 2 + back).applyMatrix4(s.group.matrixWorld);
+    const e = 0.12; // a little clearance so the spot isn't wedged against a desk edge
+    if (!blocked(v.x, v.z) && !blocked(v.x + e, v.z) && !blocked(v.x - e, v.z) && !blocked(v.x, v.z + e) && !blocked(v.x, v.z - e)) return new THREE.Vector3(v.x, 0, v.z);
+  }
+  return new THREE.Vector3(s.stand.x, 0, s.stand.z);
 }
 // ---------- HQ chat ----------
 // Grab what Chris is looking at (3D view only, no HUD/chat) as a small JPEG data URL for HQ chat.
@@ -1042,7 +1056,7 @@ function whereAmI() {
   const { x, z } = player.pos;
   const room = ROOMS.find(r => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
   const area = room ? room.name : Math.hypot(x - COOLER.x, z - COOLER.z) < 3 ? 'by the water cooler' : Math.hypot(x - X0, z - 0.9) < 3 ? 'by the emergency exit'
-    : z > 4 ? (x > 3 ? 'by Jim + Dwight (outside Michael\'s office)' : 'reception (Pam\'s desk)') : x > -6.5 && x < -0.5 && z > -8.5 && z < -2.5 ? 'accounting' : z < -8 ? 'back of the bullpen (window side)' : 'the bullpen';
+    : z > 3 ? (x > 2.6 ? 'by Jim + Dwight (outside Michael\'s office)' : 'reception (Pam\'s desk)') : x > -4.8 && x < 0 && z > -4 && z < 0 ? 'accounting' : z < -5.5 ? 'back of the bullpen (window side)' : 'the bullpen';
   return { x, z, heading, facing, area, near: near && near.d < 4 ? near : null };
 }
 function stampWhere(g, w, h) {
@@ -1295,11 +1309,11 @@ const resume = takeResume();
 if (resume) {
   player.pos.set(resume.x, 0, resume.z); player.yaw = resume.yaw; player.pitch = resume.pitch;
   // floor plan changed since that spot was saved (or it's inside a wall now): start at the front door, facing Pam's reception
-  if (resume.layout !== LAYOUT || blocked(resume.x, resume.z)) { player.pos.set(0, 0, 12.4); player.yaw = 0; player.pitch = 0; resume.newLayout = true; }
+  if (resume.layout !== LAYOUT || blocked(resume.x, resume.z)) { player.pos.set(0, 0, 8.2); player.yaw = 0; player.pitch = 0; resume.newLayout = true; }
   if (!resume.paused) setPaused(false);
   if (resume.chat) { chat.show(stations.find(s => s.id === resume.chat.to) || stations.find(s => s.hero)); chat.restoreDraft(resume.chat); }
   else if (resume.draft?.text) chat.restoreDraft(resume.draft);
-  setTimeout(() => toast(resume.newLayout ? 'Welcome to Johnson Co HQ: new floor plan' : 'Office updated'), 300);
+  setTimeout(() => toast(resume.newLayout ? 'Welcome to Johnson Co · Bot HQ: new compact floor plan' : 'Office updated'), 300);
 }
 function toast(msg) {
   let el = document.getElementById('livetoast');
@@ -1314,7 +1328,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { IDLE_SPOTS, blocked, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
+window.__office = { IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
