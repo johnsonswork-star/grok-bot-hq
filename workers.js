@@ -133,6 +133,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
     P(17.3, 8.4, -Math.PI / 2, 'think'), P(17.3, 9.6, -Math.PI / 2, 'think'), P(14, 7.4, Math.PI, 'phone'),
     P(-3.6, 9.2, Math.PI, 'think'), P(-5.5, 6.8, 0, 'phone'), P(4, 6, 0.5, 'phone'), P(-2, 4.5, -2.4, 'think'),
     P(3.5, -4, 2.2, 'phone'), P(-8, -5, 1.6, 'think'), P(8, -5, -1.6, 'think'), P(0, -8.5, 0, 'phone'), P(-16.5, -1, 1.2, 'phone'),
+    P(13.5, -11.7, 0, 'coffee'), P(12.6, -11.9, -0.5, 'coffee'), P(14.4, -11.9, 0.5, 'coffee'),
     P(15, -1.5, -0.6, 'think'), P(-9, 1.5, -2.6, 'phone'), P(10, 2.5, -2.2, 'phone'),
   ];
 

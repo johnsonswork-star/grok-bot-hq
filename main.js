@@ -411,6 +411,19 @@ box(15, 0.006, 3.4, M.carpet, 0, 0.003, -11.3, scene, false);
 }
 
 // extra greenery near windows and pods
+// water cooler on the back wall (workers stop here when idle)
+function waterCooler(x, z) {
+  const g = new THREE.Group(); g.position.set(x, 0, z);
+  const body = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 });
+  const water = new THREE.MeshStandardMaterial({ color: 0x5fb4ff, transparent: true, opacity: 0.6, roughness: 0.1 });
+  box(0.42, 1.0, 0.42, body, 0, 0.5, 0, g);
+  box(0.12, 0.06, 0.04, new THREE.MeshStandardMaterial({ color: 0x2266cc }), -0.08, 0.82, 0.23, g);
+  box(0.12, 0.06, 0.04, new THREE.MeshStandardMaterial({ color: 0xcc2222 }), 0.08, 0.82, 0.23, g);
+  const jug = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.42, 16), water); jug.position.y = 1.23; g.add(jug);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 0.08, 12), water); neck.position.y = 1.02; g.add(neck);
+  scene.add(g); addCollider(x, z, 0.5, 0.5);
+}
+waterCooler(13.5, -12.7);
 for (const [x, z, s] of [[-19, -13, 1.4], [19, -13, 1.4], [-9.5, -12.8, 1], [9.5, -12.8, 1], [-17.5, -8.5, 1.1], [17.5, -8.5, 1.1], [-3, 2.8, 0.9], [3, 2.8, 0.9], [19, 0, 1.2], [-19, -2, 1.1]]) plant(x, z, s);
 
 // ---------- player ----------
