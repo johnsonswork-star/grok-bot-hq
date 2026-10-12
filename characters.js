@@ -24,6 +24,7 @@ export const LOOKS = {
   kids:     { who: 'Meredith Palmer', skin: '#f0c9ad', hair: ['bob', '#a63a1c'], top: '#2c8a86', skirt: '#2f2f36', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
   designer: { who: 'Kelly Kapoor',    skin: '#a8714f', hair: ['long', '#120d0b', { len: 0.42 }], top: '#e8408f', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#c2335f', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
   profile:  { who: 'Toby Flenderson', skin: '#efc9aa', hair: ['thin', '#6a5c4e'], top: '#a9bdd6', open: '#b9a888', sweater: true, pants: '#5f5a52', h: 1.0, stubble: '#8a7a6a', slump: 0.12, mood: 'sad', idle: 'slump' },
+  darryl:   { who: 'Darryl Philbin',  skin: '#5e3c2a', hair: ['short', '#151110'], top: '#4f6f95', sleeves: 'short', pants: '#2f3542', h: 1.07, beard: '#1a1412', mood: 'smirk', idle: 'upright' }, // HQ #79 warehouse foreman (static set dressing)
 };
 const BY_NAME = Object.fromEntries(Object.values(LOOKS).map(l => [l.who, l]));
 export function lookFor(st) { return LOOKS[st.id] || BY_NAME[st.name] || { who: st.name, skin: '#f1c9a5', hair: ['short', '#3a2a1e'], top: st.color, pants: '#2f3640', mood: 'smile' }; }
