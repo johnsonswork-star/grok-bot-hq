@@ -1,10 +1,14 @@
 // HQ #85: Design Trainer wall screen (warehouse east wall, between the steel stairs and Darryl's desk).
+// HQ #89: UNDO works everywhere (also from Deck done: it reopens that card), RESET DECK (tap twice / Y twice) clears the
+// round on this iPad AND tells the box to cancel that round's training rows, SAVE · NEW ROUND keeps them and reshuffles.
+// Taps on the Deck done screen only hit its big buttons (no more "tap anywhere = reshuffle"); keep/pass can't machine-gun
+// (250 ms guard). Mockups fill the card's whole left side.
 // One card at a time from the designer's deck (real Printful + Tapstitch ideas only, tools/swipe-train.mjs on the box,
 // encrypted per-device feed). Swipe RIGHT = KEEP, LEFT = PASS. Controller (while you aim at the screen): A / RB / D-pad ▶ keep,
 // B / LB / D-pad ◀ pass, X / D-pad ▼ undo, A on the summary = reshuffle. iPad: tap the right half (KEEP) or left half (PASS),
 // UNDO / RESHUFFLE buttons along the bottom. Every swipe is queued on this device and sent through the encrypted HQ relay
 // (type:'swipe'); the box logs it as training data. The "AI SUGGEST" button is a disabled stub (no paid LLM).
-const CW = 1280, CH = 800, FONT = 'system-ui,-apple-system,Segoe UI,Arial', HEAD = 86, FOOT = 92;
+const CW = 1280, CH = 800, FONT = 'system-ui,-apple-system,Segoe UI,Arial', HEAD = 86, FOOT = 104, ZONE = 112;
 const ST_KEY = 'hq.swipe', DECK_KEY = 'hq.swipeDeck', OUT_KEY = 'hq.swipe.out';
 const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch (e) { return d; } };
@@ -31,6 +35,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
   for (const sx of [-0.35, 0.35]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.05), bezel.material); m.position.set(sx * w, 0, -0.01); grp.add(m); } // wall brackets
 
   let status = '', lastDraw = 0, deck = load(DECK_KEY, null), st = load(ST_KEY, null), out = load(OUT_KEY, []), hover = null, anim = null, dirty = true, sending = false, lastSend = 0;
+  let lastSwipe = 0, armed = 0; // armed = RESET DECK waiting for its confirm press (until this time)
   const imgs = new Map();
   function imgsFor(d) { imgs.clear(); for (const c of d?.cards || []) if (c.d) { const im = new Image(); im.onload = () => { dirty = true; }; im.src = c.d; imgs.set(c.id, im); } }
   const byId = id => deck?.cards.find(c => c.id === id);
@@ -38,7 +43,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     const ids = d.cards.map(c => c.id), dec = {}, hist = [];
     if (keep) { for (const id of keep.history || []) if (ids.includes(id) && keep.decisions?.[id]) { dec[id] = keep.decisions[id]; hist.push(id); } }
     const order = keep ? [...(keep.order || []).filter(id => ids.includes(id)), ...ids.filter(id => !(keep.order || []).includes(id))] : ids;
-    return { deckId: d.id, order, decisions: dec, history: hist, round: keep?.round || 1 };
+    return { deckId: d.id, order, decisions: dec, history: hist, round: keep?.round || 1, at: keep?.at || 0 };
   }
   if (deck && (!st || st.deckId !== deck.id)) st = fresh(deck, st);
   if (deck) imgsFor(deck);
@@ -49,10 +54,12 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
   function setDeck(d) {
     if (!d?.cards) return;
     const changed = !deck || deck.id !== d.id, newer = !deck || deck.at !== d.at;
-    deck = { id: d.id, label: d.label, source: d.source, note: d.note, at: d.at, cards: d.cards };
+    deck = { id: d.id, label: d.label, source: d.source, note: d.note, at: d.at, resetAt: d.resetAt || 0, cards: d.cards };
     if (!save(DECK_KEY, deck)) save(DECK_KEY, { ...deck, cards: deck.cards.map(c => ({ ...c, d: null })) }); // too big for storage: keep text, images re-download
     if (changed) { const had = !!st; st = fresh(deck, st && st.deckId ? st : null); persist(); imgsFor(deck); if (had) toast(`🃏 New designer deck · ${deck.cards.length} cards`); }
     else if (imgs.size === 0 || newer) imgsFor(deck); // same cards, re-rendered art
+    // HQ #89: the box can wipe a bad round (Chris's keep-all). Any round started before resetAt goes back to card 1.
+    if (deck.resetAt && st && (st.at || 0) < deck.resetAt && Object.keys(st.decisions).length) { reset('box', false); toast('↻ Design Trainer reset · start fresh from card 1', 2600); }
     dirty = true;
   }
   function queue(item) { out.push(item); if (out.length > 400) out = out.slice(-400); save(OUT_KEY, out); setTimeout(flush, 1200); }
@@ -67,56 +74,85 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
 
   function swipe(dec) {
     const id = curId(); if (!id) return 'end'; const c = byId(id); if (!c) return null;
+    const now = Date.now(); if (now - lastSwipe < 250) return 'busy'; lastSwipe = now; armed = 0; // HQ #89: no machine-gun keeps
     const sid = rid(), pos = st.order.indexOf(id) + 1;
-    st.decisions[id] = { d: dec, sid, at: Date.now() }; st.history.push(id); persist();
+    if (!st.at) st.at = now;
+    st.decisions[id] = { d: dec, sid, at: now }; st.history.push(id); persist();
     anim = { id, dir: dec === 'keep' ? 1 : -1, t0: performance.now() };
-    queue({ mid: rid(), sid, at: new Date().toISOString(), cardId: id, decision: dec, deck: deck.id, round: st.round, pos, total: st.order.length, card: snap(c) });
+    queue({ mid: rid(), sid, at: new Date().toISOString(), cardId: id, decision: dec, deck: deck.id, round: st.round, roundAt: st.at, pos, total: st.order.length, card: snap(c) });
     return dec;
   }
+  // HQ #89: undo works mid-deck AND from Deck done (popping the last decision makes that card current again -> summary closes)
   function undo() {
-    const id = st?.history.pop(); if (!id) return 'nothing'; const was = st.decisions[id]; delete st.decisions[id]; persist(); anim = null;
-    queue({ mid: rid(), sid: rid(), at: new Date().toISOString(), cardId: id, decision: 'undo', undoes: was?.sid || '', deck: deck.id, round: st.round });
+    armed = 0;
+    let id = st?.history.pop();
+    while (id && !st.decisions[id]) id = st.history.pop(); // stale history entry
+    if (!id) return 'nothing';
+    const was = st.decisions[id]; delete st.decisions[id];
+    // put the undone card first among the undecided so it's the one you see again
+    st.order = [...st.order.filter(x => st.decisions[x]), id, ...st.order.filter(x => !st.decisions[x] && x !== id)];
+    anim = null; lastSwipe = 0; persist();
+    queue({ mid: rid(), sid: rid(), at: new Date().toISOString(), cardId: id, decision: 'undo', undoes: was?.sid || '', deck: deck.id, round: st.round, roundAt: st.at || 0 });
     return 'undo';
   }
-  function reshuffle() { if (!deck) return null; st = { deckId: deck.id, order: shuffle(deck.cards.map(c => c.id)), decisions: {}, history: [], round: (st?.round || 1) + 1 }; persist(); anim = null; return 'shuffle'; }
+  // HQ #89: RESET DECK = throw this round away (box cancels its training rows), back to card 1 in deck order.
+  // SAVE · NEW ROUND (only on Deck done) = keep the training rows, start a reshuffled round.
+  function reset(why = 'reset', send = true) {
+    if (!deck) return null;
+    const sids = Object.values(st?.decisions || {}).map(v => v.sid).filter(Boolean), round = st?.round || 1, roundAt = st?.at || 0;
+    if (send !== false || sids.length) queue({ mid: rid(), sid: rid(), at: new Date().toISOString(), cardId: '', decision: 'reset', cancels: sids.slice(0, 100), reason: why, deck: deck.id, round, roundAt });
+    st = { deckId: deck.id, order: deck.cards.map(c => c.id), decisions: {}, history: [], round: round + 1, at: Date.now() };
+    anim = null; armed = 0; lastSwipe = 0; persist(); return 'reset';
+  }
+  function resetPress() {
+    const { k, p } = counts();
+    if (k + p === 0) { reset('reset-empty'); return 'reset'; }
+    if (Date.now() < armed) return reset('reset');
+    armed = Date.now() + 3500; dirty = true; setTimeout(() => { dirty = true; }, 3600); return 'arm';
+  }
+  function nextRound() { if (!deck) return null; if (curId()) return 'notdone'; st = { deckId: deck.id, order: shuffle(deck.cards.map(c => c.id)), decisions: {}, history: [], round: (st?.round || 1) + 1, at: Date.now() }; anim = null; armed = 0; persist(); return 'next'; }
 
   // ---------- drawing ----------
-  function chip(text, x, y, bg, fg = '#1b2a4a') { g.font = `700 24px ${FONT}`; const tw = g.measureText(text).width + 28; rr(g, x, y, tw, 40, 20); g.fillStyle = bg; g.fill(); g.fillStyle = fg; g.textBaseline = 'middle'; g.fillText(text, x + 14, y + 21); return tw + 10; }
+  function chip(text, x, y, bg, fg = '#1b2a4a') { g.font = `700 22px ${FONT}`; const tw = g.measureText(text).width + 26; rr(g, x, y, tw, 38, 19); g.fillStyle = bg; g.fill(); g.fillStyle = fg; g.textBaseline = 'middle'; g.fillText(text, x + 13, y + 20); return tw + 10; }
+  const MOCK_LABEL = { designer: 'CONCEPT MOCKUP · KELLY', composite: 'COMPOSITE MOCKUP', 'printful-photo': 'ON REAL PRINTFUL BLANK PHOTO', render: 'PRINTFUL MOCKUP' };
+  const CARD = { X: ZONE + 12, Y: HEAD + 14, Wd: CW - 2 * (ZONE + 12), Ht: CH - HEAD - FOOT - 28 };
   function drawCard(c, ox, rot, alpha, stamp) {
-    const X = 172, Y = HEAD + 22, Wd = CW - 344, Ht = CH - HEAD - FOOT - 44;
+    const { X, Y, Wd, Ht } = CARD;
     g.save(); g.globalAlpha = alpha; g.translate(X + Wd / 2 + ox, Y + Ht / 2); g.rotate(rot); g.translate(-Wd / 2, -Ht / 2);
-    g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 24; g.shadowOffsetY = 8; rr(g, 0, 0, Wd, Ht, 26); g.fillStyle = '#fbf8f2'; g.fill(); g.shadowColor = 'transparent';
-    // HQ #88: product mockups (design on the real blank) get a big image; flat art keeps the old small tile
-    const is = c.mock ? 486 : 330, iy = (Ht - is) / 2, im = imgs.get(c.id);
-    rr(g, 20, iy, is, is, 18); g.fillStyle = c.mock ? '#ECEAE6' : c.ground || '#1B2A4A'; g.fill();
-    if (im?.complete && im.naturalWidth) { g.save(); rr(g, 20, iy, is, is, 18); g.clip(); g.drawImage(im, 20, iy, is, is); g.restore();
-      if (c.mock === 'designer') { g.font = `800 20px ${FONT}`; const t = 'MOCKUP · KELLY', w2 = g.measureText(t).width + 24; rr(g, 30, iy + 10, w2, 34, 10); g.fillStyle = 'rgba(27,42,74,.88)'; g.fill(); g.fillStyle = '#F3E3B5'; g.textBaseline = 'middle'; g.fillText(t, 42, iy + 28); } }
-    else { g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 26px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.hasImg ? 'loading art…' : 'no art yet', 20 + is / 2, iy + is / 2); g.textAlign = 'left'; }
-    const tx = is + 48, tw = Wd - tx - 28; let ty = 30;
-    const sm = !!c.mock; g.textBaseline = 'top'; g.fillStyle = '#1b2a4a'; g.font = `800 ${sm ? 34 : 42}px ${FONT}`;
-    for (const l of wrap(g, c.title, tw, sm ? 3 : 2)) { g.fillText(l, tx, ty); ty += sm ? 41 : 50; }
-    ty += 6; g.font = `500 ${sm ? 24 : 29}px ${FONT}`; g.fillStyle = '#3b4250';
-    for (const l of wrap(g, c.pitch, tw, sm ? 4 : 4)) { g.fillText(l, tx, ty); ty += sm ? 31 : 37; }
-    ty += 14; let cx = tx;
-    const row = (items) => { for (const [t, bg, fg] of items) { if (!t) continue; g.font = `700 24px ${FONT}`; const need = g.measureText(t).width + 38; if (cx + need > tx + tw) { cx = tx; ty += 50; } cx += chip(t, cx, ty, bg, fg); } };
+    g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 24; g.shadowOffsetY = 8; rr(g, 0, 0, Wd, Ht, 24); g.fillStyle = '#fbf8f2'; g.fill(); g.shadowColor = 'transparent';
+    // HQ #89: product mockups use the whole card height (as big as the screen allows); flat art keeps a smaller tile
+    const is = c.mock ? Ht - 20 : 380, ix = 10, iy = (Ht - is) / 2, im = imgs.get(c.id);
+    rr(g, ix, iy, is, is, 18); g.fillStyle = c.mock ? '#ECEAE6' : c.ground || '#1B2A4A'; g.fill();
+    if (im?.complete && im.naturalWidth) { g.save(); rr(g, ix, iy, is, is, 18); g.clip(); g.drawImage(im, ix, iy, is, is); g.restore();
+      const lab = MOCK_LABEL[c.mock]; if (lab) { g.font = `800 19px ${FONT}`; const w2 = g.measureText(lab).width + 24; rr(g, ix + 10, iy + is - 46, w2, 34, 10); g.fillStyle = 'rgba(27,42,74,.88)'; g.fill(); g.fillStyle = '#F3E3B5'; g.textBaseline = 'middle'; g.fillText(lab, ix + 22, iy + is - 28); } }
+    else { g.fillStyle = c.mock ? 'rgba(0,0,0,.35)' : 'rgba(255,255,255,.7)'; g.font = `600 26px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.hasImg ? 'loading mockup…' : 'no art yet', ix + is / 2, iy + is / 2); g.textAlign = 'left'; }
+    const tx = ix + is + 26, tw = Wd - tx - 22; let ty = 22;
+    const sm = !!c.mock; g.textBaseline = 'top'; g.fillStyle = '#1b2a4a'; g.font = `800 ${sm ? 32 : 42}px ${FONT}`;
+    for (const l of wrap(g, c.title, tw, 3)) { g.fillText(l, tx, ty); ty += sm ? 38 : 50; }
+    ty += 6; g.font = `500 ${sm ? 22 : 28}px ${FONT}`; g.fillStyle = '#3b4250';
+    for (const l of wrap(g, c.pitch, tw, sm ? 5 : 4)) { g.fillText(l, tx, ty); ty += sm ? 28 : 36; }
+    ty += 12; let cx = tx;
+    const row = (items) => { for (const [t, bg, fg] of items) { if (!t) continue; g.font = `700 22px ${FONT}`; const need = g.measureText(t).width + 36; if (cx + need > tx + tw) { cx = tx; ty += 46; } cx += chip(t, cx, ty, bg, fg); } };
     row([[c.supplier, SUP_COL[c.supplier] || '#eee', '#1b2a4a'], [c.product_type, '#e9f5ec', '#1e5631'], [c.technique, '#f2eafa', '#4a2a6a']]);
-    cx = tx; ty += 52; g.font = `600 27px ${FONT}`; g.fillStyle = '#1b2a4a'; g.textBaseline = 'top';
+    cx = tx; ty += 50; g.font = `600 ${sm ? 21 : 26}px ${FONT}`; g.fillStyle = '#1b2a4a'; g.textBaseline = 'top';
     const facts = [c.product && `${c.product}${c.blank && !String(c.product).includes(c.blank) ? ' · ' + c.blank : ''}`, c.colors?.length && `Colors: ${c.colors.join(', ')}`, c.placement && `Print: ${c.placement}`, c.price && `From ${c.price}`].filter(Boolean);
-    if (sm) g.font = `600 23px ${FONT}`;
-    for (const f of facts) { for (const l of wrap(g, f, tw, 2)) { if (ty > Ht - 40) break; g.fillText(l, tx, ty); ty += sm ? 29 : 34; } }
+    for (const f of facts) { for (const l of wrap(g, f, tw, 2)) { if (ty > Ht - 34) break; g.fillText(l, tx, ty); ty += sm ? 27 : 33; } }
     if (stamp) { g.save(); g.translate(Wd / 2, Ht / 2); g.rotate(stamp === 'keep' ? -0.25 : 0.25); g.globalAlpha = Math.min(1, alpha * 1.4); g.lineWidth = 10; const col = stamp === 'keep' ? '#2e9d4f' : '#d64545';
       g.strokeStyle = col; g.fillStyle = col; g.font = `900 110px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; const t = stamp === 'keep' ? 'KEEP' : 'PASS', mw = g.measureText(t).width + 60;
       g.strokeRect(-mw / 2, -75, mw, 150); g.fillText(t, 0, 4); g.restore(); }
     g.restore();
   }
-  function btn(r, label, on, hot, col = '#3a4150') { rr(g, r.x, r.y, r.w, r.h, 16); g.fillStyle = !on ? 'rgba(255,255,255,.06)' : hot ? '#ffd166' : col; g.fill(); g.fillStyle = !on ? 'rgba(255,255,255,.3)' : hot ? '#1b1b1b' : '#fff'; g.font = `800 26px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1); g.textAlign = 'left'; }
-  const R = { undo: { x: 26, y: CH - FOOT + 14, w: 190, h: 64 }, shuffle: { x: 236, y: CH - FOOT + 14, w: 230, h: 64 }, ai: { x: CW - 296, y: CH - FOOT + 14, w: 270, h: 64 } };
+  function btn(r, label, on, hot, col = '#3a4150', size = 26) { rr(g, r.x, r.y, r.w, r.h, 16); g.fillStyle = !on ? 'rgba(255,255,255,.06)' : hot ? '#ffd166' : col; g.fill(); if (on && !hot) { g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.35)'; g.stroke(); } g.fillStyle = !on ? 'rgba(255,255,255,.3)' : hot ? '#1b1b1b' : '#fff'; g.font = `800 ${size}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1); g.textAlign = 'left'; }
+  // footer (always) + big Deck done buttons (summary only)
+  const R = { undo: { x: 18, y: CH - FOOT + 12, w: 290, h: 80 }, reset: { x: 322, y: CH - FOOT + 12, w: 320, h: 80 }, ai: { x: CW - 250, y: CH - FOOT + 12, w: 232, h: 80 } };
+  const BIG = { undo: { x: 110, y: CH - FOOT - 158, w: 330, h: 116 }, reset: { x: 475, y: CH - FOOT - 158, w: 330, h: 116 }, next: { x: 840, y: CH - FOOT - 158, w: 330, h: 116 } };
+  const isArmed = () => Date.now() < armed;
   function draw(t) {
     g.fillStyle = '#1d2733'; g.fillRect(0, 0, CW, CH);
     // header
     g.fillStyle = '#121a24'; g.fillRect(0, 0, CW, HEAD); g.fillStyle = '#c4a35a'; g.fillRect(0, HEAD - 4, CW, 4);
     g.fillStyle = '#fff'; g.font = `900 36px ${FONT}`; g.textBaseline = 'middle'; g.fillText('DESIGN TRAINER', 28, 32);
-    g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 22px ${FONT}`; g.fillText(deck ? `${deck.label}${deck.source === 'seed' ? '' : ''}` : 'Kelly Kapoor · Printful + Tapstitch', 30, 64);
+    g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 22px ${FONT}`; g.fillText(deck ? `${deck.label}` : 'Kelly Kapoor · Printful + Tapstitch', 30, 64);
     const { k, p, n } = counts(), cur = curId();
     if (deck) { g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `900 40px ${FONT}`; g.fillText(`${Math.min(k + p + (cur ? 1 : 0), n)} / ${n}`, CW - 28, 34); g.font = `700 22px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`✓ ${k} kept`, CW - 182, 68); g.fillStyle = '#ffaaaa'; g.fillText(`✗ ${p} passed`, CW - 28, 68); g.textAlign = 'left';
       g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(0, HEAD - 4, CW, 4); g.fillStyle = '#c4a35a'; g.fillRect(0, HEAD - 4, CW * (n ? (k + p) / n : 0), 4); }
@@ -126,21 +162,28 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
       g.font = `500 28px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.7)'; g.fillText('Real Printful + Tapstitch ideas only. Cards land here on their own.', CW / 2, CH / 2 + 30);
       if (status) { g.font = `500 20px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.45)'; g.fillText('feed: ' + status, CW / 2, CH / 2 + 80); } g.textAlign = 'left';
     } else if (!cur && !anim) {
-      g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = `900 54px ${FONT}`; g.fillText('Deck done 🎉', CW / 2, HEAD + 80);
-      g.font = `800 36px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`${k} kept`, CW / 2 - 140, HEAD + 150); g.fillStyle = '#ffaaaa'; g.fillText(`${p} passed`, CW / 2 + 140, HEAD + 150);
-      g.font = `600 26px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.85)'; g.textAlign = 'left';
-      const kept = st.order.filter(id => st.decisions[id]?.d === 'keep').map(byId).filter(Boolean); let yy = HEAD + 210;
-      g.fillStyle = '#c4a35a'; g.font = `800 26px ${FONT}`; g.fillText(kept.length ? 'YOU KEPT' : 'Nothing kept this round', 120, yy); yy += 40; g.font = `600 25px ${FONT}`; g.fillStyle = '#fff';
-      kept.slice(0, 16).forEach((c, i) => { const col = i % 2, row = i / 2 | 0; g.fillText(wrap(g, `✓ ${c.title}`, 510, 1)[0] || '', 120 + col * 540, yy + row * 36); });
-      g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.65)'; g.font = `600 22px ${FONT}`; g.fillText(out.length ? `${out.length} swipe${out.length > 1 ? 's' : ''} still sending…` : 'All swipes saved for the designer’s training ✓', CW / 2, CH - FOOT - 20); g.textAlign = 'left';
+      g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = `900 50px ${FONT}`; g.fillText('Deck done 🎉', CW / 2, HEAD + 56);
+      g.font = `800 34px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`${k} kept`, CW / 2 - 140, HEAD + 112); g.fillStyle = '#ffaaaa'; g.fillText(`${p} passed`, CW / 2 + 140, HEAD + 112);
+      g.textAlign = 'left';
+      const kept = st.order.filter(id => st.decisions[id]?.d === 'keep').map(byId).filter(Boolean); let yy = HEAD + 160;
+      g.fillStyle = '#c4a35a'; g.font = `800 24px ${FONT}`; g.fillText(kept.length ? 'YOU KEPT' : 'Nothing kept this round', 120, yy); yy += 34; g.font = `600 22px ${FONT}`; g.fillStyle = '#fff';
+      const rows = Math.max(1, Math.floor((BIG.undo.y - 24 - yy) / 31)), maxShow = rows * 2, shown = kept.length > maxShow ? maxShow - 1 : maxShow;
+      kept.slice(0, shown).forEach((c, i) => { const col = i % 2, row = i / 2 | 0; g.fillText(wrap(g, `✓ ${c.title}`, 510, 1)[0] || '', 120 + col * 540, yy + row * 31); });
+      if (kept.length > shown) { const i = shown, col = i % 2, row = i / 2 | 0; g.fillStyle = 'rgba(255,255,255,.6)'; g.fillText(`+ ${kept.length - shown} more`, 120 + col * 540, yy + row * 31); }
+      btn(BIG.undo, '↶ UNDO LAST', !!st.history.length, hover === 'undo', '#3a4150', 32);
+      btn(BIG.reset, isArmed() ? 'TAP AGAIN = RESET' : '↻ RESET DECK', true, hover === 'reset', isArmed() ? '#b03a3a' : '#7a3434', isArmed() ? 28 : 32);
+      btn(BIG.next, '✓ SAVE · NEW ROUND', true, hover === 'next', '#2e7d4f', 30);
+      g.textAlign = 'center'; g.font = `600 19px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.6)';
+      g.fillText('X', BIG.undo.x + BIG.undo.w / 2, BIG.undo.y + BIG.undo.h + 16); g.fillText('Y twice · clears this round + its training', BIG.reset.x + BIG.reset.w / 2, BIG.reset.y + BIG.reset.h + 16); g.fillText('RB / ▶ · keeps this round, reshuffles', BIG.next.x + BIG.next.w / 2, BIG.next.y + BIG.next.h + 16);
+      g.fillText(out.length ? `${out.length} swipe${out.length > 1 ? 's' : ''} still sending…` : 'All swipes saved for the designer’s training ✓', CW / 2, HEAD + 140); g.textAlign = 'left';
     } else {
       // swipe zones
       const zl = hover === 'pass', zr = hover === 'keep';
-      g.fillStyle = zl ? 'rgba(214,69,69,.35)' : 'rgba(214,69,69,.12)'; g.fillRect(0, HEAD, 160, CH - HEAD - FOOT);
-      g.fillStyle = zr ? 'rgba(46,157,79,.38)' : 'rgba(46,157,79,.12)'; g.fillRect(CW - 160, HEAD, 160, CH - HEAD - FOOT);
-      g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `900 46px ${FONT}`;
-      g.fillStyle = zl ? '#ffb4b4' : '#e07a7a'; g.fillText('◀', 80, CH / 2 - 40); g.font = `900 36px ${FONT}`; g.fillText('PASS', 80, CH / 2 + 12); g.font = `700 20px ${FONT}`; g.fillText('B · LB', 80, CH / 2 + 52);
-      g.font = `900 46px ${FONT}`; g.fillStyle = zr ? '#b6f5c8' : '#6fcf8c'; g.fillText('▶', CW - 80, CH / 2 - 40); g.font = `900 36px ${FONT}`; g.fillText('KEEP', CW - 80, CH / 2 + 12); g.font = `700 20px ${FONT}`; g.fillText('A · RB', CW - 80, CH / 2 + 52); g.textAlign = 'left';
+      g.fillStyle = zl ? 'rgba(214,69,69,.35)' : 'rgba(214,69,69,.12)'; g.fillRect(0, HEAD, ZONE, CH - HEAD - FOOT);
+      g.fillStyle = zr ? 'rgba(46,157,79,.38)' : 'rgba(46,157,79,.12)'; g.fillRect(CW - ZONE, HEAD, ZONE, CH - HEAD - FOOT);
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `900 44px ${FONT}`;
+      g.fillStyle = zl ? '#ffb4b4' : '#e07a7a'; g.fillText('◀', ZONE / 2, CH / 2 - 40); g.font = `900 30px ${FONT}`; g.fillText('PASS', ZONE / 2, CH / 2 + 10); g.font = `700 18px ${FONT}`; g.fillText('B · LB', ZONE / 2, CH / 2 + 46);
+      g.font = `900 44px ${FONT}`; g.fillStyle = zr ? '#b6f5c8' : '#6fcf8c'; g.fillText('▶', CW - ZONE / 2, CH / 2 - 40); g.font = `900 30px ${FONT}`; g.fillText('KEEP', CW - ZONE / 2, CH / 2 + 10); g.font = `700 18px ${FONT}`; g.fillText('A · RB', CW - ZONE / 2, CH / 2 + 46); g.textAlign = 'left';
       // next card peeking behind, then current / outgoing
       const nextIds = st.order.filter(id => !st.decisions[id]); const under = anim ? nextIds[0] : nextIds[1];
       if (under && byId(under)) drawCard(byId(under), 0, 0, anim ? 0.55 + 0.45 * Math.min(1, (t - anim.t0) / 320) : 0.35, null);
@@ -149,12 +192,13 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     }
     // footer
     g.fillStyle = '#121a24'; g.fillRect(0, CH - FOOT, CW, FOOT);
-    btn(R.undo, '↶ UNDO  X', !!st?.history.length, hover === 'undo');
-    btn(R.shuffle, '↻ RESHUFFLE', !!deck, hover === 'shuffle', !cur && deck ? '#2e7d4f' : '#3a4150');
-    btn(R.ai, '✨ AI SUGGEST · soon', false, false);
-    g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `700 20px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(!deck ? '' : !cur ? 'A = reshuffle · tap ↻' : 'Tap right = KEEP · left = PASS · D-pad ◀ ▶', (R.shuffle.x + R.shuffle.w + R.ai.x) / 2, CH - FOOT / 2 - 12);
-    g.font = `500 16px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.45)'; g.fillText('every swipe trains the designer · Printful + Tapstitch only', (R.shuffle.x + R.shuffle.w + R.ai.x) / 2, CH - FOOT / 2 + 18); g.textAlign = 'left';
+    btn(R.undo, '↶ UNDO · X', !!st?.history.length, hover === 'undo', '#3a4150', 28);
+    btn(R.reset, isArmed() ? 'TAP AGAIN = RESET' : '↻ RESET DECK · Y', !!deck, hover === 'reset', isArmed() ? '#b03a3a' : '#5a3a3a', isArmed() ? 24 : 26);
+    btn(R.ai, '✨ AI SUGGEST · soon', false, false, '#3a4150', 20);
+    const mid = (R.reset.x + R.reset.w + R.ai.x) / 2;
+    g.fillStyle = 'rgba(255,255,255,.75)'; g.font = `700 20px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(!deck ? '' : isArmed() ? 'Press RESET again to clear this round' : !cur ? 'X undo · Y Y reset · ▶ new round' : 'Tap right = KEEP · left = PASS', mid, CH - FOOT / 2 - 12);
+    g.font = `500 16px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.45)'; g.fillText('reset clears this round from training · Printful + Tapstitch only', mid, CH - FOOT / 2 + 18); g.textAlign = 'left';
     tex.needsUpdate = true;
   }
 
@@ -164,41 +208,47 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     setDeck(d) { try { setDeck(d); } catch (e) { status = 'deck error: ' + String(e?.message || e).slice(0, 60); deck = null; dirty = true; throw e; } },
     setStatus(t) { if (t !== status) { status = String(t || ''); dirty = true; } },
     deckId: () => deck?.id || null,
-    // uv on the screen -> 'keep' | 'pass' | 'undo' | 'shuffle' | 'idle'
+    // uv on the screen -> 'keep' | 'pass' | 'undo' | 'reset' | 'next' | 'idle'
     hit(uv) {
-      if (!uv) return 'idle'; const px = uv.x * CW, py = (1 - uv.y) * CH, inR = r => px > r.x - 6 && px < r.x + r.w + 6 && py > r.y - 6 && py < r.y + r.h + 6;
-      if (py > CH - FOOT) return inR(R.undo) ? 'undo' : inR(R.shuffle) ? 'shuffle' : 'idle';
+      if (!uv) return 'idle'; const px = uv.x * CW, py = (1 - uv.y) * CH, inR = (r, pad = 10) => px > r.x - pad && px < r.x + r.w + pad && py > r.y - pad && py < r.y + r.h + pad;
+      if (py > CH - FOOT - 4) return inR(R.undo) ? 'undo' : inR(R.reset) ? 'reset' : 'idle';
       if (!deck || py < HEAD) return 'idle';
-      if (!curId()) return 'shuffle';
+      if (!curId()) return inR(BIG.undo, 16) ? 'undo' : inR(BIG.reset, 16) ? 'reset' : inR(BIG.next, 16) ? 'next' : 'idle'; // HQ #89: no more tap-anywhere reshuffle
       return px < CW / 2 ? 'pass' : 'keep';
     },
     setHover(k) { if (hover !== k) { hover = k; dirty = true; } },
-    // one action: 'keep' | 'pass' | 'undo' | 'shuffle'. Returns what happened for the toast.
+    // one action: 'keep' | 'pass' | 'undo' | 'reset' | 'next' ('shuffle' = old name for reset). Returns what happened for the toast.
     act(k) {
       if (!deck) return 'nodeck';
       if (k === 'undo') return undo();
-      if (k === 'shuffle') return reshuffle();
+      if (k === 'reset' || k === 'shuffle') return resetPress();
+      if (k === 'next') return nextRound();
+      if (k === 'endhint') return 'endhint';
       if (k === 'keep' || k === 'pass') { if (!curId()) return 'end'; return swipe(k); }
       return null;
     },
-    // controller mapping while aiming at the wall
+    // controller mapping while aiming at / standing at the wall
     padKey(gp) {
       const end = deck && !curId();
-      if (gp.A) return end ? 'shuffle' : 'keep';
-      if (gp.RB || gp.dpad.right) return 'keep';
-      if (gp.B || gp.LB || gp.dpad.left) return 'pass';
       if (gp.X || gp.dpad.down) return 'undo';
-      if (gp.Y && end) return 'shuffle';
+      if (gp.Y) return 'reset';
+      if (end) { if (gp.RB || gp.dpad.right) return 'next'; if (gp.A || gp.B || gp.LB || gp.dpad.left) return 'endhint'; return null; } // HQ #89: A no longer reshuffles
+      if (gp.A || gp.RB || gp.dpad.right) return 'keep';
+      if (gp.B || gp.LB || gp.dpad.left) return 'pass';
       return null;
     },
     hint(k) {
       const end = deck && !curId();
       if (!deck) return '🃏 Design Trainer · loading the designer’s deck';
-      if (end) return k === 'undo' ? '↶ Undo last swipe · X / tap' : '↻ Reshuffle the deck · A / tap';
-      return k === 'undo' ? '↶ Undo last swipe · X / tap' : k === 'shuffle' ? '↻ Reshuffle · tap' : k === 'pass' ? '◀ PASS · B / LB / ◀ / tap left' : '▶ KEEP · A / RB / ▶ / tap right';
+      if (k === 'undo') return '↶ Undo last swipe · X / tap';
+      if (k === 'reset') return isArmed() ? '↻ Press again to RESET (clears this round)' : '↻ Reset deck · Y twice / tap twice';
+      if (k === 'next') return '✓ Save this round + reshuffle · RB / ▶ / tap';
+      if (end) return 'Deck done · X undo · Y Y reset · RB new round';
+      return k === 'pass' ? '◀ PASS · B / LB / ◀ / tap left' : '▶ KEEP · A / RB / ▶ / tap right';
     },
     pending: () => out.length,
-    stats: () => ({ ...counts(), pending: out.length, deck: deck?.id, source: deck?.source }),
+    stats: () => ({ ...counts(), pending: out.length, deck: deck?.id, source: deck?.source, cur: curId(), round: st?.round || 0, hist: st?.history.length || 0, armed: isArmed(), done: !!deck && !curId() }),
+    outbox: () => out.slice(),
     tick(t, visible) { if (!visible) return; if (dirty || anim || (!deck && t - lastDraw > 450)) { dirty = false; lastDraw = t; try { draw(t); } catch (e) { status = 'draw error: ' + String(e?.message || e).slice(0, 60); console.warn('swipe draw', e); tex.needsUpdate = true; } } },
     flush,
   };

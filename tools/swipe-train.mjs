@@ -10,7 +10,11 @@
 // Each swipe comes back through the encrypted HQ relay (type:'swipe'); the bridge calls record() here:
 //   ~/.config/grok-bot-hq/design-train/swipes.jsonl  full log { at, sid, mid, cardId, decision keep|pass|undo, card snapshot }
 //   ~/.config/grok-bot-hq/design-train/train.jsonl   compact rows for a later fine-tune { sid, at, label 1|0, cardId, f:{...} }
-//                                                    (undo rows { sid, undo: true } cancel an earlier sid)
+//                                                    HQ #89: train.jsonl only holds LIVE labels. An undo or a RESET DECK
+//                                                    from the wall moves the cancelled rows to train.cancelled.jsonl and
+//                                                    marks them { cancelled } in swipes.jsonl (audit trail kept).
+//   node tools/swipe-train.mjs cancel-round <device> <round> [reason]   cancel a whole round from the box (e.g. keep-all mistake)
+//   node tools/swipe-train.mjs reset-walls [reason]   cancel nothing, but tell every wall to restart rounds begun before now
 //   node tools/swipe-train.mjs deck            build + print the current deck (no thumbnails)
 //   node tools/swipe-train.mjs push [--force]  publish the deck now
 //   node tools/swipe-train.mjs watch           background: re-publish when cards-v*.json changes (10 s check), keepalive 2.5 h
@@ -29,7 +33,7 @@ const { seal } = await import(new URL('../hq-crypto.js', import.meta.url));
 const RELAY = 'https://ntfy.sh', REPO = 'johnsonswork-star/grok-bot-hq-inbox';
 const DIR = `${os.homedir()}/.config/grok-bot-hq`, TRAIN = `${DIR}/design-train`, THUMBS = `${TRAIN}/.thumbs`, DEVICES = `${DIR}/devices.json`;
 const AF = '/workspace/atom-family-clothing-co', CARDS_DIR = `${AF}/designs/swipe-train`;
-const SWIPES = `${TRAIN}/swipes.jsonl`, TRAINF = `${TRAIN}/train.jsonl`, PUBST = `${TRAIN}/publish-state.json`;
+const SWIPES = `${TRAIN}/swipes.jsonl`, TRAINF = `${TRAIN}/train.jsonl`, PUBST = `${TRAIN}/publish-state.json`, CANCELF = `${TRAIN}/train.cancelled.jsonl`, RESETF = `${TRAIN}/wall-reset.json`;
 const KEEPALIVE_MS = 2.5 * 3600e3;
 const log = (...a) => console.log(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }), '[swipe]', ...a);
 fs.mkdirSync(THUMBS, { recursive: true, mode: 0o700 });
@@ -101,6 +105,21 @@ function kellyMockup(id) {
   return st.length ? `${MOCK_DIR}/${st[0][0]}` : null;
 }
 function compositeFor(id) { const p = `${COMP_DIR}/${id}.jpg`; try { return id && fs.statSync(p).isFile() ? p : null; } catch { return null; } }
+// HQ #89: our art on the REAL Printful blank photo (public catalog photo, approx placement), tools/printful-photo-mockup.py
+const PF_DIR = `${TRAIN}/pfphoto`;
+function pfPhotoFor(id) { const p = `${PF_DIR}/${id}.jpg`; try { return id && fs.statSync(p).isFile() ? p : null; } catch { return null; } }
+let pfStamp = '';
+function ensurePfPhotos(f) {
+  if (!f) return; let st; try { st = fs.statSync(f); } catch { return; } const stamp = f + st.mtimeMs; if (stamp === pfStamp) return; pfStamp = stamp;
+  let raw; try { raw = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return; }
+  const ids = (Array.isArray(raw) ? raw : raw?.cards || []).filter(c => c?.id && c.printful && !pfPhotoFor(c.id)).map(c => c.id);
+  if (!ids.length) return;
+  try { execFileSync('python3', [path.join(path.dirname(fileURLToPath(import.meta.url)), 'printful-photo-mockup.py'), f, PF_DIR, ...ids], { stdio: 'ignore', timeout: 240000 }); log(`printful-photo mockups tried for ${ids.join(', ')}`); }
+  catch (e) { log('printful-photo build failed', e.message.slice(0, 120)); }
+}
+// Kelly's files: newest of the card's explicit mockup field + designs/swipe-train/mockups/<id>* (new drops win automatically).
+// A real Printful render (card mockup_kind/mockup_type says printful|render|official, or the file name does) outranks everything.
+const isRender = (c, p) => /printful|render|official/i.test(String(c?.mockup_kind || c?.mockup_type || '')) || /printful[-_]?render|pf[-_]render|official/i.test(path.basename(p || ''));
 // fill missing composites for any new card ids (plain python + PIL, no AI); run from watch()/push
 let compStamp = '';
 function ensureComposites(f) {
@@ -130,8 +149,10 @@ function normCard(c, i, base) {
   const cid0 = String(pickF(c, 'id', 'cardId', 'slug') || '');
   const mk = [].concat(pickF(c, 'mockup', 'mockupUrl', 'mockup_url', 'productImage', 'product_image', 'mockup_path', 'mockup_file') || []).concat(c.mockups || c.mockup_files || [])
     .map(p => resolveImg(typeof p === 'object' ? p?.path || p?.file : p, base)).find(Boolean);
-  const km = mk ? null : kellyMockup(cid0), cm = mk || km ? null : compositeFor(cid0);
-  const image = mk || km || cm || art, mock = mk || km ? 'designer' : cm ? 'composite' : null;
+  const km = kellyMockup(cid0), mt0 = p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
+  const kelly = [mk, km].filter(Boolean).sort((a, b) => mt0(b) - mt0(a))[0] || null;
+  const render = kelly && isRender(c, kelly) ? kelly : null, pfp = render ? null : pfPhotoFor(cid0), cm = render || pfp || kelly ? null : compositeFor(cid0);
+  const image = render || pfp || kelly || cm || art, mock = render ? 'render' : pfp ? 'printful-photo' : kelly ? 'designer' : cm ? 'composite' : null;
   const colors = pickF(c, 'colors', 'color', 'colorways', 'colorway', 'garment_color');
   return { card: {
     id: clip(pickF(c, 'id', 'cardId', 'slug') || `card-${i + 1}`, 60), title: clip(pickF(c, 'title', 'name', 'idea') || (product ? String(product) : `Idea ${i + 1}`), 70),
@@ -144,7 +165,7 @@ function normCard(c, i, base) {
   } };
 }
 export function loadDeck() {
-  const f = newestCardsFile(); let raw = null, why = ''; ensureComposites(f);
+  const f = newestCardsFile(); let raw = null, why = ''; ensureComposites(f); ensurePfPhotos(f);
   if (f) { try { raw = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { why = `${path.basename(f)} unreadable (${e.message.slice(0, 60)}), using seed`; } }
   const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.cards) ? raw.cards : Array.isArray(raw?.deck) ? raw.deck : null;
   let cards = [], dropped = [], source = 'seed', label = 'Seed deck · real Printful + Tapstitch options';
@@ -160,7 +181,7 @@ export function loadDeck() {
 }
 
 function thumb(p, ground, size = 300, mock = null) {
-  if (p && mock) size = 480;
+  if (p && mock) size = 640; // HQ #89: mockups fill the card's left side
   if (!p) return null; let st; try { st = fs.statSync(p); } catch { return null; }
   const key = `${THUMBS}/${crypto.createHash('sha1').update('crop2|' + p + '|' + st.mtimeMs + '|' + ground + '|' + size + '|' + (mock || '')).digest('hex').slice(0, 20)}.jpg`;
   if (!fs.existsSync(key)) {
@@ -183,8 +204,9 @@ bg.save(sys.argv[2], 'JPEG', quality=78 if mk else 70, optimize=True)`, p, key, 
   }
   try { return 'data:image/jpeg;base64,' + fs.readFileSync(key).toString('base64'); } catch { return null; }
 }
+const wallResetAt = () => { try { return +JSON.parse(fs.readFileSync(RESETF, 'utf8')).at || 0; } catch { return 0; } };
 function feed(deck) {
-  return { type: 'swipe-deck', v: 1, at: Date.now(), id: deck.id, label: deck.label, source: deck.source, note: deck.note || '',
+  return { type: 'swipe-deck', v: 1, at: Date.now(), id: deck.id, resetAt: wallResetAt(), label: deck.label, source: deck.source, note: deck.note || '',
     cards: deck.cards.map(c => { const { image, src, ...rest } = c; return { ...rest, src: src || '', hasImg: !!image, d: thumb(image, c.ground, 300, c.mock) }; }) };
 }
 
@@ -257,21 +279,44 @@ export function record(p, { log: lg = log } = {}) {
   const seen = seenMids(), deck = loadDeck(), byId = new Map(deck.cards.map(c => [c.id, c])); let n = 0;
   for (const it of items.slice(0, 60)) {
     const mid = String(it.mid || p.mid || '').slice(0, 40); if (!mid || seen.has(mid)) continue; seen.add(mid);
-    const decision = ['keep', 'pass', 'undo'].includes(it.decision) ? it.decision : null; if (!decision) { lg('bad swipe decision', it.decision); continue; }
+    const decision = ['keep', 'pass', 'undo', 'reset'].includes(it.decision) ? it.decision : null; if (!decision) { lg('bad swipe decision', it.decision); continue; }
     const cardId = clip(it.cardId, 60), sid = clip(it.sid || mid, 40), at = new Date(Date.parse(it.at) || Date.now()).toISOString();
+    const dev = p.device?.id || null, round = +it.round || 0;
+    if (decision === 'reset') { // HQ #89: RESET DECK on the wall -> that round never trains the designer
+      const sids = (Array.isArray(it.cancels) ? it.cancels : []).map(x => clip(x, 40)).filter(Boolean).slice(0, 200);
+      fs.appendFileSync(SWIPES, JSON.stringify({ at, sid, mid, cardId: '', decision, cancels: sids, reason: clip(it.reason || 'reset', 40), deck: clip(it.deck || '', 20), round, roundAt: +it.roundAt || 0, device: dev, test: p.test || undefined }) + '\n', { mode: 0o600 });
+      const c = cancel({ sids, device: dev, round, since: +it.roundAt || 0, reason: `wall-${clip(it.reason || 'reset', 30)}` });
+      lg(`swipe RESET round ${round} from device ${dev || '?'}: ${c} training row(s) cancelled`); n++; continue;
+    }
     const sent = it.card && typeof it.card === 'object' ? it.card : {};
     const box = byId.get(cardId); const snap = box ? (({ image, ...r }) => ({ ...r, image: image || null }))(box) : Object.fromEntries(FEATS.concat(['id', 'title', 'pitch', 'colors']).filter(k => sent[k] !== undefined).map(k => [k, k === 'colors' && Array.isArray(sent[k]) ? sent[k].slice(0, 6).map(x => clip(x, 24)) : clip(sent[k], 180)]));
-    const row = { at, sid, mid, cardId, decision, undoes: decision === 'undo' ? clip(it.undoes || '', 40) : undefined, deck: clip(it.deck || p.deck || '', 20), round: +it.round || 0,
-      pos: +it.pos || 0, total: +it.total || 0, device: p.device?.id || null, test: p.test || undefined, card: snap, snapFrom: box ? 'box-deck' : 'ipad' };
+    const row = { at, sid, mid, cardId, decision, undoes: decision === 'undo' ? clip(it.undoes || '', 40) : undefined, deck: clip(it.deck || p.deck || '', 20), round,
+      roundAt: +it.roundAt || undefined, pos: +it.pos || 0, total: +it.total || 0, device: dev, test: p.test || undefined, card: snap, snapFrom: box ? 'box-deck' : 'ipad' };
     fs.appendFileSync(SWIPES, JSON.stringify(row) + '\n', { mode: 0o600 });
-    const tr = decision === 'undo' ? { sid: row.undoes, undo: true, at } : { sid, at, label: decision === 'keep' ? 1 : 0, cardId, deck: row.deck, f: features(snap), test: p.test || undefined };
-    fs.appendFileSync(TRAINF, JSON.stringify(tr) + '\n', { mode: 0o600 }); n++;
-    lg(`swipe ${decision.toUpperCase()} ${cardId}${decision === 'undo' ? ' (undo ' + row.undoes + ')' : ''} from device ${p.device?.id || '?'}`);
+    if (decision === 'undo') cancel({ sids: [row.undoes], reason: 'undo' });
+    else fs.appendFileSync(TRAINF, JSON.stringify({ sid, at, label: decision === 'keep' ? 1 : 0, cardId, deck: row.deck, round, device: dev, f: features(snap), test: p.test || undefined }) + '\n', { mode: 0o600 });
+    n++;
+    lg(`swipe ${decision.toUpperCase()} ${cardId}${decision === 'undo' ? ' (undo ' + row.undoes + ')' : ''} from device ${dev || '?'}`);
   }
   return n;
 }
+// HQ #89: cancel training rows. By sid list, and/or every keep/pass from <device> in <round> at/after <since> (ms).
+// train.jsonl is rewritten without them (they move to train.cancelled.jsonl); swipes.jsonl rows get { cancelled: reason }.
+export function cancel({ sids = [], device = null, round = 0, since = 0, reason = 'cancelled' } = {}) {
+  const want = new Set(sids.filter(Boolean));
+  const sw = readJsonl(SWIPES);
+  if (device && round) for (const r of sw) if ((r.decision === 'keep' || r.decision === 'pass') && r.device === device && +r.round === +round && (!since || Date.parse(r.at) >= since - 5000)) want.add(r.sid);
+  if (!want.size) return 0;
+  const tr = readJsonl(TRAINF), keep = [], gone = [];
+  for (const r of tr) (r.undo ? want.has(r.sid) : want.has(r.sid)) ? gone.push(r) : keep.push(r);
+  const tmp = (f, rows) => { const t = `${f}.tmp${process.pid}`; fs.writeFileSync(t, rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''), { mode: 0o600 }); fs.renameSync(t, f); };
+  if (gone.length) { fs.appendFileSync(CANCELF, gone.map(r => JSON.stringify({ ...r, cancelled: reason, cancelledAt: new Date().toISOString() })).join('\n') + '\n', { mode: 0o600 }); tmp(TRAINF, keep); }
+  let marked = 0; const sw2 = sw.map(r => (r.decision === 'keep' || r.decision === 'pass') && want.has(r.sid) && !r.cancelled ? (marked++, { ...r, cancelled: reason }) : r);
+  if (marked) tmp(SWIPES, sw2);
+  return gone.filter(r => !r.undo).length;
+}
 function readJsonl(f) { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } }
-export function effective() { const rows = readJsonl(TRAINF), undone = new Set(rows.filter(r => r.undo).map(r => r.sid)); return rows.filter(r => !r.undo && !undone.has(r.sid) && !r.test); }
+export function effective() { const rows = readJsonl(TRAINF), undone = new Set(rows.filter(r => r.undo).map(r => r.sid)); return rows.filter(r => !r.undo && !undone.has(r.sid) && !r.test && !r.cancelled); }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
@@ -280,6 +325,8 @@ if (isMain) {
   else if (cmd === 'feed-json') fs.writeFileSync(a || '/dev/stdout', JSON.stringify(feed(loadDeck())));
   else if (cmd === 'push') process.exit((await push()) ? 0 : 1);
   else if (cmd === 'watch') await watch();
+  else if (cmd === 'cancel-round' && a && b) console.log('cancelled', cancel({ device: a, round: +b, reason: process.argv[5] || 'box-cancel' }), 'training row(s)');
+  else if (cmd === 'reset-walls') { fs.writeFileSync(RESETF, JSON.stringify({ at: Date.now(), reason: a || 'box reset' })); console.log('walls will restart rounds begun before', new Date().toISOString(), '(push --force to send now)'); }
   else if (cmd === 'export') for (const r of effective()) console.log(JSON.stringify(r));
   else if (cmd === 'stats') {
     const rows = effective(), by = {};

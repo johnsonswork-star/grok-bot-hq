@@ -2169,13 +2169,22 @@ function swipeHit() {
   raycaster.far = 8;
   const h = raycaster.intersectObject(swipeWall.mesh, false)[0]; return h ? 'swipe:' + swipeWall.hit(h.uv) : null;
 }
+// HQ #89: controller works whenever you're standing at the wall facing it (no pixel-perfect aim needed for X / Y / A / B)
+function swipeNear() {
+  if (player.level !== -1 || !BASEMENT.visible || player.pos.x > BASE.x1) return false;
+  const dx = SWIPE_AT.x - player.pos.x, dz = SWIPE_AT.z - player.pos.z, d = Math.hypot(dx, dz); if (d > 6.5) return false;
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw); return (fx * dx + fz * dz) / (d || 1) > 0.55;
+}
 function swipeAct(k) {
   const r = swipeWall.act(k);
   if (r === 'keep') toast('✓ KEEP · saved for the designer', 1200);
   else if (r === 'pass') toast('✗ PASS · saved for the designer', 1200);
-  else if (r === 'undo') toast('↶ Undid your last swipe', 1500);
+  else if (r === 'undo') toast('↶ Undid your last swipe · that card is back', 1600);
   else if (r === 'nothing') toast('Nothing to undo yet', 1500);
-  else if (r === 'shuffle') toast('↻ Deck reshuffled · new round', 1800);
+  else if (r === 'arm') toast('↻ Press RESET again (Y / tap) to clear this round', 2600);
+  else if (r === 'reset') toast('↻ Deck reset · card 1 · that round won’t train the designer', 2600);
+  else if (r === 'next') toast('✓ Round saved · new shuffled round', 1800);
+  else if (r === 'endhint' || r === 'end') toast('Deck done · X undo · Y twice reset · RB new round', 2200);
   else if (r === 'nodeck') toast('The designer’s deck is still loading', 1800);
   return r;
 }
@@ -2382,9 +2391,9 @@ function tick() {
   else if (gp) {
     if (gp.start) { setPaused(!paused); }
     else if (paused && gp.A) setPaused(false);
-    else if (!paused && !panelOpen && hoverKind && hoverKind.startsWith('swipe:')) {
-      // HQ #85: aiming at the Design Trainer wall: A / RB / ▶ keep, B / LB / ◀ pass, X / ▼ undo (A on the summary = reshuffle)
-      const k = swipeWall.padKey(gp); if (k) { const r = swipeAct(k); if (r === 'keep' || r === 'pass') rumble(gp.pad, r === 'keep' ? 60 : 35, r === 'keep' ? 0.45 : 0.25); }
+    else if (!paused && !panelOpen && ((hoverKind && hoverKind.startsWith('swipe:')) || swipeNear())) {
+      // HQ #85/#89: at the Design Trainer wall: A / RB / ▶ keep, B / LB / ◀ pass, X / ▼ undo, Y twice reset, RB on Deck done = new round
+      const k = swipeWall.padKey(gp); if (k) { const r = swipeAct(k); if (r === 'keep' || r === 'pass') rumble(gp.pad, r === 'keep' ? 60 : 35, r === 'keep' ? 0.45 : 0.25); else if (r === 'undo' || r === 'reset') rumble(gp.pad, 40, 0.3); }
     }
     else if (!paused) {
       if (gp.A) interact();
@@ -2477,7 +2486,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { swipeWall, SWIPE_AT, tapAt, BAY, BAYG, dockY, WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
+window.__office = { swipeWall, swipeNear, SWIPE_AT, tapAt, BAY, BAYG, dockY, WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
