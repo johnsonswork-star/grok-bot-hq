@@ -180,8 +180,29 @@ async function push(deck = loadDeck()) {
       log(`deck ${deck.id} (${deck.cards.length} cards, ${deck.source}) -> device ${id}: ${Math.round(body.length / 1024)} KB -> ${r.status}`); ok &&= r.ok;
     } catch (e) { log('push error', id, e.message); ok = false; }
   }
-  if (ok) fs.writeFileSync(PUBST, JSON.stringify({ id: deck.id, at: Date.now(), source: deck.source, n: deck.cards.length }));
+  const pg = await pagesFallback(f, devs, deck);
+  if (ok) fs.writeFileSync(PUBST, JSON.stringify({ id: deck.id, at: Date.now(), source: deck.source, n: deck.cards.length, pages: pg }));
   return ok;
+}
+// HQ #87: the same deck, still sealed to each device key, also hosted on Pages at swipe/<sha256(topic)[0:24]>.json so the
+// wall never spins forever if the ntfy relay / attachment fails on the iPad. Ciphertext only (no art or text in the clear).
+// Committed + pushed only when the deck id changes (or force), touching just the swipe/ path.
+const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+async function pagesFallback(f, devs, deck, force = process.argv.includes('--force')) {
+  try {
+    const dir = `${SITE}/swipe`; fs.mkdirSync(dir, { recursive: true }); const files = [];
+    for (const d of Object.values(devs)) {
+      const h = crypto.createHash('sha256').update(d.topic).digest('hex').slice(0, 24), fp = `${dir}/${h}.json`;
+      let cur = null; try { cur = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch {}
+      if (!force && cur?.id === deck.id && cur?.pub === d.pub.x) continue;
+      fs.writeFileSync(fp, JSON.stringify({ v: 1, id: deck.id, at: Date.now(), pub: d.pub.x, env: await seal(f, d.pub) })); files.push(`swipe/${h}.json`);
+    }
+    if (!files.length) return 'unchanged';
+    const git = (...a) => execFileSync('git', ['-C', SITE, ...a], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+    git('add', '--', ...files); git('commit', '-m', `HQ #87: encrypted design-trainer deck fallback (${deck.id})`, '--', ...files);
+    try { git('push', 'origin', 'HEAD:main'); } catch (e) { git('pull', '--rebase', '--autostash', 'origin', 'main'); git('push', 'origin', 'HEAD:main'); }
+    log(`pages fallback: ${files.length} device file(s) for deck ${deck.id} pushed`); return 'pushed';
+  } catch (e) { log('pages fallback error', String(e.stderr || e.message).slice(0, 200)); return 'error'; }
 }
 function pubState() { try { return JSON.parse(fs.readFileSync(PUBST, 'utf8')); } catch { return {}; } }
 async function watch() {

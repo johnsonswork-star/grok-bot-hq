@@ -7,7 +7,7 @@ import { createMonitors } from './monitors.js';
 import { createTalk } from './talk.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick, fetchSwipeDeck, sendSwipes } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick, fetchSwipeDeck, swipeStatus, sendSwipes } from './hq-link.js';
 import { createSwipeWall } from './swipe.js';
 
 // ---------- device detection ----------
@@ -2317,8 +2317,11 @@ const refreshCtl = (() => {
 // every 20 s while you're downstairs near it, every 2 min otherwise, so a new designer deck shows up without a reload.
 (function swipeDeckFeed() {
   let last = 0;
-  async function poll() { if (document.hidden) return; last = Date.now(); const r = await fetchSwipeDeck(); if (r?.feed) swipeWall.setDeck(r.feed); }
-  poll(); setInterval(() => { const near = player.level === -1 && Math.hypot(player.pos.x - SWIPE_AT.x, player.pos.z - SWIPE_AT.z) < 20; if (Date.now() - last > (near ? 20e3 : 120e3)) poll(); }, 5000);
+  let busy = false;
+  async function poll() { if (document.hidden || busy) return; busy = true; last = Date.now();
+    try { const r = await fetchSwipeDeck(!swipeWall.hasDeck); if (r?.feed) swipeWall.setDeck(r.feed); else if (!swipeWall.hasDeck) swipeWall.setStatus(swipeStatus); }
+    catch (e) { swipeWall.setStatus('deck error: ' + String(e?.message || e).slice(0, 60)); } finally { busy = false; } }
+  poll(); setInterval(() => { const near = player.level === -1 && Math.hypot(player.pos.x - SWIPE_AT.x, player.pos.z - SWIPE_AT.z) < 20; if (Date.now() - last > (!swipeWall.hasDeck ? 10e3 : near ? 20e3 : 120e3)) poll(); }, 5000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { poll(); swipeWall.flush(); } });
 })();
 // HQ #50: taps on a desk screen shown full size in the open desk panel (same canvas as the 3D monitor)

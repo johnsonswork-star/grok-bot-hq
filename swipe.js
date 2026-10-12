@@ -30,7 +30,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
   mesh.position.z = 0.062; grp.add(mesh);
   for (const sx of [-0.35, 0.35]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.05), bezel.material); m.position.set(sx * w, 0, -0.01); grp.add(m); } // wall brackets
 
-  let lastDraw = 0, deck = load(DECK_KEY, null), st = load(ST_KEY, null), out = load(OUT_KEY, []), hover = null, anim = null, dirty = true, sending = false, lastSend = 0;
+  let status = '', lastDraw = 0, deck = load(DECK_KEY, null), st = load(ST_KEY, null), out = load(OUT_KEY, []), hover = null, anim = null, dirty = true, sending = false, lastSend = 0;
   const imgs = new Map();
   function imgsFor(d) { imgs.clear(); for (const c of d?.cards || []) if (c.d) { const im = new Image(); im.onload = () => { dirty = true; }; im.src = c.d; imgs.set(c.id, im); } }
   const byId = id => deck?.cards.find(c => c.id === id);
@@ -120,7 +120,8 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     // body
     if (!deck) {
       g.fillStyle = '#fff'; g.font = `800 46px ${FONT}`; g.textAlign = 'center'; g.fillText('Loading the designer’s deck' + '.'.repeat(1 + (t / 450 | 0) % 3), CW / 2, CH / 2 - 30);
-      g.font = `500 28px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.7)'; g.fillText('Real Printful + Tapstitch ideas only. Cards land here on their own.', CW / 2, CH / 2 + 30); g.textAlign = 'left';
+      g.font = `500 28px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.7)'; g.fillText('Real Printful + Tapstitch ideas only. Cards land here on their own.', CW / 2, CH / 2 + 30);
+      if (status) { g.font = `500 20px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.45)'; g.fillText('feed: ' + status, CW / 2, CH / 2 + 80); } g.textAlign = 'left';
     } else if (!cur && !anim) {
       g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = `900 54px ${FONT}`; g.fillText('Deck done 🎉', CW / 2, HEAD + 80);
       g.font = `800 36px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`${k} kept`, CW / 2 - 140, HEAD + 150); g.fillStyle = '#ffaaaa'; g.fillText(`${p} passed`, CW / 2 + 140, HEAD + 150);
@@ -157,7 +158,8 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
   return {
     mesh,
     get hasDeck() { return !!deck; },
-    setDeck,
+    setDeck(d) { try { setDeck(d); } catch (e) { status = 'deck error: ' + String(e?.message || e).slice(0, 60); deck = null; dirty = true; throw e; } },
+    setStatus(t) { if (t !== status) { status = String(t || ''); dirty = true; } },
     deckId: () => deck?.id || null,
     // uv on the screen -> 'keep' | 'pass' | 'undo' | 'shuffle' | 'idle'
     hit(uv) {
@@ -194,7 +196,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     },
     pending: () => out.length,
     stats: () => ({ ...counts(), pending: out.length, deck: deck?.id, source: deck?.source }),
-    tick(t, visible) { if (!visible) return; if (dirty || anim || (!deck && t - lastDraw > 450)) { dirty = false; lastDraw = t; draw(t); } },
+    tick(t, visible) { if (!visible) return; if (dirty || anim || (!deck && t - lastDraw > 450)) { dirty = false; lastDraw = t; try { draw(t); } catch (e) { status = 'draw error: ' + String(e?.message || e).slice(0, 60); console.warn('swipe draw', e); tex.needsUpdate = true; } } },
     flush,
   };
 }

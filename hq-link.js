@@ -199,20 +199,33 @@ export async function fetchChatFeed() {
 // HQ #85: design-trainer wall (warehouse). Deck = encrypted per-device feed `<topic>_swipe` from tools/swipe-train.mjs
 // (real Printful + Tapstitch ideas + small thumbnails; newest only). Returns { id, feed } | { id, same: true } | null.
 let swipeId = null;
-export async function fetchSwipeDeck() {
+export let swipeStatus = '';
+const withTimeout = (u, ms) => fetch(u, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined });
+// force = the wall still has no deck: re-read even if we've already seen this message id (HQ #87)
+export async function fetchSwipeDeck(force = false) {
+  let d;
+  try { d = await device(); } catch (e) { swipeStatus = 'device key error'; return null; }
   try {
-    const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}_swipe/json?poll=1&since=latest`, { cache: 'no-store' });
-    if (!r.ok) return null;
-    const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) return null;
-    const m = JSON.parse(line); if (m.event !== 'message') return null;
-    if (m.id === swipeId) return { id: m.id, same: true };
+    const r = await withTimeout(`${RELAY}/${d.topic}_swipe/json?poll=1&since=latest`, 20000);
+    if (!r.ok) throw new Error('relay ' + r.status);
+    const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) throw new Error('relay empty');
+    const m = JSON.parse(line); if (m.event !== 'message') throw new Error('relay no msg');
+    if (m.id === swipeId && !force) return { id: m.id, same: true };
     let body = m.message;
-    if (m.attachment?.url) { const a = await fetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
+    if (m.attachment?.url) { const a = await withTimeout(m.attachment.url, 30000); if (!a.ok) throw new Error('relay file ' + a.status); body = await a.text(); }
     const p = await open(JSON.parse(body), d.priv);
-    if (p.type !== 'swipe-deck' || !Array.isArray(p.cards)) return null;
-    swipeId = m.id; return { id: m.id, feed: p };
-  } catch (e) { return null; }
+    if (p.type !== 'swipe-deck' || !Array.isArray(p.cards)) throw new Error('relay bad deck');
+    swipeId = m.id; swipeStatus = 'relay ok'; return { id: m.id, feed: p };
+  } catch (e) { swipeStatus = String(e?.message || e).slice(0, 60); }
+  // HQ #87 fallback: the same deck, still encrypted to THIS device's key, hosted on Pages (swipe/<sha256(topic)>.json)
+  try {
+    const h = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(d.topic)))).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+    const r = await withTimeout(`./swipe/${h}.json?t=${Date.now()}`, 30000);
+    if (!r.ok) throw new Error('pages ' + r.status);
+    const w = await r.json(); const p = await open(w.env || w, d.priv);
+    if (p.type !== 'swipe-deck' || !Array.isArray(p.cards)) throw new Error('pages bad deck');
+    swipeStatus = 'pages ok'; return { id: 'pages:' + (w.id || p.id), feed: p };
+  } catch (e) { swipeStatus += ' · ' + String(e?.message || e).slice(0, 50); return null; }
 }
 // Swipes go back through the same encrypted relay as chat (type:'swipe'); the bridge logs them as training data.
 // items = [{ mid, sid, at, cardId, decision: 'keep'|'pass'|'undo', undoes?, deck, round, pos, total, card }]
