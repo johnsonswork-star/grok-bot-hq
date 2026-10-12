@@ -48,11 +48,11 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
 
   function setDeck(d) {
     if (!d?.cards) return;
-    const changed = !deck || deck.id !== d.id;
+    const changed = !deck || deck.id !== d.id, newer = !deck || deck.at !== d.at;
     deck = { id: d.id, label: d.label, source: d.source, note: d.note, at: d.at, cards: d.cards };
     if (!save(DECK_KEY, deck)) save(DECK_KEY, { ...deck, cards: deck.cards.map(c => ({ ...c, d: null })) }); // too big for storage: keep text, images re-download
     if (changed) { const had = !!st; st = fresh(deck, st && st.deckId ? st : null); persist(); imgsFor(deck); if (had) toast(`🃏 New designer deck · ${deck.cards.length} cards`); }
-    else if (imgs.size === 0) imgsFor(deck);
+    else if (imgs.size === 0 || newer) imgsFor(deck); // same cards, re-rendered art
     dirty = true;
   }
   function queue(item) { out.push(item); if (out.length > 400) out = out.slice(-400); save(OUT_KEY, out); setTimeout(flush, 1200); }
