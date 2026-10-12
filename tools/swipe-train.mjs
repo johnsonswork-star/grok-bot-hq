@@ -94,6 +94,23 @@ function resolveImg(p, base) {
   for (const c of [p, path.resolve(base, p), path.resolve(AF, p), path.resolve(`${AF}/designs`, p)]) { try { if (fs.statSync(c).isFile()) return c; } catch {} }
   return null;
 }
+const MOCK_DIR = `${CARDS_DIR}/mockups`, COMP_DIR = `${TRAIN}/composites`, IMG_RE = /\.(png|jpe?g|webp)$/i;
+function kellyMockup(id) {
+  if (!id) return null; let fl = []; try { fl = fs.readdirSync(MOCK_DIR).filter(f => IMG_RE.test(f) && [id + '.', id + '-', id + '_', 'mockup-' + id + '-', 'mockup-' + id + '.', 'mockup_' + id].some(pre => f.startsWith(pre))); } catch { return null; }
+  const st = fl.map(f => { try { return [f, fs.statSync(`${MOCK_DIR}/${f}`)]; } catch { return null; } }).filter(x => x && x[1].size > 2000).sort((a, b) => b[1].mtimeMs - a[1].mtimeMs);
+  return st.length ? `${MOCK_DIR}/${st[0][0]}` : null;
+}
+function compositeFor(id) { const p = `${COMP_DIR}/${id}.jpg`; try { return id && fs.statSync(p).isFile() ? p : null; } catch { return null; } }
+// fill missing composites for any new card ids (plain python + PIL, no AI); run from watch()/push
+let compStamp = '';
+function ensureComposites(f) {
+  if (!f) return; let st; try { st = fs.statSync(f); } catch { return; } const stamp = f + st.mtimeMs; if (stamp === compStamp) return; compStamp = stamp;
+  let raw; try { raw = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return; }
+  const ids = (Array.isArray(raw) ? raw : raw?.cards || []).map(c => c?.id).filter(id => id && !compositeFor(id));
+  if (!ids.length) return;
+  try { execFileSync('python3', [path.join(path.dirname(fileURLToPath(import.meta.url)), 'mockup-composite.py'), f, COMP_DIR, ...ids], { stdio: 'ignore', timeout: 180000 }); log(`composites built for ${ids.join(', ')}`); }
+  catch (e) { log('composite build failed', e.message.slice(0, 120)); }
+}
 const pickF = (o, ...ks) => { for (const k of ks) { const v = k.split('.').reduce((a, x) => a?.[x], o); if (v !== undefined && v !== null && v !== '') return v; } return undefined; };
 function normCard(c, i, base) {
   // cards-v1 schema (designer): { printful: { name, blank, url, base_price_usd } | null, tapstitch: { name, sku, url, base_price_usd } | null,
@@ -107,7 +124,14 @@ function normCard(c, i, base) {
   const product = pickF(c, 'product', 'product_name', 'productName', 'product.name', 'item', 'blank_name');
   const blank = pickF(c, 'blank', 'sku', 'model', 'catalog', 'product_code', 'printful_product', 'tapstitch_sku', 'product.blank', 'product.sku');
   const imgs = [].concat(pickF(c, 'image', 'image_path', 'imagePath', 'img', 'thumb', 'mockup', 'preview', 'design_file', 'file', 'art', 'design.file') || []).concat(c.images || []);
-  const image = imgs.map(p => resolveImg(typeof p === 'object' ? p?.path || p?.file : p, base)).find(Boolean) || null;
+  const art = imgs.map(p => resolveImg(typeof p === 'object' ? p?.path || p?.file : p, base)).find(Boolean) || null;
+  // HQ #88: the wall shows the PRODUCT with our design on it. Order: explicit mockup fields in the card JSON (Kelly) ->
+  // Kelly's file in designs/swipe-train/mockups/ named for the card id -> our labeled composite -> flat design art.
+  const cid0 = String(pickF(c, 'id', 'cardId', 'slug') || '');
+  const mk = [].concat(pickF(c, 'mockup', 'mockupUrl', 'mockup_url', 'productImage', 'product_image', 'mockup_path', 'mockup_file') || []).concat(c.mockups || c.mockup_files || [])
+    .map(p => resolveImg(typeof p === 'object' ? p?.path || p?.file : p, base)).find(Boolean);
+  const km = mk ? null : kellyMockup(cid0), cm = mk || km ? null : compositeFor(cid0);
+  const image = mk || km || cm || art, mock = mk || km ? 'designer' : cm ? 'composite' : null;
   const colors = pickF(c, 'colors', 'color', 'colorways', 'colorway', 'garment_color');
   return { card: {
     id: clip(pickF(c, 'id', 'cardId', 'slug') || `card-${i + 1}`, 60), title: clip(pickF(c, 'title', 'name', 'idea') || (product ? String(product) : `Idea ${i + 1}`), 70),
@@ -116,11 +140,11 @@ function normCard(c, i, base) {
     supplier: sup, blank: clip(typeof blank === 'object' ? JSON.stringify(blank) : blank || '', 60), technique: clip(pickF(c, 'technique', 'print_method', 'method', 'decoration', 'print') || '', 30),
     colors: (Array.isArray(colors) ? colors : colors ? String(colors).split(/\s*[,/|]\s*/) : []).map(x => clip(typeof x === 'object' ? x?.name : x, 24)).filter(Boolean).slice(0, 6),
     placement: clip(pickF(c, 'placement', 'print_area', 'location', 'position') || '', 30), price: clip(pickF(c, 'price', 'base_price', 'cost', 'from') || '', 20),
-    src: clip(pickF(c, 'src', 'source', 'sources', 'notes', 'ref') || '', 120), image, ground: /^#[0-9a-f]{6}$/i.test(c.ground || c.bg || '') ? (c.ground || c.bg) : null,
+    src: clip(pickF(c, 'src', 'source', 'sources', 'notes', 'ref') || '', 120), image, mock, ground: /^#[0-9a-f]{6}$/i.test(c.ground || c.bg || '') ? (c.ground || c.bg) : null,
   } };
 }
 export function loadDeck() {
-  const f = newestCardsFile(); let raw = null, why = '';
+  const f = newestCardsFile(); let raw = null, why = ''; ensureComposites(f);
   if (f) { try { raw = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { why = `${path.basename(f)} unreadable (${e.message.slice(0, 60)}), using seed`; } }
   const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.cards) ? raw.cards : Array.isArray(raw?.deck) ? raw.deck : null;
   let cards = [], dropped = [], source = 'seed', label = 'Seed deck · real Printful + Tapstitch options';
@@ -130,15 +154,17 @@ export function loadDeck() {
     if (cards.length) { source = path.basename(f); label = clip(raw?.title || raw?.name || `Kelly’s deck ${raw?.version || source} · ${cards.length} cards · Printful + Tapstitch`, 60); }
   } else if (f && !why) why = `${path.basename(f)} has no cards yet, using seed`;
   if (!cards.length) cards = SEED.map(c => ({ ...c, image: fs.existsSync(c.image) ? c.image : null }));
-  const id = crypto.createHash('sha1').update(JSON.stringify(cards.map(c => [c.id, c.title, c.product, c.supplier, c.blank, c.image]))).digest('hex').slice(0, 12);
+  const mt = p => { try { return Math.round(fs.statSync(p).mtimeMs); } catch { return 0; } };
+  const id = crypto.createHash('sha1').update(JSON.stringify(cards.map(c => [c.id, c.title, c.product, c.supplier, c.blank, c.image, c.image && mt(c.image), c.mock]))).digest('hex').slice(0, 12);
   return { id, source, label, file: f, cards, dropped, note: why, at: Date.now() };
 }
 
-function thumb(p, ground, size = 300) {
+function thumb(p, ground, size = 300, mock = null) {
+  if (p && mock) size = 480;
   if (!p) return null; let st; try { st = fs.statSync(p); } catch { return null; }
-  const key = `${THUMBS}/${crypto.createHash('sha1').update('crop2|' + p + '|' + st.mtimeMs + '|' + ground + '|' + size).digest('hex').slice(0, 20)}.jpg`;
+  const key = `${THUMBS}/${crypto.createHash('sha1').update('crop2|' + p + '|' + st.mtimeMs + '|' + ground + '|' + size + '|' + (mock || '')).digest('hex').slice(0, 20)}.jpg`;
   if (!fs.existsSync(key)) {
-    const bg = ground || (/cream|white/i.test(path.basename(p)) ? '#1B2A4A' : '#F3EFE6');
+    const bg = mock ? '#ECEAE6' : ground || (/cream|white/i.test(path.basename(p)) ? '#1B2A4A' : '#F3EFE6');
     try {
       execFileSync('python3', ['-c', `
 import sys
@@ -147,18 +173,19 @@ n = int(sys.argv[4]); im = Image.open(sys.argv[1])
 if im.mode in ('RGBA', 'LA', 'P'):
     im = im.convert('RGBA'); bb = im.split()[-1].getbbox()
     if bb: pad = max(8, (bb[2] - bb[0]) // 20); im = im.crop((max(0, bb[0] - pad), max(0, bb[1] - pad), min(im.width, bb[2] + pad), min(im.height, bb[3] + pad)))
-im.thumbnail((int(n * .9), int(n * .9)))
-bg = Image.new('RGB', (n, n), sys.argv[3])
+mk = len(sys.argv) > 5 and sys.argv[5] == 'mock'
+im.thumbnail((n, n) if mk else (int(n * .9), int(n * .9)))
+bg = Image.new('RGB', (n, n), im.convert('RGB').getpixel((3, 3)) if mk and im.mode not in ('RGBA', 'LA', 'P') else sys.argv[3])
 if im.mode in ('RGBA', 'LA', 'P'): im = im.convert('RGBA'); bg.paste(im, ((n - im.width) // 2, (n - im.height) // 2), im.split()[-1])
 else: bg.paste(im.convert('RGB'), ((n - im.width) // 2, (n - im.height) // 2))
-bg.save(sys.argv[2], 'JPEG', quality=70, optimize=True)`, p, key, bg, String(size)], { stdio: 'ignore', timeout: 30000 });
+bg.save(sys.argv[2], 'JPEG', quality=78 if mk else 70, optimize=True)`, p, key, bg, String(size), mock ? 'mock' : ''], { stdio: 'ignore', timeout: 30000 });
     } catch { return null; }
   }
   try { return 'data:image/jpeg;base64,' + fs.readFileSync(key).toString('base64'); } catch { return null; }
 }
 function feed(deck) {
   return { type: 'swipe-deck', v: 1, at: Date.now(), id: deck.id, label: deck.label, source: deck.source, note: deck.note || '',
-    cards: deck.cards.map(c => { const { image, src, ...rest } = c; return { ...rest, src: src || '', hasImg: !!image, d: thumb(image, c.ground) }; }) };
+    cards: deck.cards.map(c => { const { image, src, ...rest } = c; return { ...rest, src: src || '', hasImg: !!image, d: thumb(image, c.ground, 300, c.mock) }; }) };
 }
 
 // ---------- publishing (same per-device encryption as work-live) ----------

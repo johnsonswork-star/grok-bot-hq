@@ -86,21 +86,24 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     const X = 172, Y = HEAD + 22, Wd = CW - 344, Ht = CH - HEAD - FOOT - 44;
     g.save(); g.globalAlpha = alpha; g.translate(X + Wd / 2 + ox, Y + Ht / 2); g.rotate(rot); g.translate(-Wd / 2, -Ht / 2);
     g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 24; g.shadowOffsetY = 8; rr(g, 0, 0, Wd, Ht, 26); g.fillStyle = '#fbf8f2'; g.fill(); g.shadowColor = 'transparent';
-    const is = 330, iy = (Ht - is) / 2, im = imgs.get(c.id);
-    rr(g, 20, iy, is, is, 18); g.fillStyle = c.ground || '#1B2A4A'; g.fill();
-    if (im?.complete && im.naturalWidth) { g.save(); rr(g, 20, iy, is, is, 18); g.clip(); g.drawImage(im, 20, iy, is, is); g.restore(); }
+    // HQ #88: product mockups (design on the real blank) get a big image; flat art keeps the old small tile
+    const is = c.mock ? 486 : 330, iy = (Ht - is) / 2, im = imgs.get(c.id);
+    rr(g, 20, iy, is, is, 18); g.fillStyle = c.mock ? '#ECEAE6' : c.ground || '#1B2A4A'; g.fill();
+    if (im?.complete && im.naturalWidth) { g.save(); rr(g, 20, iy, is, is, 18); g.clip(); g.drawImage(im, 20, iy, is, is); g.restore();
+      if (c.mock === 'designer') { g.font = `800 20px ${FONT}`; const t = 'MOCKUP · KELLY', w2 = g.measureText(t).width + 24; rr(g, 30, iy + 10, w2, 34, 10); g.fillStyle = 'rgba(27,42,74,.88)'; g.fill(); g.fillStyle = '#F3E3B5'; g.textBaseline = 'middle'; g.fillText(t, 42, iy + 28); } }
     else { g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 26px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.hasImg ? 'loading art…' : 'no art yet', 20 + is / 2, iy + is / 2); g.textAlign = 'left'; }
     const tx = is + 48, tw = Wd - tx - 28; let ty = 30;
-    g.textBaseline = 'top'; g.fillStyle = '#1b2a4a'; g.font = `800 42px ${FONT}`;
-    for (const l of wrap(g, c.title, tw, 2)) { g.fillText(l, tx, ty); ty += 50; }
-    ty += 6; g.font = `500 29px ${FONT}`; g.fillStyle = '#3b4250';
-    for (const l of wrap(g, c.pitch, tw, 4)) { g.fillText(l, tx, ty); ty += 37; }
+    const sm = !!c.mock; g.textBaseline = 'top'; g.fillStyle = '#1b2a4a'; g.font = `800 ${sm ? 34 : 42}px ${FONT}`;
+    for (const l of wrap(g, c.title, tw, sm ? 3 : 2)) { g.fillText(l, tx, ty); ty += sm ? 41 : 50; }
+    ty += 6; g.font = `500 ${sm ? 24 : 29}px ${FONT}`; g.fillStyle = '#3b4250';
+    for (const l of wrap(g, c.pitch, tw, sm ? 4 : 4)) { g.fillText(l, tx, ty); ty += sm ? 31 : 37; }
     ty += 14; let cx = tx;
     const row = (items) => { for (const [t, bg, fg] of items) { if (!t) continue; g.font = `700 24px ${FONT}`; const need = g.measureText(t).width + 38; if (cx + need > tx + tw) { cx = tx; ty += 50; } cx += chip(t, cx, ty, bg, fg); } };
     row([[c.supplier, SUP_COL[c.supplier] || '#eee', '#1b2a4a'], [c.product_type, '#e9f5ec', '#1e5631'], [c.technique, '#f2eafa', '#4a2a6a']]);
     cx = tx; ty += 52; g.font = `600 27px ${FONT}`; g.fillStyle = '#1b2a4a'; g.textBaseline = 'top';
     const facts = [c.product && `${c.product}${c.blank && !String(c.product).includes(c.blank) ? ' · ' + c.blank : ''}`, c.colors?.length && `Colors: ${c.colors.join(', ')}`, c.placement && `Print: ${c.placement}`, c.price && `From ${c.price}`].filter(Boolean);
-    for (const f of facts) { for (const l of wrap(g, f, tw, 2)) { if (ty > Ht - 40) break; g.fillText(l, tx, ty); ty += 34; } }
+    if (sm) g.font = `600 23px ${FONT}`;
+    for (const f of facts) { for (const l of wrap(g, f, tw, 2)) { if (ty > Ht - 40) break; g.fillText(l, tx, ty); ty += sm ? 29 : 34; } }
     if (stamp) { g.save(); g.translate(Wd / 2, Ht / 2); g.rotate(stamp === 'keep' ? -0.25 : 0.25); g.globalAlpha = Math.min(1, alpha * 1.4); g.lineWidth = 10; const col = stamp === 'keep' ? '#2e9d4f' : '#d64545';
       g.strokeStyle = col; g.fillStyle = col; g.font = `900 110px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; const t = stamp === 'keep' ? 'KEEP' : 'PASS', mw = g.measureText(t).width + 60;
       g.strokeRect(-mw / 2, -75, mw, 150); g.fillText(t, 0, 4); g.restore(); }
@@ -115,7 +118,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     g.fillStyle = '#fff'; g.font = `900 36px ${FONT}`; g.textBaseline = 'middle'; g.fillText('DESIGN TRAINER', 28, 32);
     g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 22px ${FONT}`; g.fillText(deck ? `${deck.label}${deck.source === 'seed' ? '' : ''}` : 'Kelly Kapoor · Printful + Tapstitch', 30, 64);
     const { k, p, n } = counts(), cur = curId();
-    if (deck) { g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `900 40px ${FONT}`; g.fillText(`${Math.min(k + p + (cur ? 1 : 0), n)} / ${n}`, CW - 28, 34); g.font = `700 22px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`✓ ${k} kept`, CW - 150, 68); g.fillStyle = '#ffaaaa'; g.fillText(`✗ ${p} passed`, CW - 28, 68); g.textAlign = 'left';
+    if (deck) { g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `900 40px ${FONT}`; g.fillText(`${Math.min(k + p + (cur ? 1 : 0), n)} / ${n}`, CW - 28, 34); g.font = `700 22px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`✓ ${k} kept`, CW - 182, 68); g.fillStyle = '#ffaaaa'; g.fillText(`✗ ${p} passed`, CW - 28, 68); g.textAlign = 'left';
       g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(0, HEAD - 4, CW, 4); g.fillStyle = '#c4a35a'; g.fillRect(0, HEAD - 4, CW * (n ? (k + p) / n : 0), 4); }
     // body
     if (!deck) {
