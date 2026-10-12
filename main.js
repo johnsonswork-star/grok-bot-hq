@@ -169,7 +169,7 @@ function moved(dx, dz, fn) {
 // Layout = Dunder Mifflin Scranton, modeled on the set from The Office (HQ #30 / #36 / #38 / #42). Front door + Pam's reception on the
 // south wall, Michael's glass office in the south-east corner with the conference room right behind it, the annex past that,
 // the bullpen in the middle with desks butted together, kitchen + break room in the back west corner.
-const LAYOUT = 'scranton-9-building'; // bump when the floor plan changes: live reload then drops Chris at the front door instead of inside a new wall
+const LAYOUT = 'scranton-10-wh-stairs'; // bump when the floor plan changes: live reload then drops Chris at the front door instead of inside a new wall
 // HQ #42: set scale 18 x 12 m. HQ #43: a bit roomier, 22 x 15 m (was 26 x 18, before that 40 x 28) with >= 1.2 m aisles;
 // the extra room all went into the bullpen aisles + walkways, rooms keep their show proportions. 3 m drop ceiling.
 const W = 22, D = 15, H = 3.0, X0 = -11, X1 = 11, Z0 = -7.5, Z1 = 7.5;
@@ -205,8 +205,9 @@ function windowWall(axis, fixed, from, to, inwardSign) {
 }
 windowWall('z', Z0, X0, X1, 1);   // north: full glass
 windowWall('x', X1, Z0, Z1, -1);  // east: full glass
-// west wall (water cooler on it). HQ #73 doorway, HQ #79: it now opens onto the STAIRS DOWN to the warehouse (z -0.5..1.3)
-const WH_DOOR = [-0.5, 1.3];
+// west wall (water cooler on it). HQ #73 doorway, HQ #79 stairs; HQ #83: the door is now a steel door just north of the
+// cooler (z -4.25..-3.05) that opens onto the top landing of the warehouse's corner metal stairs (show-accurate)
+const WH_DOOR = [-4.25, -3.05];
 box(0.2, H, WH_DOOR[0] - Z0, M.wall, X0, H / 2, (Z0 + WH_DOOR[0]) / 2, scene, false);
 box(0.2, H, Z1 - WH_DOOR[1], M.wall, X0, H / 2, (WH_DOOR[1] + Z1) / 2, scene, false);
 box(0.2, H - 2.4, WH_DOOR[1] - WH_DOOR[0], M.wall, X0, (2.4 + H) / 2, (WH_DOOR[0] + WH_DOOR[1]) / 2, scene, false);
@@ -273,8 +274,11 @@ colliders.push(
 );
 // HQ #79: two floors. Colliders for the warehouse downstairs live in BCOL; `colliders` is the street-level set (office + site).
 // The stairwell runs west from the door by the water cooler: landing x -11..-12.2, 21 steps down to x -18.1, open into the warehouse at x -18.8.
-const BY = -4.4, BH = 4.2;                                      // warehouse floor height, ceiling height (above its floor)
-const STAIR = { x0: -18.8, x1: X0, z0: WH_DOOR[0], z1: WH_DOOR[1], top: -12.2, bot: -18.1 };
+const BY = -4.4, BH = 7.6;                                      // warehouse floor height, ceiling height (HQ #83: double-height, like the show's warehouse)
+// HQ #83: warehouse stairs = the show's open steel switchback in the warehouse's NE corner. Top landing (y 0) outside the
+// office door, flight A runs north down the east wall to a corner landing, flight B runs west down the north wall to the floor.
+const WST = { xe: -11.12, xr: -12.3, zP: -2.85, zA0: -4.6, zA1: -6.78, zN: -7.88, xB1: -16.2, nA: 8, nB: 15 };
+WST.rise = -BY / (WST.nA + WST.nB); WST.yM = -WST.rise * WST.nA;
 const BASE = { x0: -27, x1: X0, z0: -8, z1: 10.1 };              // warehouse footprint (HQ #81: ground floor of the building's west wing)
 const BCOL = [];
 BCOL.push({ minX: -100, maxX: SITE.x0, minZ: -100, maxZ: 100 }, { minX: SITE.x1, maxX: 100, minZ: -100, maxZ: 100 },   // edge of the property (ground level)
@@ -375,7 +379,7 @@ const ROOMS = [
   { id: 'hall',    name: '2nd-floor hallway (Vance Refrigeration across the hall)', x0: -11, x1: 11, z0: 7.5, z1: 10.1, outside: true, level: 0 },
   { id: 'elev',    name: 'the elevator',                       x0: 3.0,  x1: 5.0,  z0: 10.1, z1: 12.3, outside: true, level: 'any' },
   { id: 'mstairs', name: 'the building stairwell (1 ↔ 2)',     x0: 5.4,  x1: 8.2,  z0: 10.1, z1: 15.4, outside: true, level: 'any' },
-  { id: 'stairs',  name: 'the stairs down to the warehouse',  x0: -18.8, x1: -11, z0: -0.5, z1: 1.3, outside: true, level: 'any' },
+  { id: 'stairs',  name: 'the metal stairs down to the warehouse (NE corner)', x0: -16.2, x1: -11, z0: -7.9, z1: -2.85, outside: true, level: 'any' },
   { id: 'warehouse', name: 'the warehouse (downstairs, ground floor)', x0: -27, x1: -11, z0: -8, z1: 10.1, outside: true, level: -1 },
   { id: 'lobbyhall', name: 'the building lobby (elevator + stairs)', x0: -11, x1: 8.4, z0: 7.7, z1: 10.1, outside: true, level: -1 },
   { id: 'lobby',   name: 'the building lobby (front entrance)', x0: -3.2, x1: 2.8, z0: 10.1, z1: 15.5, outside: true, level: -1 },
@@ -857,50 +861,108 @@ moved(-2, -1.5, () => {
   }
 });
 
-// ---------- stairs down to the warehouse (HQ #79) ----------
-// Like the show, the warehouse is DOWNSTAIRS. The old west doorway by the water cooler now opens onto a stairwell:
-// a short landing, then 21 steps straight down (4.4 m) into the warehouse basement under the west side of the site.
-// iPad: the whole basement lives in one group that is only drawn when you're on the stairs / downstairs (or standing by
-// the stair door); upstairs it costs zero draw calls, which is cheaper than the old always-on west building.
-// HQ #81: the stairwell is inside the building's west wing now (2nd floor -> warehouse on the ground floor). Its meshes are
-// one group (WSTAIR) so it stays drawn from the warehouse while the rest of the 2nd floor is hidden.
-const WSTAIR = new THREE.Group(); scene.add(WSTAIR);
+// ---------- warehouse stairs (HQ #79 -> rebuilt for HQ #83 / #82) ----------
+// Show reference (OfficeTally set photo "Dunder Mifflin warehouse stairway", S3 "Back from Vacation", S2 "Boys and Girls"):
+// the office is upstairs, the warehouse below, joined by an OPEN STEEL STAIR tucked in the warehouse corner: black steel
+// stringers, open treads, square-tube posts with top + mid rails (scaffold look), a switchback landing in the corner, and a
+// steel top landing in front of a plain steel door into the upstairs. Rebuilt to match: door by the cooler -> top landing ->
+// flight A down the east wall -> corner landing -> flight B down the north wall -> warehouse floor.
+// iPad: every stair part is merged into a handful of meshes (one per material) in WSTAIR, drawn only when the warehouse is.
+const WSTAIR = new THREE.Group(); scene.add(WSTAIR); const ws0Mark = scene.children.length;
+const WHD = { open: 0, pivot: null, col: { minX: X0 - 0.12, maxX: X0 + 0.1, minZ: WH_DOOR[0], maxZ: WH_DOOR[1] } };
 {
-  const ws0 = scene.children.length;
-  const block = std('#d8d2c4', 0.92), tread = std('#7c7f84', 0.8), nose = new THREE.MeshBasicMaterial({ color: '#e8c21c' }), rail = std('#3b3f45', 0.45, 0.6);
-  const zc = (STAIR.z0 + STAIR.z1) / 2, sw = STAIR.z1 - STAIR.z0, tl = STAIR.x1 - STAIR.x0, xc = (STAIR.x0 + STAIR.x1) / 2, top = H, t = 0.2;
-  // stairwell side walls run from the warehouse floor up to the stairwell roof (one box each side)
-  for (const z of [STAIR.z0 - t / 2, STAIR.z1 + t / 2]) box(tl, top - BY, t, block, xc, (top + BY) / 2, z, scene, false);
-  box(t, top, sw + 2 * t, block, STAIR.x0 - t / 2, top / 2 - 0.1, zc, scene, false);       // west end above ground (open below it into the warehouse)
-  box(tl + t, 0.16, sw + 2 * t, std('#8d8a84', 0.9), xc - t / 2, top + 0.08, zc, scene, true); // stairwell roof
-  // stair colliders: side walls on BOTH floors; the upstairs end wall only upstairs
-  const sideA = { minX: STAIR.x0 - t, maxX: STAIR.x1, minZ: STAIR.z0 - t - 0.02, maxZ: STAIR.z0 }, sideB = { minX: STAIR.x0 - t, maxX: STAIR.x1, minZ: STAIR.z1, maxZ: STAIR.z1 + t + 0.02 };
-  colliders.push(sideA, sideB, { minX: STAIR.x0 - t, maxX: STAIR.x0 + 0.02, minZ: STAIR.z0 - t, maxZ: STAIR.z1 + t });
-  BCOL.push(sideA, sideB);
-  // top landing (office floor level) + the flight. Steps are solid blocks so nothing shows underneath.
-  box(STAIR.x1 + 0.1 - STAIR.top, -BY, sw, std('#a9a49a', 0.85), (STAIR.x1 + 0.1 + STAIR.top) / 2, BY / 2, zc, scene, false);
-  const N = 21, run = (STAIR.top - STAIR.bot) / N, rise = -BY / N;
-  for (let i = 0; i < N; i++) {
-    const ty = -(i + 1) * rise, x0 = STAIR.top - i * run;
-    box(run, ty - BY, sw, tread, x0 - run / 2, (ty + BY) / 2, zc, scene, false);
-    box(0.05, 0.012, sw, nose, x0 - run + 0.025, ty + 0.006, zc, scene, false);            // yellow nosing strip
+  const S = WST, steelM = std('#26292d', 0.5, 0.65), treadM = std('#4a4e54', 0.55, 0.6), galvM = std('#8c9298', 0.4, 0.7), yelM = std('#e8c21c', 0.6);
+  const parts = new Map(); // material -> [geometry]
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _one = new THREE.Vector3(1, 1, 1);
+  const put = (mat, geo) => { if (!parts.has(mat)) parts.set(mat, []); parts.get(mat).push(geo); };
+  const bx = (mat, w, h, d, x, y, z) => put(mat, new THREE.BoxGeometry(w, h, d).translate(x, y, z));
+  // beam between two points (profile w x h, h kept "up")
+  const beam = (mat, a, b, w, h) => {
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), f = B.clone().sub(A), len = f.length(); f.normalize();
+    const r = new THREE.Vector3(0, 1, 0).cross(f).normalize(), u = f.clone().cross(r).normalize();
+    const g = new THREE.BoxGeometry(w, h, len); g.applyMatrix4(_m.makeBasis(r, u, f).setPosition(A.add(B).multiplyScalar(0.5))); put(mat, g);
+  };
+  const post = (x, z, y0, y1, s0 = 0.05) => bx(steelM, s0, y1 - y0, s0, x, (y0 + y1) / 2, z);
+  const clamp = (x, z, y) => bx(galvM, 0.075, 0.075, 0.075, x, y, z);             // scaffold couplers at the joints
+  const RT = 1.0, RM = 0.52;                                                        // top + mid rail heights over the nosing line
+  const xc = (S.xr + S.xe) / 2, zc = (S.zN + S.zA1) / 2, runA = (S.zA0 - S.zA1) / S.nA, runB = (S.xr - S.xB1) / S.nB;
+  // top landing (y 0) + corner landing (y yM): steel deck + toe kick, square-tube legs to the warehouse floor, X bracing
+  bx(treadM, S.xe - S.xr, 0.06, S.zP - S.zA0, xc, -0.03, (S.zP + S.zA0) / 2);
+  bx(treadM, S.xe - S.xr, 0.06, S.zA1 - S.zN, xc, S.yM - 0.03, zc);
+  bx(steelM, S.xe - S.xr, 0.18, 0.06, xc, -0.12, S.zP); bx(steelM, 0.06, 0.18, S.zP - S.zA0, S.xr, -0.12, (S.zP + S.zA0) / 2);
+  bx(yelM, S.xe - S.xr, 0.012, 0.05, xc, 0.006, S.zA0 + 0.03);                      // safety edge where the stairs drop away
+  for (const z of [S.zP, S.zA0]) { post(S.xr, z, BY, 0, 0.08); post(S.xe - 0.05, z, BY, 0, 0.08); }
+  for (const [x, z] of [[S.xr, S.zA1], [S.xr, S.zN + 0.05]]) post(x, z, BY, S.yM, 0.08);
+  beam(steelM, [S.xr, BY + 0.2, S.zP], [S.xr, -0.3, S.zA0], 0.04, 0.04); beam(steelM, [S.xr, BY + 0.2, S.zA0], [S.xr, -0.3, S.zP], 0.04, 0.04);
+  beam(steelM, [S.xr, BY + 0.2, S.zA1], [S.xr, S.yM - 0.3, S.zN + 0.05], 0.04, 0.04);
+  // treads (open, no risers) + side stringers. Flight A: z zA0 -> zA1 going down; flight B: x xr -> xB1 going down
+  for (let i = 0; i < S.nA - 1; i++) { const y = -(i + 1) * S.rise, z = S.zA0 - (i + 0.5) * runA; bx(treadM, S.xe - S.xr - 0.08, 0.04, runA + 0.03, xc, y - 0.02, z); bx(galvM, S.xe - S.xr - 0.08, 0.02, 0.03, xc, y - 0.01, z + runA / 2); }
+  for (let i = 0; i < S.nB; i++) { const y = S.yM - (i + 1) * S.rise, x = S.xr - (i + 0.5) * runB; bx(treadM, runB + 0.03, 0.04, S.zA1 - S.zN - 0.08, x, y - 0.02, zc); bx(galvM, 0.03, 0.02, S.zA1 - S.zN - 0.08, x + runB / 2, y - 0.01, zc); }
+  for (const x of [S.xr + 0.03, S.xe - 0.05]) beam(steelM, [x, -0.1, S.zA0 + 0.05], [x, S.yM - 0.1, S.zA1], 0.05, 0.26);
+  for (const z of [S.zA1 - 0.03, S.zN + 0.05]) beam(steelM, [S.xr, S.yM - 0.1, z], [S.xB1 - 0.1, BY + 0.05, z], 0.05, 0.26);
+  // open-side guard rails (square tube posts, top + mid rails, couplers): top landing south + west, flight A west, flight B south
+  const yA = (z) => S.yM * (S.zA0 - z) / (S.zA0 - S.zA1), yB = (x) => S.yM + (BY - S.yM) * (S.xr - x) / (S.xr - S.xB1);
+  for (const [x0, x1] of [[S.xe, S.xr]]) for (const h of [RT, RM]) beam(steelM, [x0, h, S.zP], [x1, h, S.zP], 0.045, 0.045);
+  for (const h of [RT, RM]) beam(steelM, [S.xr, h, S.zP], [S.xr, h, S.zA0], 0.045, 0.045);
+  for (const h of [RT, RM]) beam(steelM, [S.xr, h, S.zA0], [S.xr, S.yM + h, S.zA1], 0.045, 0.045);
+  for (const h of [RT, RM]) beam(steelM, [S.xr, S.yM + h, S.zA1], [S.xB1 + 0.05, BY + h, S.zA1], 0.045, 0.045);
+  for (const [x, z, y] of [[S.xe - 0.05, S.zP, 0], [xc, S.zP, 0], [S.xr, S.zP, 0], [S.xr, S.zA0, 0]]) { post(x, z, y, y + RT + 0.04); clamp(x, z, y + RT); clamp(x, z, y + RM); }
+  for (let k = 1; k <= 2; k++) { const z = S.zA0 - (S.zA0 - S.zA1) * k / 2, y = yA(z); post(S.xr, z, y, y + RT + 0.04); clamp(S.xr, z, y + RT); clamp(S.xr, z, y + RM); }
+  for (let k = 1; k <= 4; k++) { const x = S.xr - (S.xr - S.xB1) * k / 4, y = yB(x); post(x, S.zA1, y, y + RT + 0.04); clamp(x, S.zA1, y + RT); clamp(x, S.zA1, y + RM); }
+  // wall-side handrails on brackets (east wall along flight A, north wall along flight B)
+  beam(galvM, [S.xe - 0.08, 0.9, S.zA0], [S.xe - 0.08, S.yM + 0.9, S.zA1], 0.04, 0.04);
+  beam(galvM, [S.xr, S.yM + 0.9, S.zN + 0.08], [S.xB1, BY + 0.9, S.zN + 0.08], 0.04, 0.04);
+  for (let k = 0; k <= 2; k++) { const z = S.zA0 - 0.2 - k * 0.9; bx(galvM, 0.08, 0.03, 0.03, S.xe - 0.04, yA(z) + 0.87, z); }
+  for (let k = 0; k <= 4; k++) { const x = S.xr - 0.3 - k * 0.85; bx(galvM, 0.03, 0.03, 0.08, x, yB(x) + 0.87, S.zN + 0.04); }
+  // steel door frame on the warehouse side + a closer arm
+  for (const z of WH_DOOR) bx(steelM, 0.08, 2.3, 0.07, S.xe - 0.04, 1.15, z);
+  bx(steelM, 0.08, 0.08, WH_DOOR[1] - WH_DOOR[0] + 0.07, S.xe - 0.04, 2.3, (WH_DOOR[0] + WH_DOOR[1]) / 2);
+  for (const [mat, list] of parts) { const g = mergeBoxes(list); const m = new THREE.Mesh(g, mat); m.castShadow = false; m.receiveShadow = true; WSTAIR.add(m); }
+  // the door itself (steel, narrow wire-glass lite, push bar), hinged on the south jamb, swings out onto the top landing
+  const officeSide = new Set(); // these stay drawn with the office (door leaf, its office-side frame + plate)
+  const pv = new THREE.Group(); pv.position.set(X0 - 0.12, 0, WH_DOOR[1] - 0.02); scene.add(pv); WHD.pivot = pv; officeSide.add(pv);
+  const dw = WH_DOOR[1] - WH_DOOR[0] - 0.04;
+  box(0.05, 2.37, dw, M.whDoor, 0, 1.185, -dw / 2, pv, false);
+  box(0.056, 0.7, 0.14, std('#9fb4c0', 0.1, 0.3), 0, 1.5, -dw + 0.28, pv, false);
+  for (const sx of [-1, 1]) box(0.04, 0.04, dw - 0.25, galvM, sx * 0.05, 1.0, -dw / 2 - 0.05, pv, false);
+  colliders.push(WHD.col);
+  // stair light (count of lights never changes; it just sits up here now)
+  const stairLight = new THREE.PointLight('#fff4e0', 5, 10, 2); stairLight.position.set(-12.4, 1.8, -5.4); scene.add(stairLight);
+  // signs, mounted (not hanging): warehouse side over the door, at the foot of the stairs, on the corner landing; office side over the door
+  plate('DUNDER MIFFLIN', S.xe - 0.01, 2.62, (WH_DOOR[0] + WH_DOOR[1]) / 2, -Math.PI / 2, { w: 0.8, sub: 'OFFICE · SUITE 200 · AUTHORIZED' });
+  plate('↑ OFFICE', S.xB1 - 0.7, BY + 1.9, S.zN + 0.015, 0, { w: 0.62, sub: 'STAIRS · DUNDER MIFFLIN' });
+  plate('WATCH YOUR STEP', S.xr + 0.6, S.yM + 1.75, S.zN + 0.015, 0, { w: 0.6 });
+  officeSide.add(plate('WAREHOUSE', X0 + 0.115, 2.72, (WH_DOOR[0] + WH_DOOR[1]) / 2, Math.PI / 2, { w: 0.85, sub: '↓ STAIRS DOWN · AUTHORIZED PERSONNEL' }));
+  for (const z of WH_DOOR) officeSide.add(box(0.26, 2.42, 0.08, M.walnut, X0 + 0.04, 1.21, z, scene, false));
+  officeSide.add(box(0.26, 0.08, WH_DOOR[1] - WH_DOOR[0] + 0.08, M.walnut, X0 + 0.04, 2.42, (WH_DOOR[0] + WH_DOOR[1]) / 2, scene, false));
+  // colliders. 2nd-floor set (level 0): top landing + flight A + corner landing + upper flight B, closed by rails + walls.
+  // Ground set (level -1): lower flight B rail + the space under flight A / top landing is solid (no walking under the stairs).
+  const railA = { minX: S.xr - 0.08, maxX: S.xr, minZ: S.zA1, maxZ: S.zP + 0.08 }, railP = { minX: S.xr - 0.08, maxX: X0 - 0.1, minZ: S.zP, maxZ: S.zP + 0.08 };
+  const railB = { minX: S.xB1 - 0.02, maxX: S.xr, minZ: S.zA1, maxZ: S.zA1 + 0.08 }, northW = { minX: S.xB1 - 1, maxX: X0, minZ: S.zN - 0.3, maxZ: S.zN };
+  colliders.push(railA, railP, railB, northW, { minX: X0 - 0.14, maxX: X0, minZ: S.zN - 0.3, maxZ: Z0 });
+  BCOL.push(railB, { minX: S.xr - 0.08, maxX: X0, minZ: S.zA1, maxZ: S.zP + 0.1 });
+  for (const o of scene.children.slice(ws0Mark)) if (!o.isLight && o !== WSTAIR && !officeSide.has(o)) WSTAIR.add(o);
+}
+function updateWhDoor(dt, px, pz, lv) {
+  const near = lv === 0 && player.y > -1.0 && Math.hypot(px - X0, pz - (WH_DOOR[0] + WH_DOOR[1]) / 2) < 2.4;
+  WHD.hold = near ? 1.0 : Math.max(0, (WHD.hold || 0) - dt);
+  const target = near || WHD.hold > 0 ? 1 : 0, k = target ? 2.4 : 1.3;
+  WHD.open += Math.sign(target - WHD.open) * Math.min(Math.abs(target - WHD.open), k * dt);
+  const e = WHD.open * WHD.open * (3 - 2 * WHD.open); WHD.pivot.rotation.y = e * 1.55;
+  const shut = WHD.open < 0.45; WHD.col.minX = shut ? X0 - 0.12 : 1e9; WHD.col.maxX = shut ? X0 + 0.1 : 1e9;
+}
+// merge a list of (non-indexed or indexed) BufferGeometries that share position/normal/uv into one
+function mergeBoxes(list) {
+  let nv = 0, ni = 0; for (const g of list) { nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), idx = new Uint32Array(ni);
+  let ov = 0, oi = 0;
+  for (const g of list) {
+    const c = g.attributes.position.count; pos.set(g.attributes.position.array, ov * 3); nor.set(g.attributes.normal.array, ov * 3); uv.set(g.attributes.uv.array, ov * 2);
+    if (g.index) { const a = g.index.array; for (let i = 0; i < a.length; i++) idx[oi + i] = a[i] + ov; oi += a.length; } else { for (let i = 0; i < c; i++) idx[oi + i] = ov + i; oi += c; }
+    ov += c; g.dispose();
   }
-  // handrails both sides (one sloped bar each) + wall-mounted lights
-  const slope = Math.atan2(-BY, STAIR.top - STAIR.bot), rl = Math.hypot(-BY, STAIR.top - STAIR.bot);
-  for (const z of [STAIR.z0 + 0.06, STAIR.z1 - 0.06]) {
-    const r = box(rl, 0.05, 0.05, rail, (STAIR.top + STAIR.bot) / 2, BY / 2 + 0.92, z, scene, false); r.rotation.z = slope;
-  }
-  for (const [x, y] of [[-11.8, 2.75], [-15.2, 0.9], [-18.2, -1.9]]) { const l = box(0.6, 0.04, 0.25, M.light, x, y, zc, scene, false); }
-  const stairLight = new THREE.PointLight('#fff4e0', 5, 9, 2); stairLight.position.set(-14.8, 0.6, zc); scene.add(stairLight);
-  // signs: over the office-side doorway, and a WATCH YOUR STEP on the landing wall
-  plate('WAREHOUSE', X0 + 0.115, 2.72, zc, Math.PI / 2, { w: 0.85, sub: '↓ STAIRS DOWN · AUTHORIZED PERSONNEL' });
-  plate('WATCH YOUR STEP', -12.0, 1.7, STAIR.z1 - 0.005, Math.PI, { w: 0.6 });
-  plate('↓ WAREHOUSE', -12.0, 1.7, STAIR.z0 + 0.005, 0, { w: 0.6, sub: 'SHIPPING & RECEIVING' });
-  // steel door propped open against the landing wall
-  box(1.15, 2.25, 0.05, M.whDoor, X0 - 0.62, 1.125, STAIR.z1 - 0.04, scene, false);
-  for (const z of WH_DOOR) box(0.26, 2.42, 0.08, M.walnut, X0, 1.21, z, scene, false);
-  box(0.26, 0.08, WH_DOOR[1] - WH_DOOR[0] + 0.08, M.walnut, X0, 2.42, zc, scene, false);
-  for (const o of scene.children.slice(ws0)) if (!o.isLight) WSTAIR.add(o);
+  const m = new THREE.BufferGeometry(); m.setAttribute('position', new THREE.BufferAttribute(pos, 3)); m.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); m.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); m.setIndex(new THREE.BufferAttribute(idx, 1));
+  m.computeBoundingSphere(); return m;
 }
 
 // ---------- the warehouse, downstairs (HQ #73 content, moved under the site for HQ #79) ----------
@@ -908,7 +970,7 @@ const WSTAIR = new THREE.Group(); scene.add(WSTAIR);
 // the basketball hoop, the loading dock. Built at floor y = 0 and dropped into BASEMENT (y = BY); its colliders go to BCOL.
 const BASEMENT = new THREE.Group(); BASEMENT.position.y = BY; BASEMENT.visible = false; scene.add(BASEMENT);
 const whLight = new THREE.PointLight('#fff1d6', 0, 15, 1.6), whLight2 = new THREE.PointLight('#fff1d6', 0, 15, 1.6);
-whLight.position.set(-22.5, BY + 3.7, -3.5); whLight2.position.set(-15.0, BY + 3.7, 3.4); scene.add(whLight, whLight2);
+whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5.4, 0.4); scene.add(whLight, whLight2);
 {
   const n0 = scene.children.length, c0 = colliders.length;
   const conc = std('#a9a8a3', 0.95), block = std('#d4cfc2', 0.92), rackOr = std('#e2701f', 0.55, 0.3), rackBl = std('#2a5ca8', 0.55, 0.3);
@@ -916,22 +978,25 @@ whLight.position.set(-22.5, BY + 3.7, -3.5); whLight2.position.set(-15.0, BY + 3
   box(ww, 0.02, wd, conc, cx, 0.0, cz, scene, false);                                        // slab
   // ceiling (with the stair opening left out): north, south, and the strip west of the stairs
   const ceilM = std('#8f949a', 0.9, 0, { emissive: '#9aa0a6', emissiveIntensity: 0.25 });
-  for (const [x0, x1, z0, z1] of [[B.x0, B.x1, B.z0, STAIR.z0 - 0.2], [B.x0, B.x1, STAIR.z1 + 0.2, B.z1], [B.x0, STAIR.x0 - 0.2, STAIR.z0 - 0.2, STAIR.z1 + 0.2]]) {
+  for (const [x0, x1, z0, z1] of [[B.x0, B.x1, B.z0, B.z1]]) { // HQ #83: double height, no stair hole (the stairs are inside it now)
     const c = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), ceilM); c.rotation.x = Math.PI / 2; c.position.set((x0 + x1) / 2, BH, (z0 + z1) / 2); scene.add(c);
   }
   // exposed steel joists under the ceiling (one instanced mesh)
   { const n = Math.floor(ww / 1.6), j = new THREE.InstancedMesh(boxGeo(0.12, 0.3, 1), rackBl.clone(), n * 2), m4 = new THREE.Matrix4(); j.material.color.set('#55595f'); let k = 0;
     const seg = (x, z0, z1) => j.setMatrixAt(k++, m4.makeScale(1, 1, z1 - z0).setPosition(x, BH - 0.15, (z0 + z1) / 2));
-    for (let i = 0; i < n; i++) { const x = B.x0 + 0.8 + i * 1.6; if (x < STAIR.x0 - 0.3) seg(x, B.z0, B.z1); else { seg(x, B.z0, STAIR.z0 - 0.2); seg(x, STAIR.z1 + 0.2, B.z1); } } // joists stop at the stairwell
+    for (let i = 0; i < n; i++) { const x = B.x0 + 0.8 + i * 1.6; seg(x, B.z0, B.z1); }
     j.count = k; scene.add(j); }
-  // walls: N, W, E (stair tube splits the east wall), S with the dock door
+  // walls: N, W, E (office door up on the top landing + lobby door below), S with the dock door
   const DK = [-17.4, -14.4], dh = 3.2;
-  box(ww + t, BH, t, block, cx, BH / 2, B.z0, scene, false);
+  box(ww + t / 2 - 0.12, BH, t, block, (B.x0 - t / 2 + B.x1 - 0.12) / 2, BH / 2, B.z0, scene, false);
   box(t, BH, wd, block, B.x0, BH / 2, cz, scene, false);
-  box(t, BH, STAIR.z0 - B.z0, block, B.x1, BH / 2, (B.z0 + STAIR.z0) / 2, scene, false);
-  box(t, BH, WH_LOBBY_DOOR[0] - STAIR.z1, block, B.x1, BH / 2, (STAIR.z1 + WH_LOBBY_DOOR[0]) / 2, scene, false);
-  box(t, BH, B.z1 - WH_LOBBY_DOOR[1], block, B.x1, BH / 2, (WH_LOBBY_DOOR[1] + B.z1) / 2, scene, false);
-  box(t, BH - 2.3, WH_LOBBY_DOOR[1] - WH_LOBBY_DOOR[0], block, B.x1, (BH + 2.3) / 2, (WH_LOBBY_DOOR[0] + WH_LOBBY_DOOR[1]) / 2, scene, false);
+  // HQ #83: east wall = full block up to the office floor (local -BY); above that only a thin skin behind the office's own wall
+  const eastW = (z0, z1, y0, y1) => { if (z1 <= z0 || y1 <= y0) return; const lo = Math.min(y1, -BY);
+    if (lo > y0) box(t, lo - y0, z1 - z0, block, B.x1, (y0 + lo) / 2, (z0 + z1) / 2, scene, false);
+    const hi = Math.max(y0, -BY); if (y1 > hi) box(0.035, y1 - hi, z1 - z0, block, B.x1 - t / 2 + 0.0175, (hi + y1) / 2, (z0 + z1) / 2, scene, false); };
+  eastW(B.z0, WH_DOOR[0], 0, BH); eastW(WH_DOOR[1], WH_LOBBY_DOOR[0], 0, BH); eastW(WH_LOBBY_DOOR[1], B.z1, 0, BH);
+  eastW(WH_DOOR[0], WH_DOOR[1], 0, -BY); eastW(WH_DOOR[0], WH_DOOR[1], -BY + 2.42, BH);
+  eastW(WH_LOBBY_DOOR[0], WH_LOBBY_DOOR[1], 2.3, BH);
   // HQ #81: steel door (propped open) through to the building lobby + plates on the warehouse side
   for (const z of WH_LOBBY_DOOR) box(t + 0.06, 2.32, 0.08, M.whDoor, B.x1, 1.16, z, scene, false);
   box(0.05, 2.2, 1.12, M.whDoor, B.x1 - 0.65, 1.1, WH_LOBBY_DOOR[0] - 0.02 - 0.0, scene, false).rotation.y = Math.PI / 2;
@@ -957,9 +1022,9 @@ whLight.position.set(-22.5, BY + 3.7, -3.5); whLight2.position.set(-15.0, BY + 3
     scene.add(sh, gl); }
   // safety lines: forklift aisle + the walkway off the stairs
   box(0.08, 0.005, 13, yel, -24.6, 0.015, -1, scene, false); box(0.08, 0.005, 13, yel, -20.2, 0.015, -1, scene, false);
-  box(0.08, 0.005, 2.6, yel, STAIR.x0 - 0.2, 0.015, STAIR.z0 - 1.0, scene, false);
+  box(2.4, 0.005, 0.08, yel, WST.xB1 - 1.3, 0.015, WST.zA1 + 0.25, scene, false);
   { const hz = canvasTex(256, 64, (g, w, h) => { for (let i = -2; i < 12; i++) { g.fillStyle = i % 2 ? '#1b1b1b' : '#e8c21c'; g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32 + 32, 0); g.lineTo(i * 32, h); g.lineTo(i * 32 - 32, h); g.fill(); } });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(sw0(), 0.5), new THREE.MeshBasicMaterial({ map: hz })); m.rotation.x = -Math.PI / 2; m.rotation.z = Math.PI / 2; m.position.set(STAIR.x0 - 0.35, 0.016, (STAIR.z0 + STAIR.z1) / 2); scene.add(m); }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(WST.zA1 - WST.zN, 0.5), new THREE.MeshBasicMaterial({ map: hz })); m.rotation.x = -Math.PI / 2; m.rotation.z = Math.PI / 2; m.position.set(WST.xB1 - 0.35, 0.016, (WST.zN + WST.zA1) / 2); scene.add(m); }
   // pallet racking. Loads are single textured blocks (cheap on iPad)
   const loadTex = paperTex.clone(); loadTex.wrapS = loadTex.wrapT = THREE.RepeatWrapping; loadTex.repeat.set(3, 2); loadTex.needsUpdate = true;
   const load = std('#ffffff', 0.85, 0, { map: loadTex });
@@ -984,14 +1049,16 @@ whLight.position.set(-22.5, BY + 3.7, -3.5); whLight2.position.set(-15.0, BY + 3
   const ptex = paperTex.clone(); ptex.wrapS = ptex.wrapT = THREE.RepeatWrapping; ptex.repeat.set(2, 3); ptex.needsUpdate = true; const pload = std('#ffffff', 0.85, 0, { map: ptex });
   function pallet(x, z, h = 1.1, ry = 0) { box(1.2, 0.14, 1.0, M.pallet, x, 0.07, z, scene, false).rotation.y = ry; box(1.1, h, 0.92, pload, x, 0.14 + h / 2, z, scene, false).rotation.y = ry; addCollider(x, z, 1.25, 1.05, ry); }
   pallet(-18.6, 4.9, 1.2); pallet(-13.3, 4.9, 0.9); pallet(-11.95, 4.9, 1.3); pallet(-19.0, -6.9, 1.0);
-  // Darryl's foreman corner (north-east): desk, chair, clipboard, radio, plate + safety sign
-  box(1.4, 0.05, 0.7, M.oak, -12.6, 0.74, -7.35); box(1.35, 0.7, 0.05, M.steel, -12.6, 0.36, -7.68); addCollider(-12.6, -7.35, 1.4, 0.7);
-  chair(scene, -12.6, -6.75, Math.PI);
-  box(0.24, 0.02, 0.32, std('#7a5a35', 0.8), -12.9, 0.77, -7.3, scene, false); box(0.06, 0.16, 0.04, std('#222', 0.6), -12.2, 0.85, -7.4, scene, false);
-  box(0.5, 0.3, 0.02, std('#2a2a2a', 0.6), -12.6, 1.05, -7.66, scene, false);                               // old CRT-ish monitor
-  plate('WAREHOUSE FOREMAN', -12.6, 2.1, B.z0 + 0.13, 0, { w: 0.85, sub: 'D. PHILBIN' });
-  sign('0 DAYS WITHOUT AN ACCIDENT', -15.0, 2.45, B.z0 + 0.13, 0, { w: 1.5, h: 0.42, bg: '#1b5e20', fg: '#ffffff', weight: 800 });
-  cabinets(-14.6, -7.55, 2);
+  // Darryl's foreman corner: HQ #83 moved it off the NE corner (the stairs live there now) to the east wall, south of the stairs
+  box(0.7, 0.05, 1.4, M.oak, -11.55, 0.74, 0.6); box(0.05, 0.7, 1.35, M.steel, -11.22, 0.36, 0.6); addCollider(-11.55, 0.6, 0.7, 1.4);
+  chair(scene, -12.15, 0.6, -Math.PI / 2);
+  box(0.32, 0.02, 0.24, std('#7a5a35', 0.8), -11.5, 0.77, 0.3, scene, false); box(0.04, 0.16, 0.06, std('#222', 0.6), -11.4, 0.85, 1.1, scene, false);
+  box(0.02, 0.3, 0.5, std('#2a2a2a', 0.6), -11.24, 1.05, 0.6, scene, false);                                // old CRT-ish monitor
+  plate('WAREHOUSE FOREMAN', B.x1 - 0.13, 2.1, 0.6, -Math.PI / 2, { w: 0.85, sub: 'D. PHILBIN' });
+  sign('0 DAYS WITHOUT AN ACCIDENT', -20.0, 2.45, B.z0 + 0.13, 0, { w: 1.5, h: 0.42, bg: '#1b5e20', fg: '#ffffff', weight: 800 });
+  cabinets(-11.45, 2.3, 2, -Math.PI / 2);
+  // under the stairs: mop bucket + a couple of boxes (like the set photo)
+  box(0.4, 0.35, 0.35, std('#f2c200', 0.6), -11.75, 0.18, -3.4, scene, false); box(0.6, 0.45, 0.5, M.cardboard || std('#b08a5a', 0.9), -11.8, 0.23, -5.2, scene, false);
   // the basketball hoop (Basketball, S1) on the north wall over the open floor
   { const hx = -17.4, hz = B.z0 + 0.13; box(1.2, 0.8, 0.04, M.white, hx, 3.3, hz + 0.1, scene, false); box(0.46, 0.34, 0.045, std('#c62828', 0.6), hx, 3.17, hz + 0.11, scene, false);
     box(0.4, 0.3, 0.05, M.white, hx, 3.17, hz + 0.115, scene, false);
@@ -1018,15 +1085,13 @@ whLight.position.set(-22.5, BY + 3.7, -3.5); whLight2.position.set(-15.0, BY + 3
     const hdl = box(0.04, 1.1, 0.04, std('#222', 0.5, 0.5), 0, 0.8, 0.8, g, false); hdl.rotation.x = 0.3; addCollider(-15.9, 3.6, 0.8, 1.4, -0.4); }
   plate('LOADING DOCK', (DK[0] + DK[1]) / 2, 3.75, B.z1 - 0.14, Math.PI, { w: 1.1, sub: 'DOCK 1 · TRUCK LEVEL' });
   plate('DUNDER MIFFLIN', -24.0, 3.1, B.z1 - 0.14, Math.PI, { w: 1.8, sub: 'WAREHOUSE · SHIPPING & RECEIVING' });
-  hangPlateAt((x, y, z, ry) => plate('↑ OFFICE', x, y, z, ry, { w: 0.7, sub: 'STAIRS · DUNDER MIFFLIN' }), STAIR.x0 - 0.7, 2.6, (STAIR.z0 + STAIR.z1) / 2, Math.PI / 2, 0.7, BH);
   // Darryl himself, at his desk (static, no AI: he's set dressing until a warehouse bot exists)
-  const dar = buildCharacter({ id: 'darryl', name: 'Darryl Philbin', color: '#3d5a80' }); dar.root.position.set(-12.6, 0, -6.3); dar.root.rotation.y = 0.35;
-  dar.armR.rotation.x = -0.5; dar.elbowR.rotation.x = -0.9; scene.add(dar.root); addCollider(-12.6, -6.3, 0.5, 0.5);
+  const dar = buildCharacter({ id: 'darryl', name: 'Darryl Philbin', color: '#3d5a80' }); dar.root.position.set(-12.75, 0, 1.7); dar.root.rotation.y = -Math.PI / 2 - 0.4;
+  dar.armR.rotation.x = -0.5; dar.elbowR.rotation.x = -0.9; scene.add(dar.root); addCollider(-12.75, 1.7, 0.5, 0.5);
   // move everything built above into the basement group, and its colliders into the downstairs set
   const made = scene.children.slice(n0); for (const o of made) BASEMENT.add(o);
   BCOL.push(...colliders.splice(c0));
 }
-function sw0() { return STAIR.z1 - STAIR.z0; }
 // hangPlate() with a custom ceiling height (the warehouse ceiling is higher than the office's)
 function hangPlateAt(make, x, y, z, ry, w, ceil) {
   make(x, y, z + Math.cos(ry) * 0.006, ry); make(x, y, z - Math.cos(ry) * 0.006, ry + Math.PI);
@@ -1630,12 +1695,19 @@ function blocked(x, z, lv = player.level) {
   for (const c of lv === -1 ? BCOL : colliders) if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) return true;
   return false;
 }
-const onStairs = (x, z) => x >= STAIR.x0 && x <= STAIR.x1 + 0.12 && z >= STAIR.z0 && z <= STAIR.z1;
-function stairY(x) { return x >= STAIR.top ? 0 : x <= STAIR.bot ? BY : BY * (STAIR.top - x) / (STAIR.top - STAIR.bot); }
+// HQ #83: corner switchback. Top landing (y 0) -> flight A (north, down the east wall) -> corner landing -> flight B (west).
+const onStairs = (x, z) => x < X0 && z <= WST.zP + 0.1 && z >= WST.zN - 0.1 && (x > WST.xr - 0.1 || (z < WST.zA1 + 0.1 && x >= WST.xB1));
+function stairY(x, z) {
+  const S = WST;
+  if (x > S.xr - 0.1 && z >= S.zA0) return 0;
+  if (x > S.xr - 0.1 && z >= S.zA1) return S.yM * (S.zA0 - z) / (S.zA0 - S.zA1);
+  if (x > S.xr) return S.yM;
+  return S.yM + (BY - S.yM) * Math.min(1, (S.xr - x) / (S.xr - S.xB1));
+}
 function updateLevel() {
   const { x, z } = player.pos;
   if (ELEV.state === 'moving' && ELEV.rider) { player.y = ELEV.y; player.level = ELEV.y < BY / 2 ? -1 : 0; }
-  else if (onStairs(x, z)) { player.y = stairY(x); player.level = player.y < BY / 2 ? -1 : 0; }
+  else if (onStairs(x, z)) { player.y = stairY(x, z); player.level = player.y < BY / 2 ? -1 : 0; }
   else if (inCore(x, z)) { const [y, lv] = coreY(x, z); player.y = y; player.level = lv; }
   else player.y = player.level === -1 ? BY : 0;
 }
@@ -1645,7 +1717,7 @@ function updateLevel() {
 //  - warehouse: only the warehouse (+ its stairs); outside + lobby hidden. Stair/elevator cores draw only when you're near them.
 const HEMI = scene.children.find(o => o.isHemisphereLight);
 scene.add(sun.target);
-const KEEP = new Set([BASEMENT, OUTSIDE, EXT, LOBBY, CORE, ELEVCAR, GROUNDS, WSTAIR, sun.target]);
+const KEEP = new Set([BASEMENT, OUTSIDE, EXT, LOBBY, CORE, ELEVCAR, GROUNDS, WSTAIR, WHD.pivot, sun.target]); // HQ #83: the warehouse door leaf shows from both sides
 const hiddenOffice = new Set(); let officeHidden = false;
 function setOfficeHidden(h) {
   if (h) { for (const o of scene.children) if (o.visible && !o.isLight && !KEEP.has(o)) { o.visible = false; hiddenOffice.add(o); } }
@@ -1657,15 +1729,15 @@ function updateFloors() {
   const { x, z } = player.pos, ground = player.level === -1, wStairs = onStairs(x, z);
   const inWH = ground && !wStairs && x < BASE.x1 + 0.05 && x > BASE.x0 - 0.5 && z > BASE.z0 - 0.5 && z < BASE.z1 + 0.1;
   const byWHdoor = ground && x < -5.5 && z > 7.6 && z < SB;                     // lobby hall, looking at the warehouse door
-  const nearWStairs = !ground && x < -7.5 && x > -11.5 && z > -2.5 && z < 3.3;  // 2nd floor, by the stair door at the water cooler
+  const nearWStairs = (!ground && x < -7.5 && z > -6.5 && z < -0.8) || WHD.open > 0.02; // 2nd floor, by the warehouse door (HQ #83)
   const core = inCore(x, z) || inCar(x, z);
   BASEMENT.visible = inWH || byWHdoor || wStairs || nearWStairs;
-  WSTAIR.visible = !ground || BASEMENT.visible;
+  WSTAIR.visible = BASEMENT.visible; // HQ #83: stairs only drawn with the warehouse (near them / on them / downstairs)
   EXT.visible = OUTSIDE.visible = ground && !inWH && !core;   // no outside view from the stairwell / elevator
   LOBBY.visible = ground && (!inWH || (x > -14.5 && z > 6));
   CORE.visible = ELEVCAR.visible = Math.abs(x - 5.4) < 10 && z > 3 && z < 21;
   const seeUp = inCore(x, z) && (x > MST.xm || z > MST.zb - 0.4);               // mid landing: you can see up flight A to the hallway
-  setOfficeHidden(ground && !wStairs && !seeUp);
+  setOfficeHidden((ground && !wStairs && !seeUp) || (wStairs && player.y < -1.0 && WHD.open < 0.02)); // HQ #83: below the door the office can't be seen
   // light: daylight everywhere except down in the warehouse (fades on its stairs, as in HQ #79)
   const t = wStairs ? Math.max(0, Math.min(1, -player.y / -BY * 1.6 - 0.3)) : inWH ? 1 : 0;
   sun.intensity = 1.6 * (1 - t); winFill.intensity = 0.55 * (1 - t); warm.intensity = 6 * (1 - t);
@@ -1919,7 +1991,7 @@ function whereAmI() {
   const { x, z } = player.pos;
   const lv = player.level;
   const room = ROOMS.find(r => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1 && (r.level === 'any' || (r.level ?? 0) === lv));
-  const area = room ? room.name : lv === -1 ? 'outside, around the building' : Math.hypot(x - COOLER.x, z - COOLER.z) < 3 ? 'by the water cooler' : Math.hypot(x - X0, z - 0.4) < 2.2 ? 'by the stairs down to the warehouse'
+  const area = room ? room.name : lv === -1 ? 'outside, around the building' : Math.hypot(x - COOLER.x, z - COOLER.z) < 3 ? 'by the water cooler' : Math.hypot(x - X0, z + 3.65) < 2.2 ? 'by the warehouse door (metal stairs down)'
     : z > 2.6 ? (x > 2.6 ? 'by Jim + Dwight (outside Michael\'s office)' : 'reception (Pam\'s desk)') : x > -5.6 && x < -1.6 && z > -3.0 && z < 0.4 ? 'accounting' : z < -4.8 ? 'back of the bullpen (window side)' : 'the bullpen';
   return { x, z, heading, facing, area, level: lv, near: lv === 0 && near && near.d < 4 ? near : null };
 }
@@ -1958,7 +2030,7 @@ function stampWhere(g, w, h) {
     g.fillStyle = '#5ab0ff'; g.fillRect(...R(-2.6, SB, 2.0, 13.0));                                   // Vance Refrigeration
     g.fillStyle = '#fff'; g.fillRect(...R(-0.8, Z1 - 0.3, 0.8, Z1 + 0.3));                            // DM's doors
   }
-  g.fillStyle = '#e8c21c'; g.fillRect(...R(STAIR.x0, STAIR.z0, STAIR.x1, STAIR.z1)); g.fillRect(...R(MST.x0, SB, MST.x1, MST.zs)); // stairs
+  g.fillStyle = '#e8c21c'; g.fillRect(...R(WST.xr, WST.zN, X0, WST.zP)); g.fillRect(...R(WST.xB1, WST.zN, WST.xr, WST.zA1)); g.fillRect(...R(MST.x0, SB, MST.x1, MST.zs)); // stairs
   g.fillStyle = '#9fa6ad'; g.fillRect(...R(ELEV.x0, SB, ELEV.x1, ELEV.z1));                            // elevator
   g.strokeStyle = 'rgba(40,50,70,.9)'; g.lineWidth = 1.5 * k;
   if (!down) for (const r of ROOMS) if (!r.outside) g.strokeRect(...P(r.x0, r.z0), (r.x1 - r.x0) * sx, (r.z1 - r.z0) * sz);
@@ -2222,6 +2294,7 @@ function tick() {
   if (player.travel) updateLevel();
   updateFrontDoor(dt, player.pos.x, player.pos.z, player.level);
   updateLobbyDoor(dt, player.pos.x, player.pos.z, player.level);
+  updateWhDoor(dt, player.pos.x, player.pos.z, player.level);
   updateElevator(dt);
   updateFloors();
   camera.position.set(player.pos.x, EYE + player.y, player.pos.z);
@@ -2267,7 +2340,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
+window.__office = { WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
