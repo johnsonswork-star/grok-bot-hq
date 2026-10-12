@@ -113,7 +113,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     // header
     g.fillStyle = '#121a24'; g.fillRect(0, 0, CW, HEAD); g.fillStyle = '#c4a35a'; g.fillRect(0, HEAD - 4, CW, 4);
     g.fillStyle = '#fff'; g.font = `900 36px ${FONT}`; g.textBaseline = 'middle'; g.fillText('DESIGN TRAINER', 28, 32);
-    g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 22px ${FONT}`; g.fillText(deck ? `${deck.label}${deck.source === 'seed' ? '' : ''}` : 'Atom Family Clothing Co · Printful + Tapstitch', 30, 64);
+    g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `600 22px ${FONT}`; g.fillText(deck ? `${deck.label}${deck.source === 'seed' ? '' : ''}` : 'Kelly Kapoor · Printful + Tapstitch', 30, 64);
     const { k, p, n } = counts(), cur = curId();
     if (deck) { g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `900 40px ${FONT}`; g.fillText(`${Math.min(k + p + (cur ? 1 : 0), n)} / ${n}`, CW - 28, 34); g.font = `700 22px ${FONT}`; g.fillStyle = '#9fe0b0'; g.fillText(`✓ ${k} kept`, CW - 150, 68); g.fillStyle = '#ffaaaa'; g.fillText(`✗ ${p} passed`, CW - 28, 68); g.textAlign = 'left';
       g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(0, HEAD - 4, CW, 4); g.fillStyle = '#c4a35a'; g.fillRect(0, HEAD - 4, CW * (n ? (k + p) / n : 0), 4); }

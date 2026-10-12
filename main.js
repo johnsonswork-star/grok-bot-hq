@@ -1141,7 +1141,7 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
 // standing at x -15.6, z -1.7 facing east). Tinder-style KEEP / PASS on the designer's real Printful + Tapstitch ideas (swipe.js).
 const SWIPE_AT = { x: BASE.x1 - 0.13, z: -1.5, y: 1.8 };
 const swipeWall = createSwipeWall({ THREE, parent: BASEMENT, x: SWIPE_AT.x, y: SWIPE_AT.y, z: SWIPE_AT.z, ry: -Math.PI / 2, w: 2.4, h: 1.5, sendSwipes, toast: (...a) => toast(...a) });
-BASEMENT.add(plate('DESIGN TRAINER', SWIPE_AT.x - 0.01, SWIPE_AT.y + 1.03, SWIPE_AT.z, -Math.PI / 2, { w: 1.1, sub: 'SWIPE ▶ KEEP · ◀ PASS · ATOM FAMILY' }));
+BASEMENT.add(plate('DESIGN TRAINER', SWIPE_AT.x - 0.01, SWIPE_AT.y + 1.03, SWIPE_AT.z, -Math.PI / 2, { w: 1.1, sub: 'SWIPE ▶ KEEP · ◀ PASS · KELLY KAPOOR' }));
 // hangPlate() with a custom ceiling height (the warehouse ceiling is higher than the office's)
 function hangPlateAt(make, x, y, z, ry, w, ceil) {
   make(x, y, z + Math.cos(ry) * 0.006, ry); make(x, y, z - Math.cos(ry) * 0.006, ry + Math.PI);
