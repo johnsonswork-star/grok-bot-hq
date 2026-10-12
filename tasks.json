@@ -3,7 +3,8 @@
   "busy": {
     "grok": {
       "task": "HQ chat on duty",
-      "since": "2026-10-11T00:57:22.045Z"
+      "since": "2026-10-11T00:57:22.045Z",
+      "until": "2026-10-12T21:29:41.715Z"
     },
     "cos": {
       "task": "Team / HQ coordination",
