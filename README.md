@@ -117,7 +117,33 @@ When a bot is waiting on Chris to choose between options, its desk screen turns 
 
 ## Layout: Dunder Mifflin Scranton, set-scale floor plan (HQ #30 / #36 / #38 / #42)
 
-North = the big window wall. You spawn at the south front door, facing Pam's reception. The floor plan follows The Office (Scranton branch); `LAYOUT` in `main.js` is bumped when it changes so a live reload drops you at the front door instead of inside a new wall.
+North = the big window wall. Dunder Mifflin is a tenant on the **2nd floor of a 3-story brick office building** (HQ #81, see below). A fresh launch starts you just inside DM's doors, facing Pam's reception. The floor plan follows The Office (Scranton branch); `LAYOUT` in `main.js` is bumped when it changes so a live reload drops you somewhere safe instead of inside a new wall.
+
+### Layout `scranton-9-building` (HQ #81): the real building, multi-tenant, DM upstairs
+
+Chris spotted it in HQ #80: in the show, Dunder Mifflin isn't a storefront. It's one tenant in a multi-story brick office building, up on an upper floor, reached by an elevator (or the stairwell), with **Vance Refrigeration across the hall**. Now it's built that way.
+
+**Where to start:** parking lot → the building's front doors (automatic sliding glass, under the canopy, 1725 SLOUGH AVENUE) → the shared lobby → elevator or stairs → 2 → the hallway → DM's glass doors. The first launch after this update drops you in the lot facing the building.
+
+| Floor | What's there |
+|---|---|
+| **3** | Facade only (other tenants), so the building reads as 3 stories from the lot |
+| **2** (level 0, y 0) | **Dunder Mifflin, Suite 200** (the whole existing office, unchanged inside: bullpen, Michael's office, conference room, annex, kitchen, reception, desks, workers, monitors, whiteboard). Out its front doors: the **2nd-floor hallway**. Across the hall: **Vance Refrigeration, Suite 201** (glass storefront + door right opposite DM's, lit reception with the VANCE logo wall, Bob's desk, a display cooler). Same side as Vance: the **elevator**, the **stairwell door** (EXIT / STAIRS ↓ LOBBY), then the **MEN / WOMEN restrooms** (the show's bathrooms are out in the hall). West end: Suite 210 door. East end: a window. |
+| **1 / ground** (level -1, y -4.4) | **Shared lobby**: entry with the building directory (SCRANTON BUSINESS PARK · 1725 SLOUGH AVENUE: DM 200, Vance 201, ...), brass mailboxes, a bench, plants, a SCRANTON · THE ELECTRIC CITY poster; then the elevator lobby along the back with the elevator, the stairwell door, other tenants' suite doors (100 Building Management, 110, 120, 130), and at its west end the steel door into the **warehouse**. **Warehouse** = the ground floor of the building's west wing (the HQ #79 content: racks, Darryl's corner, forklift, hoop). Its roll-up **loading dock** opens onto a truck yard where the Dunder Mifflin box truck is backed up to DOCK 1. |
+| outside (ground) | Sidewalk + entrance canopy, the HQ #76 parking lot (ADA stalls at the door, RESERVED for the Regional Manager + Asst. to the R.M., everyone's cars, islands, light poles, SCRANTON BUSINESS PARK monument sign), Slough Avenue. DUNDER MIFFLIN and VANCE REFRIGERATION signs sit up on the facade (placeholders; Graphic Design / Andy can do real art later). |
+
+**Getting between floors**
+
+- **Elevator.** Walk up to its doors on either floor: if the car isn't there, it comes to you (the indicator over the doors shows ▲/▼ and the floor). Step in and stand still for a moment: the doors close and it takes you to the other floor (~3.6 s ride, you can't walk during it), then the doors open and you step out. It won't bounce you straight back: you have to step out before it'll go again. Stepping into closing doors re-opens them.
+- **Stairwell (Stair A).** An enclosed switchback: from the 2nd-floor hallway door you land on the top landing, go down flight A to the mid landing (↑2 ↓1), turn, and go down flight B to the ground-floor door into the lobby (and the reverse). The floor height follows the steps; your level flips at the mid landing.
+- **Warehouse stairs** (HQ #79, unchanged): the door by the water cooler, straight down to the warehouse. The warehouse also has a door into the lobby, so you can loop: office → warehouse stairs → warehouse → lobby → elevator → office.
+
+**How it works (`main.js`, "HQ #81: the building")**: same two-level system as #79. `colliders` = the 2nd floor (DM + hallway), `BCOL` = ground level (lobby, warehouse, outside); walls of the stairwell and elevator shaft are in both sets. `player.level` picks the set. `coreY()` gives the stairwell height/level from your spot (east half = top landing + flight A, west half = flight B + bottom landing), `updateElevator()` runs the car (states idle / closing / moving), its hall doors on each floor and their door colliders, and `updateLobbyDoor()` the sliding front doors. The building shell is single-sided textured facade planes (one brick + ribbon-window canvas, UVs in meters, 4.4 m floor-to-floor) so from inside DM you still look out of the windows, now 4.4 m up over the grass.
+
+**iPad LOD (`updateFloors()`)**: only the floor you're on is drawn. Upstairs, the lot, the lobby, the facades and the warehouse (except by its stair door) are hidden. On the ground floor, the whole 2nd floor (every desk, worker, monitor, the whiteboard: everything that isn't one of the level groups) is hidden, so the lot and lobby are cheap (~100-260 draw calls in the headless check, vs ~400-800 inside DM). In the warehouse, the outside and the lobby are hidden too. The stairwell + elevator cores (`CORE`, `ELEVCAR`) are only drawn when you're near them; the 2nd floor stays drawn on the stairs only where you can actually see up to it. HQ #79 rule kept: the light count never changes (no shader recompiles). The warm reception light just moves down to the lobby when you're on the ground floor, the warehouse lamps fade in/out, and the sun's shadow box follows you outside.
+
+HQ shots now say `2nd floor` / `GROUND FLOOR` / `on the stairs` / `in the elevator`, and the mini map shows the whole site with the floor you're on drawn solid (DM, hallway, Vance upstairs; lobby + warehouse on the ground floor), plus the stairwell (yellow) and the elevator (grey). Shots: `/workspace/hq81/*.png` (copied to `shots/s81/`).
+
 
 | Spot (The Office) | Bot | Where |
 |---|---|---|
@@ -132,7 +158,7 @@ North = the big window wall. You spawn at the south front door, facing Pam's rec
 | Kelly's desk (annex) | **Atom Family Designer** | the annex, NE corner |
 | Toby's desk (annex, HR) | **Profile & Settings** | the annex |
 
-Rooms: conference room west of reception (glass + blinds, long table, HQ Briefing TV on the west wall, live whiteboard on the south wall with clock / weather / markets / TEAM ON IT / BANK + REFRESH); kitchen + break room in the back west corner (counter, fridge, microwave, coffee, snack + soda machines, round tables); the annex in the back east corner with Ryan's closet; copier by reception; filing cabinets; water cooler on the west wall just outside the kitchen (the only place workers drink); warehouse = **downstairs**, down the stairs through the west door by the water cooler (see below); front entrance = working glass double doors onto the sidewalk + parking lot.
+Rooms: conference room west of reception (glass + blinds, long table, HQ Briefing TV on the west wall, live whiteboard on the south wall with clock / weather / markets / TEAM ON IT / BANK + REFRESH); kitchen + break room in the back west corner (counter, fridge, microwave, coffee, snack + soda machines, round tables); the annex in the back east corner with Ryan's closet; copier by reception; filing cabinets; water cooler on the west wall just outside the kitchen (the only place workers drink); warehouse = **downstairs**, down the stairs through the west door by the water cooler (see below); front entrance = working glass double doors onto the 2nd-floor hallway (HQ #81; they used to open onto the sidewalk).
 
 
 ### Layout `scranton-8-downstairs` (HQ #76 / #78 / #79): warehouse downstairs, real front doors, real parking lot
