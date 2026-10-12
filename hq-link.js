@@ -195,3 +195,32 @@ export async function fetchChatFeed() {
     chatId = m.id; return { id: m.id, feed: p };
   } catch (e) { return null; }
 }
+
+// HQ #85: design-trainer wall (warehouse). Deck = encrypted per-device feed `<topic>_swipe` from tools/swipe-train.mjs
+// (real Printful + Tapstitch ideas + small thumbnails; newest only). Returns { id, feed } | { id, same: true } | null.
+let swipeId = null;
+export async function fetchSwipeDeck() {
+  try {
+    const d = await device();
+    const r = await fetch(`${RELAY}/${d.topic}_swipe/json?poll=1&since=latest`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) return null;
+    const m = JSON.parse(line); if (m.event !== 'message') return null;
+    if (m.id === swipeId) return { id: m.id, same: true };
+    let body = m.message;
+    if (m.attachment?.url) { const a = await fetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
+    const p = await open(JSON.parse(body), d.priv);
+    if (p.type !== 'swipe-deck' || !Array.isArray(p.cards)) return null;
+    swipeId = m.id; return { id: m.id, feed: p };
+  } catch (e) { return null; }
+}
+// Swipes go back through the same encrypted relay as chat (type:'swipe'); the bridge logs them as training data.
+// items = [{ mid, sid, at, cardId, decision: 'keep'|'pass'|'undo', undoes?, deck, round, pos, total, card }]
+export async function sendSwipes(items) {
+  try {
+    const d = await device();
+    const msg = { v: 2, type: 'swipe', mid: 'sw' + randomId(9), items: items.slice(0, 40), ts: new Date().toISOString(), device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
+    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    return r.ok;
+  } catch (e) { return false; }
+}

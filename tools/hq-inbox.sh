@@ -25,6 +25,10 @@ worklive() { # live desk-monitor publisher (tools/work-live.mjs watch): plain no
   pgrep -f "work-live.mjs watch" >/dev/null && return
   NODE_NO_WARNINGS=1 nohup node "$DIR/work-live.mjs" watch >> "$HOME/.config/grok-bot-hq/work-live.log" 2>&1 < /dev/null &
 }
+swipetrain() { # HQ #85 design-trainer wall: publishes the designer deck (cards-v*.json) to each iPad's encrypted _swipe feed. Plain node, no AI
+  pgrep -f "swipe-train.mjs watch" >/dev/null && return
+  NODE_NO_WARNINGS=1 nohup node "$DIR/swipe-train.mjs" watch >> "$HOME/.config/grok-bot-hq/swipe-train.log" 2>&1 < /dev/null &
+}
 banter() { "$DIR/banter.sh" start >/dev/null 2>&1; } # HQ #56 free-model office banter loop (idempotent; banter.sh off pauses it)
 CFG="$HOME/.config/grok-bot-hq"
 watcher_pid() { pgrep -f "node $DIR/hq-watcher.mjs$" | head -1; }
@@ -52,7 +56,7 @@ case "$1" in
           to=$(printf '%s' "$out" | head -1 | sed -nE 's/^#[0-9]+ HQ chat → ([^:]+):.*/\1/p')
           [ -n "$to" ] && { echo; echo "----- worker memory (HQ #58) -----"; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" digest "$to" 2>/dev/null; } ;;
   memory) NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" digest "${2:-grok}" ;;
-  pending) bridge >/dev/null; worklive; banter; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1
+  pending) bridge >/dev/null; worklive; banter; swipetrain; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1
           gh issue list --repo $REPO --label hq-chat --state open --limit 50 --json number,title,createdAt,comments \
            -q '.[] | select((.comments|length)==0 or ((.comments|last|.body) | test("^\\s*\\*\\*[^*]{1,40}:\\*\\*") | not)) | "#\(.number)  \(.createdAt)  \(.title)"'
           refreshes
@@ -69,7 +73,7 @@ case "$1" in
             echo "$f"
           done ;;
   done)   gh issue close "$2" --repo $REPO ;;
-  bridge) bridge; worklive; banter; autowatch ;;
+  bridge) bridge; worklive; banter; swipetrain; autowatch ;;
   watcher) watcher "$2" "$3" ;;
   *)      bridge >/dev/null; NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1
           gh issue list --repo $REPO --state open --limit 30 --json number,title,createdAt \

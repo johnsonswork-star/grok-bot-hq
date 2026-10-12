@@ -156,6 +156,7 @@ async function handle(m, priv, st) {
   let p; try { p = await open(JSON.parse(await envelopeText(m)), priv); } catch { return log('skip undecryptable', m.id); }
   if (p.type === 'refresh') return handleRefresh(p, st);
   if (p.type === 'pick') return handlePick(p, st);
+  if (p.type === 'swipe') return handleSwipe(p, st); // HQ #85: design-trainer wall swipes -> design-train/*.jsonl (no issue, no Slack)
   if (p.direct) return handleDirect(p, st); // HQ #63: Direct tab = 1:1 with a teammate, never filed for Grok Bot, no Slack wake
   if (!p.mid || alreadyFiled(p.mid, st)) return;
   let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
@@ -218,6 +219,15 @@ async function handleRefresh(p, st) {
   const r = REFRESH[kind];
   await postSlack(`:arrows_counterclockwise: *HQ refresh request: ${kind.toUpperCase()}*. Chris tapped REFRESH on the ${r.what} (${chicago(p.ts)}).\n` +
     `Grok Bot: ${r.how}. No HQ chat reply needed; the ${kind === 'bank' ? 'board' : 'monitor'} flips to FRESH when the new feed lands.`, 'refresh ' + kind);
+}
+
+// HQ #85: Chris swiped KEEP / PASS (or undo) on the design-trainer wall in the warehouse. Logged as training data by
+// tools/swipe-train.mjs record(): design-train/swipes.jsonl (full) + train.jsonl (compact). No issue, no Slack, no AI.
+let swm = null; const swipeTrain = async () => swm ||= await import(new URL('./swipe-train.mjs', import.meta.url)).catch(e => { log('swipe-train load failed', e.message); return null; });
+async function handleSwipe(p, st) {
+  if (!p.mid || st.done.includes(p.mid)) return;
+  st.done.push(p.mid); st.done = st.done.slice(-2000); saveState(st);
+  try { const S = await swipeTrain(); const n = S ? S.record(p, { log }) : 0; if (!n) log('swipe batch', p.mid, 'nothing new'); } catch (e) { log('swipe record error', e.message); }
 }
 
 // Tap-to-pick (HQ #50): Chris tapped his favorite options on a desk screen (e.g. Kelly's badge cards H-L) and SUBMIT.

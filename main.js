@@ -7,7 +7,8 @@ import { createMonitors } from './monitors.js';
 import { createTalk } from './talk.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick, fetchSwipeDeck, sendSwipes } from './hq-link.js';
+import { createSwipeWall } from './swipe.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -1136,6 +1137,11 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
   const made = scene.children.slice(n0); for (const o of made) BASEMENT.add(o);
   BCOL.push(...colliders.splice(c0));
 }
+// HQ #85: Design Trainer wall screen. Warehouse east wall between the steel stairs and Darryl's desk (where Chris pointed:
+// standing at x -15.6, z -1.7 facing east). Tinder-style KEEP / PASS on the designer's real Printful + Tapstitch ideas (swipe.js).
+const SWIPE_AT = { x: BASE.x1 - 0.13, z: -1.5, y: 1.8 };
+const swipeWall = createSwipeWall({ THREE, parent: BASEMENT, x: SWIPE_AT.x, y: SWIPE_AT.y, z: SWIPE_AT.z, ry: -Math.PI / 2, w: 2.4, h: 1.5, sendSwipes, toast: (...a) => toast(...a) });
+BASEMENT.add(plate('DESIGN TRAINER', SWIPE_AT.x - 0.01, SWIPE_AT.y + 1.03, SWIPE_AT.z, -Math.PI / 2, { w: 1.1, sub: 'SWIPE ▶ KEEP · ◀ PASS · ATOM FAMILY' }));
 // hangPlate() with a custom ceiling height (the warehouse ceiling is higher than the office's)
 function hangPlateAt(make, x, y, z, ry, w, ceil) {
   make(x, y, z + Math.cos(ry) * 0.006, ry); make(x, y, z - Math.cos(ry) * 0.006, ry + Math.PI);
@@ -2157,7 +2163,24 @@ const REFRESH_KIND = { inbox: 'inbox' };
 const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
 const inboxSt = stations.find(s => s.id === 'inbox');
 let hoverKind = null;
+// HQ #85: the Design Trainer wall downstairs. 'swipe:keep|pass|undo|shuffle|idle' while the reticle / tap is on it (< 7 m)
+function swipeHit() {
+  if (player.level !== -1 || !BASEMENT.visible || player.pos.x > BASE.x1 || Math.hypot(player.pos.x - SWIPE_AT.x, player.pos.z - SWIPE_AT.z) > 7.5) return null;
+  raycaster.far = 8;
+  const h = raycaster.intersectObject(swipeWall.mesh, false)[0]; return h ? 'swipe:' + swipeWall.hit(h.uv) : null;
+}
+function swipeAct(k) {
+  const r = swipeWall.act(k);
+  if (r === 'keep') toast('✓ KEEP · saved for the designer', 1200);
+  else if (r === 'pass') toast('✗ PASS · saved for the designer', 1200);
+  else if (r === 'undo') toast('↶ Undid your last swipe', 1500);
+  else if (r === 'nothing') toast('Nothing to undo yet', 1500);
+  else if (r === 'shuffle') toast('↻ Deck reshuffled · new round', 1800);
+  else if (r === 'nodeck') toast('The designer’s deck is still loading', 1800);
+  return r;
+}
 function refreshHit() {
+  if (player.level === -1) return swipeHit();
   if (player.level !== 0) return null;
   const targets = [whiteboard.surface]; if (inboxSt) targets.push(inboxSt.screen);
   for (const s of stations) if (!s.hero && monitors.hasPick(s.id)) targets.push(s.screen); // HQ #50 pick cards
@@ -2174,6 +2197,7 @@ function refreshHit() {
 // one place for "press this on-screen control": REFRESH kinds or HQ #50 pick cards ('pick:<bot>:<H|submit>')
 function act(kind) {
   if (!kind) return;
+  if (kind.startsWith('swipe:')) { const k = kind.slice(6); if (k !== 'idle') swipeAct(k); return; }
   if (!/^b?pick:/.test(kind)) return refreshCtl.request(kind);
   const [, id, key] = kind.split(':'); pickAct(id, key);
 }
@@ -2202,6 +2226,8 @@ function updateHover() {
   hoverKind = k;
   const pk = k && /^b?pick:/.test(k) ? k.split(':') : null, onBoard = pk && pk[0] === 'bpick';
   whiteboard.setHover(k === 'bank'); monitors.setHover(k === 'inbox' ? 'inbox' : null, true);
+  const sw = k && k.startsWith('swipe:') ? k.slice(6) : null; swipeWall.setHover(sw);
+  if (sw) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = swipeWall.hint(sw === 'idle' ? 'keep' : sw); return; }
   if (!panelOpen) monitors.setPickHover(pk && !onBoard ? pk[1] : null, pk && !onBoard ? pk[2] : null);
   monitors.setBoardPickHover(onBoard ? pk[2] : null);
   if (pk) { ui.reticle.classList.add('hot'); ui.focus.classList.add('show'); ui.focus.textContent = pk[2] === 'submit' ? '📌 Submit your picks  ·  A / E / tap' : `Pick / unpick ${pk[2]}  ·  A / E / tap`; }
@@ -2287,6 +2313,14 @@ const refreshCtl = (() => {
   workPoll = poll; poll(); setInterval(poll, 12000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 })();
+// HQ #85: Design Trainer deck (encrypted per-device feed from tools/swipe-train.mjs). The wall keeps its own copy; polled
+// every 20 s while you're downstairs near it, every 2 min otherwise, so a new designer deck shows up without a reload.
+(function swipeDeckFeed() {
+  let last = 0;
+  async function poll() { if (document.hidden) return; last = Date.now(); const r = await fetchSwipeDeck(); if (r?.feed) swipeWall.setDeck(r.feed); }
+  poll(); setInterval(() => { const near = player.level === -1 && Math.hypot(player.pos.x - SWIPE_AT.x, player.pos.z - SWIPE_AT.z) < 20; if (Date.now() - last > (near ? 20e3 : 120e3)) poll(); }, 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { poll(); swipeWall.flush(); } });
+})();
 // HQ #50: taps on a desk screen shown full size in the open desk panel (same canvas as the 3D monitor)
 for (const s of stations) {
   const cv = monitors.canvas(s.id); if (!cv || s.hero) continue;
@@ -2345,6 +2379,10 @@ function tick() {
   else if (gp) {
     if (gp.start) { setPaused(!paused); }
     else if (paused && gp.A) setPaused(false);
+    else if (!paused && !panelOpen && hoverKind && hoverKind.startsWith('swipe:')) {
+      // HQ #85: aiming at the Design Trainer wall: A / RB / ▶ keep, B / LB / ◀ pass, X / ▼ undo (A on the summary = reshuffle)
+      const k = swipeWall.padKey(gp); if (k) { const r = swipeAct(k); if (r === 'keep' || r === 'pass') rumble(gp.pad, r === 'keep' ? 60 : 35, r === 'keep' ? 0.45 : 0.25); }
+    }
     else if (!paused) {
       if (gp.A) interact();
       const pickPanel = panelOpen && monitors.hasPick(panelOpen.id);
@@ -2400,6 +2438,7 @@ function tick() {
   if (!hoverKind) setFocus(paused ? null : findFocus()); else if (paused) setFocus(null);
   updateHover();
   monitors.tick(performance.now(), player.pos, (panelOpen || focused)?.id);
+  swipeWall.tick(performance.now(), BASEMENT.visible && player.level === -1 && Math.hypot(player.pos.x - SWIPE_AT.x, player.pos.z - SWIPE_AT.z) < 22);
   for (const s of stations) { // fade nearby plates you aren't looking at so they don't stack up
     const d = Math.hypot(s.x - player.pos.x, s.z - player.pos.z);
     s.plate.material.opacity = s === focused || d > 3.2 ? 1 : 0.25 + 0.75 * Math.max(0, (d - 1.5) / 1.7);
@@ -2435,7 +2474,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { BAY, BAYG, dockY, WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
+window.__office = { swipeWall, SWIPE_AT, tapAt, BAY, BAYG, dockY, WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
