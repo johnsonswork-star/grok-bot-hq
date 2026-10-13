@@ -1,9 +1,9 @@
-// Office cast character models (HQ #46, upgraded HQ #70): smooth, rounded, iPad-friendly people that read as the show's characters.
-// HQ #70: lathe-turned torsos, capsule limbs with real elbows + knees, mitten hands with thumbs, eyes with whites,
-// per-person expression (mouth/brows), smoother hair. Each body part is still ONE merged vertex-colored mesh (cheap draws).
-// HQ #90c: when the CC0 Quaternius glTF cast loads (assets/chars, see CREDITS.md) each person is re-dressed as a real
-// rigged/skinned model driven by AnimationMixer (Idle/Walk) plus the same procedural pose deltas (sit, type, sip, phone).
-// The procedural figure below stays as the fallback (?q=low, ?chars=proc, or any load error).
+// Office cast character models (HQ #46 → #70 → #90c → #97): iPad-friendly people that read as the show's characters.
+// HQ #70: lathe torsos, capsule limbs, mitten hands, eyes, per-person mood, hair. One merged vertex-colored mesh per part.
+// HQ #90c: CC0 Quaternius glTF cast (assets/chars) — skinned Idle/Walk + procedural pose deltas (sit/type/sip/phone).
+// HQ #97: likeness pass — procedural hair/facial-hair overlays on the Head bone (kit hair hidden), punchier cast colors,
+// Dwight short-sleeve body, props (World's Best Boss mug / cup / phone) reparented onto Wrist bones so they stop clipping
+// through torsos. Procedural figure stays as fallback (?q=low, ?chars=proc, or load error).
 // Front of a person = -z (same as workers.js). Keyed by station id (stable bot ids), falls back by display name.
 import * as THREE from './vendor/three.module.js';
 
@@ -13,21 +13,21 @@ const PI = Math.PI;
 // tie, skirt (color) / dress (skirt = top), sleeves 'long'|'short', hair style + color, face extras, body shape, props.
 // mood = mouth/brow expression: grin | smile | smirk | flat | stern | sad | sly | blank
 export const LOOKS = {
-  grok:     { who: 'Michael Scott', face: { jaw: 1.05, chin: 1.2 },   skin: '#f0c4a0', hair: ['side', '#3a2a1e'], top: '#c6d8ee', open: '#2a2e38', tie: '#b3262e', pants: '#2a2e38', h: 1.0, belly: 1.05, mood: 'grin', props: ['bossMug'], idle: 'boss' },
-  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.9 },      skin: '#f3cfb3', hair: ['long', '#8a4a2b', { len: 0.3, bangs: 1, curl: 1 }], top: '#f4f1ea', open: '#e7a1b0', skirt: '#6d6158', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
-  cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#5c3b22'], top: '#a9c0d8', tie: '#34445e', pants: '#3a3d44', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
-  assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.8, nose: 1.1 },  skin: '#f2cfae', hair: ['center', '#4a3220'], top: '#d1ad4f', sleeves: 'short', tie: '#5a3b1d', pants: '#4b3d2e', h: 1.04, glasses: '#2a2a2a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
-  icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3 },    skin: '#f3cfb0', hair: ['side', '#8c6a3e'], top: '#f4f1ea', open: '#b31b1b', sweater: true, tie: '#1d3f8f', pants: '#c4ab7c', h: 1.0, mood: 'grin' },
-  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6 },   skin: '#f2cdb4', hair: ['curly', '#a7714f'], top: '#b9a1d4', skirt: '#5b5468', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
-  builder:  { who: 'Stanley Hudson', face: { jaw: 1.25, chin: 0.7, nose: 1.2 },  skin: '#6b4430', hair: ['fringe', '#bdb8b0'], top: '#f1efe8', open: '#6a5643', vest: true, tie: '#7a2335', pants: '#3a3530', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#3a2a20', mustache: '#cfcac0', mood: 'flat', idle: 'lean' },
-  faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85 },   skin: '#f6dcc6', hair: ['bun', '#e6d39a'], top: '#f6f3ec', open: '#e8dcb2', skirt: '#33343f', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
-  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#161210'], top: '#a99fd2', tie: '#3c2f6b', pants: '#474b55', h: 1.0, beard: '#1e1814', mood: 'sly' },
-  conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.4, nose: 1.1 },    skin: '#f0c7a4', hair: ['receding', '#7a5a3c'], top: '#ecebe4', open: '#8c8452', sweater: true, pants: '#3e3a33', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
-  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#eecbb0', hair: ['messy', '#c9c6c0'], top: '#55606b', pants: '#2c2f33', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
-  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#a63a1c'], top: '#2c8a86', skirt: '#2f2f36', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
-  designer: { who: 'Kelly Kapoor', face: { jaw: 0.85, chin: 1.1, nose: 0.85 },    skin: '#a8714f', hair: ['long', '#120d0b', { len: 0.42 }], top: '#e8408f', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#c2335f', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
-  profile:  { who: 'Toby Flenderson', face: { jaw: 0.95, chin: 0.8 }, skin: '#efc9aa', hair: ['thin', '#6a5c4e'], top: '#a9bdd6', open: '#b9a888', sweater: true, pants: '#5f5a52', h: 1.0, stubble: '#8a7a6a', slump: 0.12, mood: 'sad', idle: 'slump' },
-  darryl:   { who: 'Darryl Philbin', face: { jaw: 1.15, chin: 1 },  skin: '#5e3c2a', hair: ['short', '#151110'], top: '#4f6f95', sleeves: 'short', pants: '#2f3542', h: 1.07, beard: '#1a1412', mood: 'smirk', idle: 'upright' }, // HQ #79 warehouse foreman (static set dressing)
+  grok:     { who: 'Michael Scott', face: { jaw: 1.05, chin: 1.2 },   skin: '#f0c4a0', hair: ['side', '#2a1c14'], top: '#d7e4f4', open: '#1e2430', tie: '#c41e2a', pants: '#1e2430', h: 1.0, belly: 1.08, mood: 'grin', props: ['bossMug'], idle: 'boss' },
+  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.9 },      skin: '#f3cfb3', hair: ['long', '#7a3e22', { len: 0.32, bangs: 1, curl: 1 }], top: '#f7f3ec', open: '#ef9aaf', skirt: '#5c5248', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
+  cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#4a2e18'], top: '#7fa3c4', tie: '#2a3850', pants: '#2e3238', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
+  assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.8, nose: 1.1 },  skin: '#f2cfae', hair: ['center', '#3a2818'], top: '#e0b83a', sleeves: 'short', tie: '#4a3018', pants: '#3f3224', h: 1.04, glasses: '#1a1a1a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
+  icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3 },    skin: '#f3cfb0', hair: ['side', '#7a5a30'], top: '#f4f1ea', open: '#c41018', sweater: true, tie: '#1a3478', pants: '#b89a68', h: 1.0, mood: 'grin' },
+  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6 },   skin: '#f2cdb4', hair: ['curly', '#9a6040'], top: '#a888d0', skirt: '#4a4458', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
+  builder:  { who: 'Stanley Hudson', face: { jaw: 1.25, chin: 0.7, nose: 1.2 },  skin: '#6b4430', hair: ['fringe', '#c8c4bc'], top: '#f1efe8', open: '#5a4838', vest: true, tie: '#8a1e30', pants: '#2e2a26', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#2a1a12', mustache: '#d4d0c8', mood: 'flat', idle: 'lean' },
+  faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85 },   skin: '#f6dcc6', hair: ['bun', '#f0e0a8'], top: '#f8f5ee', open: '#ddd0a0', skirt: '#2a2c38', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
+  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#120e0c'], top: '#8e82c8', tie: '#2e2458', pants: '#3a3e48', h: 1.0, beard: '#1a1410', mood: 'sly' },
+  conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.4, nose: 1.1 },    skin: '#f0c7a4', hair: ['receding', '#6a4a30'], top: '#ecebe4', open: '#6e8a48', sweater: true, pants: '#343028', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
+  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#eecbb0', hair: ['messy', '#d0cdc8'], top: '#4a5560', pants: '#22262a', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
+  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#c03010'], top: '#1e8a84', skirt: '#26262e', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
+  designer: { who: 'Kelly Kapoor', face: { jaw: 0.85, chin: 1.1, nose: 0.85 },    skin: '#a8714f', hair: ['long', '#0a0806', { len: 0.44 }], top: '#ff2d8a', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#d02050', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
+  profile:  { who: 'Toby Flenderson', face: { jaw: 0.95, chin: 0.8 }, skin: '#efc9aa', hair: ['thin', '#5a5044'], top: '#9eb4ce', open: '#c4b090', sweater: true, pants: '#524e46', h: 1.0, stubble: '#7a6a5a', slump: 0.12, mood: 'sad', idle: 'slump' },
+  darryl:   { who: 'Darryl Philbin', face: { jaw: 1.15, chin: 1 },  skin: '#5e3c2a', hair: ['short', '#0e0a08'], top: '#3e6a98', sleeves: 'short', pants: '#262c38', h: 1.07, beard: '#14100e', mood: 'smirk', idle: 'upright' },
 };
 const BY_NAME = Object.fromEntries(Object.values(LOOKS).map(l => [l.who, l]));
 export function lookFor(st) { return LOOKS[st.id] || BY_NAME[st.name] || { who: st.name, skin: '#f1c9a5', hair: ['short', '#3a2a1e'], top: st.color, pants: '#2f3640', mood: 'smile' }; }
@@ -133,48 +133,49 @@ const shade = (hex, k) => { const c = new THREE.Color(hex); c.multiplyScalar(k);
 
 function addHair(head, look) {
   const [style, hc, o = {}] = look.hair;
-  const dk = shade(hc, 0.8), lt = shade(hc, 1.15);
+  const dk = shade(hc, 0.8), lt = shade(hc, 1.15), hs = SURF.hair;
+  const A = (geo, col, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) => head.add(geo, col, p, r, s, hs);
   switch (style) {
     case 'side': // Michael / Andy: short, combed with a side part
-      head.add(G.cap(0.42), hc, [0, 0.012, 0.004], [0.32, 0, 0]).add(G.back(0.3, 0.6), hc, [0, 0.005, 0]);
-      head.add(G.fringe, hc, [0.02, 0.092, -0.07], [0.35, 0, -0.18], [0.85, 1, 1.2]).add(CAPZ(0.006, 0.09, 2, 4), dk, [-0.045, 0.118, -0.02], [0.2, 0, 0]); break; // part line
+      A(G.cap(0.42), hc, [0, 0.012, 0.004], [0.32, 0, 0]); A(G.back(0.3, 0.6), hc, [0, 0.005, 0]);
+      A(G.fringe, hc, [0.02, 0.092, -0.07], [0.35, 0, -0.18], [0.85, 1, 1.2]); A(CAPZ(0.006, 0.09, 2, 4), dk, [-0.045, 0.118, -0.02], [0.2, 0, 0]); break;
     case 'floppy': // Jim: shaggy, longer on top, swept across the forehead
-      head.add(G.cap(0.46), hc, [0, 0.018, 0], [0.22, 0, 0], [1.04, 1.08, 1.04]).add(G.back(0.28, 0.66), hc, [0, 0, 0.004], [0, 0, 0], [1.03, 1, 1.03]);
-      head.add(G.fringe, hc, [-0.015, 0.088, -0.092], [0.6, 0, 0.22], [1.05, 1.3, 1.3]).add(G.tuft, dk, [0.05, 0.12, -0.04]).add(G.tuft, hc, [-0.06, 0.12, 0.0]).add(G.tuft, lt, [0.0, 0.128, -0.07], [0, 0, 0], [1.2, 0.6, 0.8]); break;
+      A(G.cap(0.46), hc, [0, 0.018, 0], [0.22, 0, 0], [1.04, 1.08, 1.04]); A(G.back(0.28, 0.66), hc, [0, 0, 0.004], [0, 0, 0], [1.03, 1, 1.03]);
+      A(G.fringe, hc, [-0.015, 0.088, -0.092], [0.6, 0, 0.22], [1.05, 1.3, 1.3]); A(G.tuft, dk, [0.05, 0.12, -0.04]); A(G.tuft, hc, [-0.06, 0.12, 0.0]); A(G.tuft, lt, [0.0, 0.128, -0.07], [0, 0, 0], [1.2, 0.6, 0.8]); break;
     case 'center': // Dwight: center part, flat sides
-      head.add(G.cap(0.44), hc, [0, 0.01, 0.006], [0.28, 0, 0]).add(G.back(0.28, 0.62), hc);
-      head.add(G.fringe, hc, [-0.05, 0.088, -0.088], [0.45, 0, 0.32], [0.55, 1, 1.2]).add(G.fringe, hc, [0.05, 0.088, -0.088], [0.45, 0, -0.32], [0.55, 1, 1.2]);
-      head.add(CAP(0.012, 0.05, 2, 6), hc, [-0.104, -0.0, -0.03], [0, 0, 0], [0.6, 1, 1]).add(CAP(0.012, 0.05, 2, 6), hc, [0.104, 0, -0.03], [0, 0, 0], [0.6, 1, 1]); break; // sideburns
-    case 'short': // Oscar: neat, close-cropped
-      head.add(G.cap(0.4), hc, [0, 0.008, 0.006], [0.36, 0, 0]).add(G.back(0.3, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
+      A(G.cap(0.44), hc, [0, 0.01, 0.006], [0.28, 0, 0]); A(G.back(0.28, 0.62), hc);
+      A(G.fringe, hc, [-0.05, 0.088, -0.088], [0.45, 0, 0.32], [0.55, 1, 1.2]); A(G.fringe, hc, [0.05, 0.088, -0.088], [0.45, 0, -0.32], [0.55, 1, 1.2]);
+      A(CAP(0.012, 0.05, 2, 6), hc, [-0.104, -0.0, -0.03], [0, 0, 0], [0.6, 1, 1]); A(CAP(0.012, 0.05, 2, 6), hc, [0.104, 0, -0.03], [0, 0, 0], [0.6, 1, 1]); break;
+    case 'short': // Oscar / Darryl: neat, close-cropped
+      A(G.cap(0.4), hc, [0, 0.008, 0.006], [0.36, 0, 0]); A(G.back(0.3, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
     case 'receding': // Kevin: short and thin up top
-      head.add(G.cap(0.34), hc, [0, 0.006, 0.02], [0.62, 0, 0], [0.98, 0.98, 0.98]).add(G.back(0.32, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
+      A(G.cap(0.34), hc, [0, 0.006, 0.02], [0.62, 0, 0], [0.98, 0.98, 0.98]); A(G.back(0.32, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
     case 'thin': // Toby: thinning, short
-      head.add(G.cap(0.36), hc, [0, 0.005, 0.012], [0.45, 0, 0], [0.99, 0.99, 0.99]).add(G.back(0.3, 0.6), hc); break;
+      A(G.cap(0.36), hc, [0, 0.005, 0.012], [0.45, 0, 0], [0.99, 0.99, 0.99]); A(G.back(0.3, 0.6), hc); break;
     case 'fringe': // Stanley: bald on top, short gray band around the back
-      head.add(G.back(0.42, 0.6), hc, [0, -0.005, 0], [0, 0, 0], [1.0, 1, 1.0]); break;
+      A(G.back(0.42, 0.6), hc, [0, -0.005, 0], [0, 0, 0], [1.0, 1, 1.0]); break;
     case 'messy': // Creed: wispy gray, sticking up
-      head.add(G.cap(0.4), hc, [0, 0.01, 0.012], [0.4, 0, 0]).add(G.back(0.3, 0.62), hc);
-      for (const [x, y, z] of [[-0.07, 0.11, -0.02], [0.06, 0.12, 0.02], [0, 0.13, 0.05], [-0.09, 0.07, 0.07], [0.1, 0.07, 0.06], [-0.11, 0.03, 0.03], [0.11, 0.03, 0.03]]) head.add(G.tuft, hc, [x, y, z], [0, 0, 0], [0.8, 0.7, 0.8]); break;
+      A(G.cap(0.4), hc, [0, 0.01, 0.012], [0.4, 0, 0]); A(G.back(0.3, 0.62), hc);
+      for (const [x, y, z] of [[-0.07, 0.11, -0.02], [0.06, 0.12, 0.02], [0, 0.13, 0.05], [-0.09, 0.07, 0.07], [0.1, 0.07, 0.06], [-0.11, 0.03, 0.03], [0.11, 0.03, 0.03]]) A(G.tuft, hc, [x, y, z], [0, 0, 0], [0.8, 0.7, 0.8]); break;
     case 'long': { // Pam / Kelly: long, down past the shoulders
       const len = o.len || 0.3;
-      head.add(G.cap(0.5), hc, [0, 0.012, 0.004], [0.18, 0, 0], [1.04, 1.04, 1.06]).add(G.back(0.25, 0.75), hc, [0, 0, 0.004], [0, 0, 0], [1.06, 1.02, 1.06]);
-      head.add(CAP(0.12, len, 4, 16), hc, [0, -len / 2 + 0.0, 0.06], [0.08, 0, 0], [1.08, 1, 0.42]); // back curtain, rounded
-      head.add(CAP(0.032, len * 0.7, 3, 8), hc, [-0.112, -len * 0.36 + 0.01, -0.005], [0, 0, -0.06]).add(CAP(0.032, len * 0.7, 3, 8), hc, [0.112, -len * 0.36 + 0.01, -0.005], [0, 0, 0.06]);
-      if (o.curl) head.add(G.curl, hc, [-0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]).add(G.curl, hc, [0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]);
-      if (o.bangs) head.add(G.fringe, hc, [0, 0.088, -0.095], [0.55, 0, 0], [1.0, 1.1, 1.3]);
-      else head.add(G.fringe, hc, [0.035, 0.09, -0.09], [0.5, 0, -0.35], [0.7, 1, 1.2]); // side-swept
+      A(G.cap(0.5), hc, [0, 0.012, 0.004], [0.18, 0, 0], [1.04, 1.04, 1.06]); A(G.back(0.25, 0.75), hc, [0, 0, 0.004], [0, 0, 0], [1.06, 1.02, 1.06]);
+      A(CAP(0.12, len, 4, 16), hc, [0, -len / 2 + 0.0, 0.06], [0.08, 0, 0], [1.08, 1, 0.42]);
+      A(CAP(0.032, len * 0.7, 3, 8), hc, [-0.112, -len * 0.36 + 0.01, -0.005], [0, 0, -0.06]); A(CAP(0.032, len * 0.7, 3, 8), hc, [0.112, -len * 0.36 + 0.01, -0.005], [0, 0, 0.06]);
+      if (o.curl) { A(G.curl, hc, [-0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]); A(G.curl, hc, [0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]); }
+      if (o.bangs) A(G.fringe, hc, [0, 0.088, -0.095], [0.55, 0, 0], [1.0, 1.1, 1.3]);
+      else A(G.fringe, hc, [0.035, 0.09, -0.09], [0.5, 0, -0.35], [0.7, 1, 1.2]);
       break; }
     case 'bob': // Meredith: red, chin length, a bit messy
-      head.add(G.cap(0.5), hc, [0, 0.012, 0], [0.18, 0, 0], [1.06, 1.05, 1.07]).add(G.back(0.25, 0.8), hc, [0, -0.005, 0.005], [0, 0, 0], [1.1, 1.0, 1.1]);
-      head.add(CAP(0.04, 0.1, 3, 8), hc, [-0.12, -0.045, -0.01], [0, 0, 0.12]).add(CAP(0.04, 0.1, 3, 8), hc, [0.12, -0.045, -0.01], [0, 0, -0.12]);
-      head.add(G.tuft, dk, [0.07, 0.1, -0.05], [0, 0, 0], [0.8, 0.6, 0.8]); break;
+      A(G.cap(0.5), hc, [0, 0.012, 0], [0.18, 0, 0], [1.06, 1.05, 1.07]); A(G.back(0.25, 0.8), hc, [0, -0.005, 0.005], [0, 0, 0], [1.1, 1.0, 1.1]);
+      A(CAP(0.04, 0.1, 3, 8), hc, [-0.12, -0.045, -0.01], [0, 0, 0.12]); A(CAP(0.04, 0.1, 3, 8), hc, [0.12, -0.045, -0.01], [0, 0, -0.12]);
+      A(G.tuft, dk, [0.07, 0.1, -0.05], [0, 0, 0], [0.8, 0.6, 0.8]); break;
     case 'bun': // Angela: scraped back into a tight bun
-      head.add(G.cap(0.52), hc, [0, 0.006, 0.004], [0.16, 0, 0], [1.0, 1.0, 1.02]).add(G.back(0.25, 0.62), hc).add(G.bun, hc, [0, 0.07, 0.12]).add(new THREE.TorusGeometry(0.04, 0.008, 6, 14), dk, [0, 0.07, 0.085], [0.5, 0, 0]); break;
+      A(G.cap(0.52), hc, [0, 0.006, 0.004], [0.16, 0, 0], [1.0, 1.0, 1.02]); A(G.back(0.25, 0.62), hc); A(G.bun, hc, [0, 0.07, 0.12]); A(new THREE.TorusGeometry(0.04, 0.008, 6, 14), dk, [0, 0.07, 0.085], [0.5, 0, 0]); break;
     case 'curly': // Phyllis: short and curly
-      head.add(G.cap(0.5), hc, [0, 0.015, 0], [0.18, 0, 0], [1.06, 1.06, 1.06]);
-      for (let k = 0; k < 11; k++) { const a = PI * 0.12 + k / 10 * PI * 1.76; head.add(G.curl, k % 2 ? hc : dk, [Math.cos(a) * 0.12, 0.03 + (k % 3) * 0.02, Math.sin(a) * 0.12]); }
-      head.add(G.curl, hc, [0, 0.12, 0.02]).add(G.curl, dk, [-0.05, 0.11, -0.05]).add(G.curl, hc, [0.05, 0.11, -0.05]).add(G.curl, lt, [0, 0.1, -0.08], [0, 0, 0], [1, 0.8, 0.8]); break;
+      A(G.cap(0.5), hc, [0, 0.015, 0], [0.18, 0, 0], [1.06, 1.06, 1.06]);
+      for (let k = 0; k < 11; k++) { const a = PI * 0.12 + k / 10 * PI * 1.76; A(G.curl, k % 2 ? hc : dk, [Math.cos(a) * 0.12, 0.03 + (k % 3) * 0.02, Math.sin(a) * 0.12]); }
+      A(G.curl, hc, [0, 0.12, 0.02]); A(G.curl, dk, [-0.05, 0.11, -0.05]); A(G.curl, hc, [0.05, 0.11, -0.05]); A(G.curl, lt, [0, 0.1, -0.08], [0, 0, 0], [1, 0.8, 0.8]); break;
   }
   return style;
 }
@@ -385,7 +386,7 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   const cup = new THREE.Mesh(cupGeo || CYL(0.035, 0.03, 0.09, 8), cupMat || new THREE.MeshStandardMaterial({ color: '#f2f2f0' })); cup.position.set(0, -0.31, -0.045); cup.visible = false; elbowR.add(cup);
   const phone = new THREE.Mesh(phoneGeo || BOX(0.07, 0.13, 0.012), phoneMat || new THREE.MeshStandardMaterial({ color: '#16181c' })); phone.position.set(0, -0.31, -0.03); phone.rotation.x = PI / 2; phone.visible = false; elbowR.add(phone);
   const extras = [];
-  if (L.props?.includes('bossMug')) { const m = bossMug(); m.position.set(0, -0.31, -0.05); elbowL.add(m); extras.push({ obj: m, standOnly: true, upright: true }); }
+  if (L.props?.includes('bossMug')) { const m = bossMug(); m.position.set(0, -0.31, -0.05); elbowL.add(m); extras.push({ obj: m, standOnly: true, upright: true, hand: 'L' }); }
 
   root.scale.setScalar(L.h || 1);
   root.userData.look = L;
@@ -405,21 +406,22 @@ const GLB_OFF = (QS.get('q') || localStorage.getItem('hqQuality')) === 'low' || 
 const KITS = ['suitM', 'casualM', 'casual2M', 'workerM', 'suitW', 'formalW', 'casualW'];
 // head / body / legs / feet kit + color overrides keyed 'Part/Material' (Skin + hair defaults come from LOOKS)
 const CAST = {
-  grok:     { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#2b2f3a', 'Legs/Suit': '#2b2f3a', 'Body/White': '#dfe8f4', 'Body/Tie': '#b3262e' } },
-  inbox:    { head: 'formalW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#e7a1b0', 'Legs/LimeGreen': '#6d6158', 'Feet/Red': '#4a3428' } },
-  cos:      { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#a9c0d8', 'Body/White': '#c4d4e6', 'Body/Tie': '#34445e', 'Legs/Suit': '#3a3d44' } },
-  assist:   { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', glasses: '#2a2a2a', c: { 'Body/Suit': '#d1ad4f', 'Body/White': '#e2c56c', 'Body/Tie': '#5a3b1d', 'Legs/Suit': '#4b3d2e' } },
-  icons:    { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#b31b1b', 'Legs/Suit': '#c4ab7c', 'Feet/Black': '#5a3a22' } },
-  onpad:    { head: 'casualW', body: 'formalW', legs: 'formalW', feet: 'formalW', wide: 1.16, c: { 'Body/LimeGreen': '#b9a1d4', 'Legs/LimeGreen': '#5b5468', 'Body/Gold': '#e9e2d0', 'Feet/Red': '#3a2f2a' } },
-  builder:  { head: 'workerM', body: 'suitM', legs: 'suitM', feet: 'suitM', wide: 1.18, glasses: '#3a2a20', hide: ['Head/Worker_Yellow'], c: { 'Body/Suit': '#6a5643', 'Body/White': '#f1efe8', 'Body/Tie': '#7a2335', 'Legs/Suit': '#3a3530' } },
-  faith:    { head: 'suitW', body: 'suitW', legs: 'formalW', feet: 'formalW', c: { 'Body/Black': '#e8dcb2', 'Body/White': '#f6f3ec', 'Legs/LimeGreen': '#33343f', 'Feet/Red': '#2a1d18' } },
-  broker:   { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#a99fd2', 'Body/White': '#bdb5e0', 'Body/Tie': '#3c2f6b', 'Legs/Suit': '#474b55' } },
-  conn:     { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', wide: 1.24, c: { 'Body/Purple': '#8c8452', 'Legs/Suit': '#3e3a33' } },
-  review:   { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#55606b', 'Body/White': '#8a8f96', 'Body/Tie': '#55606b', 'Legs/Suit': '#2c2f33' } },
-  kids:     { head: 'casualW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#2c8a86', 'Legs/LimeGreen': '#2f2f36', 'Feet/Red': '#2a1d18' } },
-  designer: { head: 'suitW', body: 'formalW', legs: 'formalW', feet: 'formalW', c: { 'Body/LimeGreen': '#e8408f', 'Legs/LimeGreen': '#e8408f', 'Body/Gold': '#f2d36b', 'Feet/Red': '#1a1214' } },
-  profile:  { head: 'casual2M', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#b9a888', 'Legs/Suit': '#5f5a52' } },
-  darryl:   { head: 'workerM', body: 'casual2M', legs: 'suitM', feet: 'suitM', hide: ['Head/Worker_Yellow'], c: { 'Body/LightBrown': '#4f6f95', 'Legs/Suit': '#2f3542' } },
+  // HQ #97: kit picks + colors tuned so silhouette/outfit reads from across the room; hair comes from procedural overlay.
+  grok:     { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#1e2430', 'Legs/Suit': '#1e2430', 'Body/White': '#d7e4f4', 'Body/Tie': '#c41e2a' } },
+  inbox:    { head: 'formalW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#ef9aaf', 'Legs/LimeGreen': '#5c5248', 'Feet/Red': '#4a3428' } },
+  cos:      { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#7fa3c4', 'Body/White': '#c4d4e6', 'Body/Tie': '#2a3850', 'Legs/Suit': '#2e3238' } },
+  assist:   { head: 'suitM', body: 'casual2M', legs: 'suitM', feet: 'suitM', glasses: '#1a1a1a', c: { 'Body/LightBrown': '#e0b83a', 'Body/White': '#f0d878', 'Legs/Suit': '#3f3224' } },
+  icons:    { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#c41018', 'Legs/Suit': '#b89a68', 'Feet/Black': '#5a3a22' } },
+  onpad:    { head: 'casualW', body: 'formalW', legs: 'formalW', feet: 'formalW', wide: 1.16, c: { 'Body/LimeGreen': '#a888d0', 'Legs/LimeGreen': '#4a4458', 'Body/Gold': '#e9e2d0', 'Feet/Red': '#3a2f2a' } },
+  builder:  { head: 'workerM', body: 'suitM', legs: 'suitM', feet: 'suitM', wide: 1.2, glasses: '#2a1a12', hide: ['Head/Worker_Yellow'], c: { 'Body/Suit': '#5a4838', 'Body/White': '#f1efe8', 'Body/Tie': '#8a1e30', 'Legs/Suit': '#2e2a26', 'Head/Moustache': '#d4d0c8' } },
+  faith:    { head: 'suitW', body: 'suitW', legs: 'formalW', feet: 'formalW', c: { 'Body/Black': '#ddd0a0', 'Body/White': '#f8f5ee', 'Legs/LimeGreen': '#2a2c38', 'Feet/Red': '#2a1d18' } },
+  broker:   { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#8e82c8', 'Body/White': '#bdb5e0', 'Body/Tie': '#2e2458', 'Legs/Suit': '#3a3e48' } },
+  conn:     { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', wide: 1.28, c: { 'Body/Purple': '#6e8a48', 'Legs/Suit': '#343028' } },
+  review:   { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#4a5560', 'Body/White': '#8a8f96', 'Body/Tie': '#4a5560', 'Legs/Suit': '#22262a' } },
+  kids:     { head: 'casualW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#1e8a84', 'Legs/LimeGreen': '#26262e', 'Feet/Red': '#2a1d18' } },
+  designer: { head: 'suitW', body: 'formalW', legs: 'formalW', feet: 'formalW', c: { 'Body/LimeGreen': '#ff2d8a', 'Legs/LimeGreen': '#ff2d8a', 'Body/Gold': '#f2d36b', 'Feet/Red': '#1a1214' } },
+  profile:  { head: 'casual2M', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#c4b090', 'Legs/Suit': '#524e46' } },
+  darryl:   { head: 'workerM', body: 'casual2M', legs: 'suitM', feet: 'suitM', hide: ['Head/Worker_Yellow'], c: { 'Body/LightBrown': '#3e6a98', 'Legs/Suit': '#262c38' } },
 };
 const HAIR_MATS = new Set(['Hair', 'Hair_Blond']);
 const gmat = new Map(); // shared materials by color
@@ -460,21 +462,30 @@ function dress(rig) {
       m.castShadow = part === 'Body' || part === 'Legs'; });
   }
   parent.updateMatrixWorld(true); base.rotation.y = PI;
-  if (spec.glasses) addGlasses(base, bones, spec.glasses);
-  mergeParts(parent);
+  // HQ #97: hide stock kit hair so per-person procedural hair silhouettes read from across the room
+  parent.traverse(m => {
+    if (!m.isSkinnedMesh || !m.visible) return;
+    const mn = m.userData.kitMat || m.material?.name || '';
+    let p = m, pn = null; while (p && !pn) { pn = partOf(p); p = p.parent; }
+    if (pn === 'Head' && (HAIR_MATS.has(mn) || (mn === 'Red' && spec.head === 'formalW'))) m.visible = false;
+  });
+    if (spec.glasses) addGlasses(base, bones, spec.glasses);
+  mergeParts(parent); const headFrame = measureHead(base, bones, spec.head); // HQ #97: rest-pose head frame (base-local)
   // fit: same standing height as the procedural person, hips drop onto the chair when seated
   base.rotation.y = PI; const fit = new THREE.Group(); fit.add(base);
   base.updateMatrixWorld(true); const hipW = bones.Hips.getWorldPosition(new THREE.Vector3());
   const k = 1.74 / 1.82; fit.scale.set(k * (spec.wide || 1), k, k * (spec.wide || 1));
   rig.body.add(fit);
   for (const m of rig.procMeshes) m.visible = false;
+  rig.glb = { bones }; addHeadLikeness(rig, bones, L, base, headFrame); const hairG = rig.glb.hair; // before the mixer moves the head
   const mixer = new THREE.AnimationMixer(base);
   const clip = n => KIT.clips.find(c => c.name === n);
   const idle = mixer.clipAction(clip('Idle')), walk = mixer.clipAction(clip('Walk'));
   idle.play(); walk.play(); walk.setEffectiveWeight(0); mixer.update(Math.random() * 3);
   const flip = bones.UpperArmL.getWorldPosition(new THREE.Vector3()).x > hipW.x; // which way left/right ended up in body space
   const rest = Object.values(bones).map(b => [b, b.position.clone(), b.quaternion.clone()]);
-  rig.glb = { rest, fit, base, bones, mixer, idle, walk, hipY: hipW.y * k, flip, last: rig.root.position.clone(), speed: 0 };
+  rig.glb = { rest, fit, base, bones, mixer, idle, walk, hipY: hipW.y * k, flip, last: rig.root.position.clone(), speed: 0, propsOnBones: false, hair: hairG };
+  attachHandProps(rig);           // mug / cup / phone on Wrist bones (fixes torso clipping)
   rigs.push(rig);
 }
 // iPad: fold every visible part into ONE skinned mesh (vertex colors, one shared material) when the kits' bind poses agree
@@ -486,9 +497,10 @@ function mergeParts(parent) {
   const near = (a, b) => a.elements.every((x, k) => Math.abs(x - b.elements[k]) < 2e-3);
   for (const m of parts) { if (!near(m.bindMatrix, parts[0].bindMatrix)) { console.warn('cast: bind mismatch, not merging'); return; }
     for (const b of m.skeleton.bones) if (idx[b.name] == null) return; }
-  const P = [], N = [], C = [], SI = [], SW = [], I = []; let base = 0; const col = new THREE.Color();
+  const P = [], N = [], C = [], SI = [], SW = [], I = []; let base = 0; const col = new THREE.Color(), ranges = [];
   for (const m of parts) {
-    const g = m.geometry, n = g.attributes.position.count, map = m.skeleton.bones.map(b => idx[b.name]);
+    const g = m.geometry, n = g.attributes.position.count; { let q = m, pn = null; while (q && !pn) { pn = partOf(q); q = q.parent; } ranges.push({ key: pn + '/' + m.userData.kitMat, start: base, count: n }); }
+    const map = m.skeleton.bones.map(b => idx[b.name]);
     col.copy(m.material.color);
     const pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
     // correction per bone: put this part's bind space into the reference skeleton's bind space
@@ -511,7 +523,7 @@ function mergeParts(parent) {
   parts[0].parent.add(one); one.position.copy(parts[0].position); one.quaternion.copy(parts[0].quaternion); one.scale.copy(parts[0].scale);
   one.bind(new THREE.Skeleton(ref.bones, ref.boneInverses), parts[0].bindMatrix);
   for (const m of parts) { m.removeFromParent(); m.userData.kitMat === 'Eye' && (one.userData.eye = m); }
-  parent.userData.merged = one;
+  parent.userData.merged = one; one.userData.ranges = ranges;
 }
 function addGlasses(base, bones, hex) {
   let eye = null; base.traverse(o => { if (!eye && o.isSkinnedMesh && o.visible && o.userData.kitMat === 'Eye') eye = o; });
@@ -526,6 +538,66 @@ function addGlasses(base, bones, hex) {
   g.add(new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.01, half * 2 - 0.055), 0.007, 0.007), m));
   g.position.set(c.x, c.y, zf + Math.sign(zf) * 0.015); base.add(g); base.updateMatrixWorld(true); bones.Head.attach(g);
 }
+// HQ #97: head frame measured from the kit's own skinned rest-pose skull, so procedural hair fits any kit head
+// (kit vertex data is meshopt-quantized, so the frame is anchored on the Head bone and tuned per head family instead)
+const HEAD_FIT = { M: { up: 0.155, fwd: 0.02, s: [1.05, 1.08, 1.06] }, W: { up: 0.145, fwd: 0.022, s: [0.98, 1.02, 1.0] } };
+function measureHead(base, bones, kit) {
+  if (!bones.Head) return null; base.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(base.matrixWorld).invert(), hp = bones.Head.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+  const f = HEAD_FIT[/W$/.test(kit) ? 'W' : 'M'];
+  return { c: hp.add(new THREE.Vector3(0, f.up, f.fwd)), s: new THREE.Vector3(...f.s), front: 1 };
+}
+// HQ #97: distinctive hair / facial hair / earrings attached to the Head bone (one cheap non-skinned overlay per person)
+function addHeadLikeness(rig, bones, L, base, F) {
+  if (!bones.Head || !F) return;
+  const specHead = CAST[rig.st.id]?.head;
+  const P = new Part();
+  addHair(P, L);
+  if (L.mustache && specHead !== 'workerM') P.add(G.stache, L.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1], SURF.hair);
+  if (L.beard) { P.add(G.beard, L.beard, [0, 0, 0], [0, 0, 0], [1.03, 1.06, 1.05], SURF.hair); P.add(G.stache, L.beard, [0, -0.039, -0.117], [0, 0, 0], [1, 1, 1], SURF.hair); }
+  if (L.stubble) P.add(G.beard, L.stubble, [0, 0, 0], [0, 0, 0], [1.0, 1.06, 1.01], SURF.hair);
+  if (L.props?.includes('earrings')) { P.add(G.earring, '#e3c25a', [-0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal); P.add(G.earring, '#e3c25a', [0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal); }
+  if (!P.items.length) return;
+  const mesh = P.mesh(false); mesh.name = 'likenessHair';
+  // procedural frame: 0.12 skull at origin, face toward -z. Map onto the measured kit skull in base-local space.
+  mesh.position.copy(F.c); mesh.scale.copy(F.s); mesh.rotation.y = F.front > 0 ? PI : 0;
+  rig.root.updateMatrixWorld(true); base.add(mesh); mesh.updateMatrixWorld(true); bones.Head.attach(mesh);
+  rig.glb.hair = mesh;
+  if (globalThis.__hq97dbg) { mesh.geometry.computeBoundingBox(); const b = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld), hw = bones.Head.getWorldPosition(new THREE.Vector3()); console.log('hair', rig.st.id, JSON.stringify({ F, b: [b.min, b.max], hw })); }
+}
+
+// HQ #97: reparent hand props onto Wrist bones (Object3D.attach so armature scale does not crush them)
+function attachHandProps(rig) {
+  const B = rig.glb.bones, base = rig.glb.base, [A, Z] = rig.glb.flip ? ['R', 'L'] : ['L', 'R'];
+  const W = { L: B['Wrist' + A] || B.WristL, R: B['Wrist' + Z] || B.WristR };
+  if (!base || (!W.L && !W.R)) { rig.glb.propsOnBones = false; return; }
+  const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _o = new THREE.Vector3(), _inv = new THREE.Matrix4(), _bq = new THREE.Quaternion();
+  const park = (obj, hand) => {
+    const bone = W[hand]; if (!obj || !bone) return false;
+    base.updateMatrixWorld(true); bone.updateMatrixWorld(true);
+    bone.getWorldPosition(_p); bone.getWorldQuaternion(_q);
+    _o.set(hand === 'L' ? -0.04 : 0.04, 0.07, 0.06).applyQuaternion(_q); _p.add(_o);
+    obj.removeFromParent(); base.add(obj);
+    _inv.copy(base.matrixWorld).invert();
+    obj.position.copy(_p).applyMatrix4(_inv);
+    base.getWorldQuaternion(_bq); obj.quaternion.copy(_bq).invert().multiply(_q);
+    obj.scale.set(1, 1, 1);
+    base.updateMatrixWorld(true); bone.attach(obj);
+    return true;
+  };
+  const ok = park(rig.cup, 'R') | park(rig.phone, 'R');
+  if (rig.phone) { /* palm-flat: after attach, tip phone toward fingers */ rig.phone.rotateX(PI / 2); }
+  for (const e of rig.extras || []) { if (park(e.obj, e.hand || 'L')) e.boneAttached = true; }
+  rig.glb.propsOnBones = !!ok;
+}
+
+function keepUpright(obj) {
+  if (!obj || !obj.visible || !obj.parent) return;
+  obj.parent.updateMatrixWorld(true);
+  obj.parent.getWorldQuaternion(_qa);
+  obj.quaternion.copy(_qa).invert(); // cancel parent so local +Y stays world-up
+}
+
 // ---- per-frame: mixer + procedural deltas (driven by the same groups workers.js already poses) ----
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion(), _qi = new THREE.Quaternion();
 function applyDelta(proc, bone, amt) {
@@ -561,6 +633,11 @@ function tickRig(r, dt) {
   applyDelta(r.legR, B['UpperLeg' + Z], lim); applyDelta(r.kneeR, B['LowerLeg' + Z], lim);
   for (const [f, m] of rel) { const shin = B[f === B.FootL ? 'LowerLegL' : 'LowerLegR'];
     _mB.copy(f.parent.matrixWorld).invert().multiply(_mA.copy(shin.matrixWorld).multiply(m)); _mB.decompose(f.position, f.quaternion, _sc); f.updateMatrixWorld(true); }
+  // HQ #97: mug/cup stay upright in the wrist (world +Y) so they never tip through the torso
+  if (g.propsOnBones) {
+    if (r.cup?.visible) keepUpright(r.cup);
+    for (const e of r.extras || []) if (e.upright && e.obj.visible) keepUpright(e.obj);
+  }
 }
 const _mA = new THREE.Matrix4(), _mB = new THREE.Matrix4(), _sc = new THREE.Vector3();
 export const castInfo = () => ({ glb: !!KIT, off: GLB_OFF, dressed: rigs.length });

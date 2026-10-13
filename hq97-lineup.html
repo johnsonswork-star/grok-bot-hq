@@ -1,0 +1,17 @@
+<html><body style="margin:0"><script type="module">
+globalThis.__hq97dbg=1;
+import * as THREE from './vendor/three.module.js';
+import { buildCharacter, LOOKS, castInfo } from './characters.js';
+const W=1600,H=760; const r=new THREE.WebGLRenderer({antialias:true}); r.setSize(W,H); r.toneMapping=THREE.ACESFilmicToneMapping; r.outputColorSpace=THREE.SRGBColorSpace; document.body.appendChild(r.domElement);
+const s=new THREE.Scene(); s.background=new THREE.Color('#cfd6dc');
+s.add(new THREE.HemisphereLight('#fff','#887',1.3)); const d=new THREE.DirectionalLight('#fff',2.2); d.position.set(2,4,-5); s.add(d);
+const ids=Object.keys(LOOKS); const h=location.hash.slice(1)||'a';
+const half=h==='b'?ids.slice(8):ids.slice(0,8); const close=h.startsWith('c');
+const set=close?(h==='c1'?ids.slice(0,5):h==='c2'?ids.slice(5,10):ids.slice(10)):half;
+const rigs=set.map((id,i)=>{const c=buildCharacter({id,name:id}); c.root.position.x=(i-(set.length-1)/2)*(close?0.5:0.6); c.root.rotation.y=Math.PI; s.add(c.root); return c;});
+const cam=new THREE.PerspectiveCamera(close?16:30,W/H,0.1,50);
+if(close){cam.position.set(0,1.62,6.5); cam.lookAt(0,1.5,0);} else {cam.position.set(0,1.3,5.6); cam.lookAt(0,0.95,0);}
+window.__info=()=>({calls:r.info.render.calls,...castInfo()});
+let n=0; const loop=()=>{r.render(s,cam); if(castInfo().dressed>=set.length&&++n>20) window.done=1; requestAnimationFrame(loop);}; loop();
+setTimeout(()=>window.done=1,25000);
+</script></body></html>

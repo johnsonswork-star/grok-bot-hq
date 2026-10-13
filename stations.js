@@ -19,9 +19,9 @@ export const STATIONS = [
     job: 'RECEPTION',
     role: 'Reception: watches the family Gmail, flags what needs you, takes messages.' },
   // Jim + Dwight: face-to-face right outside Michael's office windows, next to reception
-  { id: 'cos',      name: 'Jim Halpert',     bot: 'Web & Sales', teammate: true, aka: ['Web Brokerage'],       short: 'JIM',     color: '#5b7cfa', x: 4.2,  z: 4.5,  ry: 0,      desk: 'sales',
-    job: 'WEB & SALES',
-    role: 'Sales desk: domains, websites, web deals and listings.' },
+  { id: 'cos',      name: 'Jim Halpert',     bot: 'Market Research', teammate: true, aka: ['Web Brokerage', 'Web & Sales'], short: 'JIM',     color: '#5b7cfa', x: 4.2,  z: 4.5,  ry: 0,      desk: 'sales',
+    job: 'MARKET RESEARCH',
+    role: 'Atom Family research: trends, social, sales signals for Kelly → Creed QC.' },
   { id: 'assist',   name: 'Dwight Schrute',  bot: 'Family Assistant', teammate: true, aka: ['Family Assistance'],    short: 'DWIGHT',  color: '#e07a5f', x: 4.2,  z: 3.7,  ry: PI,     desk: 'Asst. (to the) Regional Mgr',
     job: 'FAMILY ASSISTANT',
     role: 'Family assistant: benefits, appointments, paperwork, job apps and household help.' },

@@ -55,7 +55,7 @@ const HANDOFF = { // real teammate behind the desk: stand-in confirms it went to
   designer: 'OMG okay, got it! Sending it to the real Atom Family Designer desk. Real answer comes back right here.',
   profile: 'Oh. Okay. Sorry. I passed that to the real HR & Settings desk. The answer comes back in this thread.',
   inbox: 'Got it! I put that on the real Reception desk. The answer comes back right here.',
-  cos: 'Yep, passed to the real Web & Sales desk. *looks at camera* Answer comes back in this thread.',
+  cos: 'Yep, passed to the real Market Research desk. *looks at camera* Answer comes back in this thread.',
   assist: 'Logged. Routed to the real Family Assistant desk. Expect results. Here. In this thread.',
   onpad: 'Okay, dear, I sent that to the real Chat & Messaging desk. The answer comes back right here.',
   builder: 'Fine. It is on the real App Builder desk. Answer comes back here.',

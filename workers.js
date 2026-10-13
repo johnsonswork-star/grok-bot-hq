@@ -308,12 +308,12 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
           else if (style === 'upright') { bSp = -0.02; bLx = 0.42; bRx = 0.42; bEL = 1.2; bER = 1.2; bLz = 0.3; bRz = -0.3; bHx = 0; bHy = Math.sin(t * 0.9 + w.seed) * 0.6; } // hands folded, scanning the room
           aLx += (bLx - aLx) * u; aRx += (bRx - aRx) * u; eL += (bEL - eL) * u; eR += (bER - eR) * u; aLz += (bLz - aLz) * u; aRz += (bRz - aRz) * u;
           spX += (bSp - spX) * u; hx += (bHx - hx) * u; hy += (bHy - hy) * u;
-          if (style === 'sip') w.cup.rotation.x = -(aRx + eR) + 0.2;
+          if (style === 'sip' && !w.glb?.propsOnBones) w.cup.rotation.x = -(aRx + eR) + 0.2;
         }
         spX += breath * 0.012 * s;
       }
-      if (w.cup.visible && s < 0.5) w.cup.rotation.x = -(aRx + eR) + (w.act === 'water' ? 0.25 : 0);
-      for (const e of w.extras || []) if (e.upright && e.obj.visible) e.obj.rotation.x = -(aLx + eL);
+      if (w.cup.visible && s < 0.5 && !w.glb?.propsOnBones) w.cup.rotation.x = -(aRx + eR) + (w.act === 'water' ? 0.25 : 0);
+      for (const e of w.extras || []) if (e.upright && e.obj.visible && !e.boneAttached) e.obj.rotation.x = -(aLx + eL);
       w.spine.rotation.set(spX, moving ? -swing * 0.16 * (1 - s) : Math.sin(t * 0.23 + w.seed * 5) * 0.03 * still, spZ - (moving ? Math.sin(w.phase) * 0.02 * walkAmt : 0)); // HQ #90b shoulder counter-twist
       w.torso.scale.set(1 + breath * 0.012, 1, 1 + breath * 0.02);
       w.legL.rotation.x = lLx; w.legR.rotation.x = lRx; w.kneeL.rotation.x = kL; w.kneeR.rotation.x = kR;
