@@ -38,6 +38,11 @@
     "review": {
       "task": "Visual upgrade: QA check",
       "since": "2026-10-13T01:19:10.182Z"
+    },
+    "builder": {
+      "task": "Visual upgrade: lighting & materials live; polishing",
+      "since": "2026-10-13T01:20:23.590Z",
+      "until": "2026-10-13T02:50:23.591Z"
     }
   }
 }
