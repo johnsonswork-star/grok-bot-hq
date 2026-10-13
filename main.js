@@ -676,15 +676,11 @@ if (!HQ_LOW) {
   });
   const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false, opacity: 0.55 });
   // a few shafts from the north window wall into the bullpen
-  [[-6.5, -6.2], [-2.0, -6.0], [2.5, -6.1], [7.0, -5.8]].forEach(([x, z], i) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1 + (i % 2) * 0.35, 3.4), shaftMat);
-    m.position.set(x, 1.55, z + 1.8); m.rotation.x = -0.55; m.rotation.y = (i - 1.5) * 0.04;
+  [[-4.0, -6.1], [4.0, -5.9]].forEach(([x, z], i) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.25 + (i % 2) * 0.3, 3.5), shaftMat);
+    m.position.set(x, 1.55, z + 1.9); m.rotation.x = -0.52; m.rotation.y = (i - 1) * 0.05;
     m.renderOrder = 2; scene.add(m);
   });
-  // soft bloom glow strip just inside the glass
-  const bloomMat = new THREE.MeshBasicMaterial({ color: '#fff6e0', transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const bloom = new THREE.Mesh(new THREE.PlaneGeometry(20, 2.4), bloomMat);
-  bloom.position.set(0, 1.7, Z0 + 0.35); bloom.renderOrder = 2; scene.add(bloom);
 }
 
 // ---------- outside view ----------
@@ -773,73 +769,51 @@ box(0.12, 0.005, 90, new THREE.MeshBasicMaterial({ color: '#e3c11e' }), 22.6, 0.
   });
   treeAtlas.colorSpace = THREE.SRGBColorSpace;
   const treeMat = new THREE.MeshBasicMaterial({ map: treeAtlas, transparent: true, alphaTest: 0.32, depthWrite: true, side: THREE.DoubleSide, fog: true });
+  // Plane tall enough that canopy reaches 2nd-floor windows (grounds sit at BY = -4.4)
+  const TREE_H = 8.2, TREE_W = 5.0;
   function treePlane(variant) {
-    // variant 0..3 → UV quadrant (2x2 atlas)
-    const geo = new THREE.PlaneGeometry(4.2, 6.2);
+    const geo = new THREE.PlaneGeometry(TREE_W, TREE_H);
     const uvs = geo.attributes.uv;
     const col = variant % 2, row = (variant / 2) | 0;
     for (let i = 0; i < uvs.count; i++) {
-      uvs.setXY(i, col * 0.5 + uvs.getX(i) * 0.5, 1 - (row * 0.5 + (1 - uvs.getY(i)) * 0.5));
+      // canvas y=0 is top of atlas; flipY texture → map plane v so canopy is up
+      uvs.setXY(i, col * 0.5 + uvs.getX(i) * 0.5, (1 - row) * 0.5 + uvs.getY(i) * 0.5);
     }
     return geo;
   }
-  // 4 variants; each instance also gets a crossed card (same mesh pool, 90° yaw) → volume without a green wall
-  const treeMeshes = [0, 1, 2, 3].map(v => new THREE.InstancedMesh(treePlane(v), treeMat, 48));
+  // 2 InstancedMeshes (variants 0/1 and 2/3 share? keep 4 for silhouette variety — still only 4 draws)
+  const treeMeshes = [0, 1].map(v => new THREE.InstancedMesh(treePlane(v), treeMat, 56));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s3 = new THREE.Vector3(), pos = new THREE.Vector3();
-  const counts = [0, 0, 0, 0];
-  function placeTree(x, z, s, yaw0, variant) {
-    if (counts[variant] >= 46) return;
-    // card center ~42% up so trunks meet grass
-    pos.set(x, 3.05 * s, z); s3.set(s, s, s);
+  const counts = [0, 0];
+  function placeTree(x, z, s, yaw0, variant, cross = true) {
+    variant &= 1; if (counts[variant] >= 54) return;
+    // GROUNDS-local: trunk at y≈0, canopy up into the window band
+    pos.set(x, (TREE_H * 0.5) * s, z); s3.set(s, s, s);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw0);
     m4.compose(pos, q, s3); treeMeshes[variant].setMatrixAt(counts[variant]++, m4);
-    // cross card
-    if (counts[variant] >= 46) return;
+    if (!cross || counts[variant] >= 54) return;
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw0 + Math.PI / 2);
     m4.compose(pos, q, s3); treeMeshes[variant].setMatrixAt(counts[variant]++, m4);
   }
-  // deliberate gaps so skyline + sky show (avoid solid near-window hedge)
-  const gapX = new Set([-10, -9, 0, 1, 8, 9, 22, 23]);
-  // near row (sparse, smaller) — depth staggered
-  for (let x = -24; x <= 24; x += 9.5) {
-    if ([...gapX].some(g => Math.abs(x - g) < 3.5)) continue;
-    placeTree(x + (Math.random() - .5) * 1.5, -15.5 - Math.random() * 3.5, 0.55 + Math.random() * 0.28, (Math.random() - .5) * 0.25, (Math.random() * 4) | 0);
+  // Wide gaps so sky + skyline read through the north windows
+  const nearXs = [-20, -14, -5, 4, 14, 21];
+  for (const x of nearXs) {
+    placeTree(x + (Math.random() - .5) * 1.2, -14.8 - Math.random() * 2.5, 0.82 + Math.random() * 0.22, (Math.random() - .5) * 0.2, (Math.random() * 2) | 0);
   }
-  // mid layer
-  for (let x = -36; x <= 36; x += 8.5) {
-    if ([...gapX].some(g => Math.abs(x - g) < 2.5) && Math.random() < 0.55) continue;
-    placeTree(x + (Math.random() - .5) * 2.5, -24 - Math.random() * 10, 0.7 + Math.random() * 0.4, (Math.random() - .5) * 0.35, (Math.random() * 4) | 0);
+  // mid layer — offset into the gaps of the near row
+  for (let x = -32; x <= 32; x += 10) {
+    placeTree(x + (Math.random() - .5) * 2, -22 - Math.random() * 9, 0.75 + Math.random() * 0.35, (Math.random() - .5) * 0.3, (Math.random() * 2) | 0);
   }
-  // far layer (smaller, sells depth)
-  for (let x = -48; x <= 50; x += 11) {
-    placeTree(x + (Math.random() - .5) * 3, -42 - Math.random() * 18, 0.5 + Math.random() * 0.45, (Math.random() - .5) * 0.4, (Math.random() * 4) | 0);
+  // far layer
+  for (let x = -44; x <= 46; x += 12) {
+    placeTree(x + (Math.random() - .5) * 3, -40 - Math.random() * 16, 0.65 + Math.random() * 0.4, (Math.random() - .5) * 0.35, (Math.random() * 2) | 0, false);
   }
-  // east strip (side windows)
-  for (let z = -28; z <= 20; z += 10) {
-    placeTree(28 + Math.random() * 8, z + (Math.random() - .5) * 2, 0.6 + Math.random() * 0.35, -Math.PI / 2 + (Math.random() - .5) * 0.3, (Math.random() * 4) | 0);
+  for (let z = -24; z <= 16; z += 12) {
+    placeTree(30 + Math.random() * 6, z, 0.7 + Math.random() * 0.3, -Math.PI / 2 + (Math.random() - .5) * 0.25, (Math.random() * 2) | 0);
   }
-  treeMeshes.forEach((m, i) => { m.count = counts[i]; scene.add(m); });
+  treeMeshes.forEach((m, i) => { m.count = counts[i]; if (m.count) scene.add(m); });
 
 
-  // HQ #102b: a few near-window 3D layered trees for parallax (billboards alone read flat)
-  {
-    const near3d = [[-11.2, -12.4, 1.05], [-3.6, -13.0, 1.2], [3.2, -12.2, 1.0], [10.5, -13.4, 1.15]];
-    const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.18, 2.4, HQ_HD ? 10 : 7), std('#4a3220', 0.92), near3d.length);
-    const canopy = [
-      new THREE.InstancedMesh(new THREE.SphereGeometry(1.2, HQ_HD ? 10 : 7, HQ_HD ? 8 : 5), M.leaf3, near3d.length),
-      new THREE.InstancedMesh(new THREE.SphereGeometry(0.95, HQ_HD ? 9 : 7, HQ_HD ? 7 : 5), M.leaf, near3d.length),
-      new THREE.InstancedMesh(new THREE.SphereGeometry(0.72, HQ_HD ? 8 : 6, HQ_HD ? 6 : 4), M.leaf2, near3d.length),
-    ];
-    const tm = new THREE.Matrix4(), tq = new THREE.Quaternion();
-    near3d.forEach(([x, z, s], i) => {
-      tm.compose(new THREE.Vector3(x, 1.2 * s, z), tq, new THREE.Vector3(s, s, s)); trunks.setMatrixAt(i, tm);
-      tm.compose(new THREE.Vector3(x, 3.15 * s, z), tq, new THREE.Vector3(s * 1.05, s * 0.95, s * 1.05)); canopy[0].setMatrixAt(i, tm);
-      tm.compose(new THREE.Vector3(x + 0.32 * s, 3.5 * s, z - 0.12 * s), tq, new THREE.Vector3(s, s, s)); canopy[1].setMatrixAt(i, tm);
-      tm.compose(new THREE.Vector3(x - 0.25 * s, 3.8 * s, z + 0.18 * s), tq, new THREE.Vector3(s * 0.9, s * 0.9, s * 0.9)); canopy[2].setMatrixAt(i, tm);
-    });
-    trunks.castShadow = true; for (const c of canopy) c.castShadow = true;
-    scene.add(trunks, ...canopy);
-  }
 
   // City skyline: varied massing + shared windowed facade materials (still few meshes)
   const skyline = [
@@ -885,23 +859,19 @@ function plant(x, z, s = 1) {
   scene.add(g); addCollider(x, z, 0.45 * s, 0.45 * s);
 }
 function chair(parent, x, z, ry = 0) {
-  // HQ #102b: thicker cushion, headrest hint, caster nubs (still cheap)
+  // HQ #101b: same draw cost as round 1 chair; slight seat oversize for edge soft-read
   const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry;
-  box(0.50, 0.055, 0.48, M.chairSeat, 0, 0.508, -0.02, g);
-  box(0.46, 0.018, 0.44, M.chair, 0, 0.472, -0.02, g, false);
-  box(0.46, 0.52, 0.045, M.chair, 0, 0.84, 0.22, g);
-  box(0.40, 0.06, 0.04, M.chairSeat, 0, 1.08, 0.205, g, false);
-  box(0.36, 0.10, 0.04, M.chairSeat, 0, 0.68, 0.205, g, false);
+  box(0.50, 0.07, 0.48, M.chairSeat, 0, 0.50, -0.02, g);           // seat
+  box(0.46, 0.52, 0.05, M.chair, 0, 0.82, 0.22, g);                  // back
+  box(0.34, 0.10, 0.04, M.chairSeat, 0, 0.68, 0.205, g, false);     // lumbar
   for (const sx of [-1, 1]) {
-    box(0.035, 0.18, 0.035, M.steel, sx * 0.27, 0.58, 0.0, g, false);
-    box(0.055, 0.03, 0.22, M.chair, sx * 0.27, 0.68, -0.02, g, false);
+    box(0.04, 0.16, 0.04, M.steel, sx * 0.26, 0.58, 0.0, g, false);
+    box(0.05, 0.03, 0.20, M.chair, sx * 0.26, 0.67, -0.02, g, false);
   }
-  box(0.05, 0.34, 0.05, M.steel, 0, 0.28, -0.02, g, false);
-  box(0.58, 0.03, 0.05, M.steel, 0, 0.05, -0.02, g, false);
-  box(0.05, 0.03, 0.58, M.steel, 0, 0.05, -0.02, g, false);
-  const diag = box(0.52, 0.028, 0.045, M.steel, 0, 0.048, -0.02, g, false); diag.rotation.y = Math.PI / 4;
-  for (const [cx, cz] of [[0.26, 0.26], [-0.26, 0.26], [0.26, -0.26], [-0.26, -0.26]])
-    box(0.06, 0.04, 0.06, M.steel, cx, 0.02, cz - 0.02, g, false);
+  box(0.05, 0.36, 0.05, M.steel, 0, 0.28, -0.02, g, false);
+  box(0.56, 0.035, 0.055, M.steel, 0, 0.05, -0.02, g, false);
+  box(0.055, 0.035, 0.56, M.steel, 0, 0.05, -0.02, g, false);
+  const diag = box(0.50, 0.03, 0.045, M.steel, 0, 0.048, -0.02, g, false); diag.rotation.y = Math.PI / 4;
   parent.add(g); return g;
 }
 function cabinets(x, z, n, ry = 0) { // row of tall grey filing cabinets (front faces local +z)
@@ -1003,49 +973,35 @@ for (const st of STATIONS) {
   const s = st.hero ? 1.25 : 1;
   const g = new THREE.Group(); g.position.set(st.x, 0, st.z); g.rotation.y = st.ry; scene.add(g);
   const dw = 1.6 * s, dd = 0.8 * s;
-  // HQ #102b: desk mat, textured keyboard, ceramic mugs, fuller monitor, drawer pulls
-  const wood = st.hero ? M.walnut : M.oak;
-  box(dw, 0.052, dd, wood, 0, 0.750, 0, g);
-  box(dw + 0.028, 0.016, dd + 0.028, wood, 0, 0.714, 0, g);
-  box(0.055, 0.70, dd - 0.08, M.steel, -dw / 2 + 0.055, 0.35, 0, g);
-  box(0.46, 0.70, dd - 0.05, M.cabinet, dw / 2 - 0.25, 0.35, 0, g);
-  for (let d = 0; d < 3; d++) {
-    box(0.38, 0.012, 0.018, M.steel, dw / 2 - 0.25, 0.20 + d * 0.2, dd / 2 - 0.035, g, false);
-    box(0.06, 0.018, 0.018, M.bezel, dw / 2 - 0.25, 0.20 + d * 0.2, dd / 2 - 0.02, g, false);
-  }
-  box(dw - 0.22, 0.42, 0.028, M.steel, -0.04, 0.47, -dd / 2 + 0.03, g);
+  // HQ #101b: Office desk — chamfer lip (bevel read) + contact shadow under footprint
+  box(dw, 0.055, dd, st.hero ? M.walnut : M.oak, 0, 0.745, 0, g);                 // top
+  box(dw + 0.028, 0.016, dd + 0.028, st.hero ? M.walnut : M.oak, 0, 0.714, 0, g); // chamfer ledge (bevel read)
+  box(0.05, 0.70, dd - 0.08, M.steel, -dw / 2 + 0.05, 0.35, 0, g);                 // left leg
+  box(0.44, 0.70, dd - 0.06, M.cabinet, dw / 2 - 0.24, 0.35, 0, g);                // drawer pedestal
+  for (let d = 0; d < 3; d++) box(0.36, 0.015, 0.02, M.steel, dw / 2 - 0.24, 0.22 + d * 0.2, dd / 2 - 0.04, g, false); // drawer lines
+  box(dw - 0.25, 0.40, 0.025, M.steel, -0.05, 0.46, -dd / 2 + 0.03, g);            // modesty panel
+  // cable tray under front edge
   box(dw * 0.55, 0.03, 0.08, M.steel, 0, 0.68, dd / 2 - 0.06, g, false);
-  contactBlob(st.x, st.z, dw * 1.15, dd * 1.85, 0.28);
-  box(0.72 * s, 0.006, 0.42 * s, blotterMat, 0.05, 0.782, 0.06, g, false);
-  const mw = st.hero ? 1.25 : 0.74, mh = mw * 300 / 512;
+  contactBlob(st.x, st.z, dw * 1.15, dd * 1.85, 0.28); // covers desk + chair zone
+  // monitor with bezel + neck + weighted base
+  const mw = st.hero ? 1.25 : 0.72, mh = mw * 300 / 512;
   const mz = -dd / 2 + 0.17, my = 0.77 + 0.14 + mh / 2;
-  box(mw + 0.04, mh + 0.04, 0.024, M.bezel, 0, my, mz - 0.014, g);
-  box(mw + 0.016, mh + 0.016, 0.018, M.steel, 0, my, mz - 0.026, g, false);
-  box(0.04, 0.20, 0.036, M.bezel, 0, 0.82, mz - 0.05, g);
-  box(0.30, 0.018, 0.20, M.bezel, 0, 0.770, mz - 0.01, g);
-  box(0.09, 0.022, 0.09, M.steel, 0, 0.786, mz - 0.05, g, false);
-  box(0.03, 0.018, 0.02, M.bezel, 0, my + mh / 2 + 0.02, mz, g, false);
-  box(0.012, 0.012, 0.01, new THREE.MeshBasicMaterial({ color: '#3cff7a' }), -mw / 2 + 0.04, my - mh / 2 + 0.04, mz + 0.002, g, false);
+  box(mw + 0.05, mh + 0.05, 0.028, M.bezel, 0, my, mz - 0.016, g);                 // outer bezel
+  box(mw + 0.02, mh + 0.02, 0.02, M.steel, 0, my, mz - 0.028, g, false);           // rear shell
+  box(0.045, 0.18, 0.04, M.bezel, 0, 0.83, mz - 0.05, g);                          // neck
+  box(0.28, 0.02, 0.18, M.bezel, 0, 0.772, mz - 0.02, g);                          // base plate
+  box(0.08, 0.025, 0.08, M.steel, 0, 0.79, mz - 0.05, g, false);                   // hinge joint
   const screenMat = new THREE.MeshBasicMaterial({ map: monitorScreenTex(st), toneMapped: false });
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(mw, mh), screenMat); screen.position.set(0, my, mz + 0.0); g.add(screen);
+  // highlight frame
   const frame = new THREE.Mesh(new THREE.PlaneGeometry(mw + 0.12, mh + 0.12), new THREE.MeshBasicMaterial({ color: '#ffd27a', toneMapped: false }));
   frame.position.set(0, my, mz - 0.035); frame.visible = false; g.add(frame);
-  box(0.44, 0.016, 0.15, keyMat, 0, 0.790, 0.10, g, false);
-  box(0.16, 0.004, 0.18, std('#1a1e24', 0.85), 0.34, 0.785, 0.08, g, false);
-  box(0.055, 0.022, 0.09, M.white, 0.34, 0.798, 0.08, g, false);
-  box(0.18, 0.004, 0.22, paperSheetMat, -0.48 * s, 0.785, -0.05, g, false);
-  box(0.16, 0.004, 0.20, paperSheetMat, -0.46 * s, 0.790, -0.04, g, false);
-  box(0.05, 0.08, 0.05, M.steel, -dw / 2 + 0.38, 0.81, 0.18, g, false);
-  box(0.008, 0.11, 0.008, std('#1a3478', 0.5), -dw / 2 + 0.38, 0.88, 0.18, g, false);
-  const mugMat = st.hero ? bossMugMat() : ceramicMat(st.color);
-  const mug = new THREE.Mesh(mugGeo, mugMat); mug.position.set(-dw / 2 + 0.20, 0.835, 0.02); g.add(mug);
-  const handle = new THREE.Mesh(mugHandleGeo, st.hero ? M.white : ceramicMat(st.color));
-  handle.position.set(-dw / 2 + 0.20 + 0.042, 0.835, 0.02); handle.rotation.y = Math.PI / 2; g.add(handle);
-  const rim = new THREE.Mesh(mugRimGeo, st.hero ? M.white : ceramicMat(shadeHex(st.color, 1.08)));
-  rim.position.set(-dw / 2 + 0.20, 0.888, 0.02); rim.rotation.x = Math.PI / 2; g.add(rim);
-  if (st.hero) { mug.scale.set(1.45, 1.35, 1.45); handle.scale.set(1.45, 1.35, 1.45); rim.scale.set(1.45, 1.35, 1.45); mug.position.y = 0.86; handle.position.y = 0.86; rim.position.y = 0.93; }
+  // keyboard, mouse, mug
+  box(0.42, 0.015, 0.14, M.white, 0, 0.775, 0.08, g, false);
+  box(0.06, 0.02, 0.1, M.white, 0.32, 0.775, 0.08, g, false);
+  const mug = new THREE.Mesh(mugGeo, st.hero ? bossMugMat() : std(st.color, 0.6)); mug.position.set(-dw / 2 + 0.22, 0.815, 0.05); g.add(mug);
+  if (st.hero) { mug.scale.set(1.5, 1.4, 1.5); mug.position.y = 0.84; mug.rotation.y = Math.PI / 2; const h = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.009, 6, 14), M.white); h.position.set(-dw / 2 + 0.22, 0.84, 0.05 - 0.07); h.rotation.y = Math.PI / 2; g.add(h); }
   chair(g, 0, dd / 2 + 0.38, Math.random() * 0.4 - 0.2);
-  // nameplate
   // nameplate
   const plate = nameplateSprite(st); plate.position.set(0, st.hero ? 2.35 : 2.0, mz); g.add(plate);
   // station light accent under desk edge
@@ -2276,31 +2232,6 @@ const workers = createWorkers({ scene, stations, colliders, pois: IDLE_SPOTS, on
 // HQ #54: speech bubbles above whoever is talking; each teammate reacts in character to real events (voices.js, local, free)
 talk = createTalk({ scene, workers, stations, camera });
 
-// HQ #101b: soft contact blobs under people — one InstancedMesh, matrices updated each frame
-const PERSON_CS = new THREE.InstancedMesh(CS_GEO, CS_MAT, workers.workers.length);
-{
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-  workers.workers.forEach((w, i) => {
-    m4.compose(new THREE.Vector3(w.x || 0, 0.01, w.z || 0), q, new THREE.Vector3(0.55, 0.45, 1));
-    PERSON_CS.setMatrixAt(i, m4);
-  });
-  PERSON_CS.renderOrder = 1; scene.add(PERSON_CS);
-}
-const _pcsM = new THREE.Matrix4(), _pcsQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-const _pcsP = new THREE.Vector3(), _pcsS = new THREE.Vector3();
-function updatePersonContactShadows() {
-  const list = workers.workers;
-  for (let i = 0; i < list.length; i++) {
-    const w = list[i], sit = w.sitPose || w.sit || 0;
-    // slightly wider when standing, tighter when seated
-    const sx = 0.48 + sit * 0.12, sz = 0.38 + sit * 0.08;
-    _pcsP.set(w.x, (w.root?.position.y || 0) + 0.01, w.z);
-    _pcsS.set(sx, sz, 1);
-    _pcsM.compose(_pcsP, _pcsQ, _pcsS);
-    PERSON_CS.setMatrixAt(i, _pcsM);
-  }
-  PERSON_CS.instanceMatrix.needsUpdate = true;
-}
 
 // ---------- player ----------
 const player = { pos: new THREE.Vector3(0, 0, 6.9), yaw: 0, pitch: 0, radius: 0.3, travel: null, level: 0, y: 0 };
@@ -2993,7 +2924,6 @@ function tick() {
   camera.position.set(player.pos.x, EYE + player.y, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
   workers.update(dt, clock.elapsedTime, player);
-  updatePersonContactShadows();
   if (BASEMENT.visible && WH) WH.update(clock.elapsedTime, player, dt); // HQ #95 desk + HQ #96 forklift / pallet jack work
   talk.update(dt, player);
   if ((needsT += dt) > 2) { needsT = 0; talk.onNeeds(monitors.needs()); }
