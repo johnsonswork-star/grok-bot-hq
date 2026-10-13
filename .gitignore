@@ -8,3 +8,4 @@ bank-live.json
 bank-snapshot.json
 .venv/
 worker-memory/
+tools/__pycache__/
