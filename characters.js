@@ -4,6 +4,8 @@
 // HQ #97: likeness pass — procedural hair/facial-hair overlays on the Head bone (kit hair hidden), punchier cast colors,
 // Dwight short-sleeve body, props (World's Best Boss mug / cup / phone) reparented onto Wrist bones so they stop clipping
 // through torsos. Procedural figure stays as fallback (?q=low, ?chars=proc, or load error).
+// HQ #90d: mood faces (brows / eyes / mouth) on the same merged vertex-color part, overlaid on the glTF head so the
+// named cast reads at a glance. Hair volume: Pam long, Dwight center part, Creed wisps, Kevin horseshoe.
 // Front of a person = -z (same as workers.js). Keyed by station id (stable bot ids), falls back by display name.
 import * as THREE from './vendor/three.module.js';
 
@@ -13,21 +15,21 @@ const PI = Math.PI;
 // tie, skirt (color) / dress (skirt = top), sleeves 'long'|'short', hair style + color, face extras, body shape, props.
 // mood = mouth/brow expression: grin | smile | smirk | flat | stern | sad | sly | blank
 export const LOOKS = {
-  grok:     { who: 'Michael Scott', face: { jaw: 1.05, chin: 1.2 },   skin: '#f0c4a0', hair: ['side', '#2a1c14'], top: '#d7e4f4', open: '#1e2430', tie: '#c41e2a', pants: '#1e2430', h: 1.0, belly: 1.08, mood: 'grin', props: ['bossMug'], idle: 'boss' },
-  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.9 },      skin: '#f3cfb3', hair: ['long', '#7a3e22', { len: 0.32, bangs: 1, curl: 1 }], top: '#f7f3ec', open: '#ef9aaf', skirt: '#5c5248', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
-  cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#4a2e18'], top: '#7fa3c4', tie: '#2a3850', pants: '#2e3238', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
-  assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.8, nose: 1.1 },  skin: '#f2cfae', hair: ['center', '#3a2818'], top: '#e0b83a', sleeves: 'short', tie: '#4a3018', pants: '#3f3224', h: 1.04, glasses: '#1a1a1a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
-  icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3 },    skin: '#f3cfb0', hair: ['side', '#7a5a30'], top: '#f4f1ea', open: '#c41018', sweater: true, tie: '#1a3478', pants: '#b89a68', h: 1.0, mood: 'grin' },
-  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6 },   skin: '#f2cdb4', hair: ['curly', '#a08c7c'], top: '#a888d0', skirt: '#4a4458', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
-  builder:  { who: 'Stanley Hudson', face: { jaw: 1.25, chin: 0.7, nose: 1.2 },  skin: '#6b4430', hair: ['fringe', '#c8c4bc'], top: '#f1efe8', open: '#5a4838', vest: true, tie: '#8a1e30', pants: '#2e2a26', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#2a1a12', mustache: '#d4d0c8', mood: 'flat', idle: 'lean' },
-  faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85 },   skin: '#f6dcc6', hair: ['bun', '#f0e0a8'], top: '#f8f5ee', open: '#ddd0a0', skirt: '#2a2c38', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
-  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#120e0c'], top: '#8e82c8', tie: '#2e2458', pants: '#3a3e48', h: 1.0, mood: 'sly' },
-  conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.4, nose: 1.1 },    skin: '#f0c7a4', hair: ['receding', '#6a4a30'], top: '#ecebe4', open: '#6e8a48', sweater: true, pants: '#343028', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
-  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#eecbb0', hair: ['messy', '#d0cdc8'], top: '#4a5560', pants: '#22262a', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
-  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#c03010'], top: '#1e8a84', skirt: '#26262e', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
-  designer: { who: 'Kelly Kapoor', face: { jaw: 0.85, chin: 1.1, nose: 0.85 },    skin: '#a8714f', hair: ['long', '#0a0806', { len: 0.44 }], top: '#ff2d8a', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#d02050', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
-  profile:  { who: 'Toby Flenderson', face: { jaw: 0.95, chin: 0.8 }, skin: '#efc9aa', hair: ['thin', '#5a5044'], top: '#9eb4ce', open: '#c4b090', sweater: true, pants: '#524e46', h: 1.0, stubble: '#7a6a5a', slump: 0.12, mood: 'sad', idle: 'slump' },
-  darryl:   { who: 'Darryl Philbin', face: { jaw: 1.15, chin: 1 },  skin: '#5e3c2a', hair: ['short', '#0e0a08'], top: '#3e6a98', sleeves: 'short', pants: '#262c38', h: 1.07, beard: '#14100e', mood: 'smirk', idle: 'upright' },
+  grok:     { who: 'Michael Scott', face: { jaw: 1.05, chin: 1.2, gap: 1.02, eye: 1.06, brow: 1.25, mouth: 1.22 },   skin: '#f0c4a0', hair: ['side', '#2a1c14'], top: '#d7e4f4', open: '#1e2430', tie: '#c41e2a', pants: '#1e2430', h: 1.0, belly: 1.08, mood: 'grin', props: ['bossMug'], idle: 'boss' },
+  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.88, gap: 1.1, eye: 1.28, brow: 0.7, mouth: 1.06 },      skin: '#f3cfb3', hair: ['long', '#7a3e22', { len: 0.46, bangs: 1, curl: 1, vol: 1.22 }], top: '#f7f3ec', open: '#ef9aaf', skirt: '#5c5248', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
+  cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05, gap: 1.14, eye: 1.02, brow: 1.0, mouth: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#4a2e18'], top: '#7fa3c4', tie: '#2a3850', pants: '#2e3238', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
+  assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.75, nose: 1.38, gap: 0.78, eye: 0.82, brow: 1.85, mouth: 0.82 },  skin: '#f2cfae', hair: ['center', '#3a2818'], top: '#e0b83a', sleeves: 'short', tie: '#4a3018', pants: '#3f3224', h: 1.04, glasses: '#1a1a1a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
+  icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3, gap: 1.06, eye: 1.12, brow: 1.05, mouth: 1.18 },    skin: '#f3cfb0', hair: ['side', '#7a5a30'], top: '#f4f1ea', open: '#c41018', sweater: true, tie: '#1a3478', pants: '#b89a68', h: 1.0, mood: 'grin' },
+  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6, gap: 1.08, eye: 1.05, brow: 0.85, mouth: 1.0 },   skin: '#f2cdb4', hair: ['curly', '#a08c7c'], top: '#a888d0', skirt: '#4a4458', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
+  builder:  { who: 'Stanley Hudson', face: { jaw: 1.25, chin: 0.7, nose: 1.22, gap: 1.0, eye: 0.9, brow: 1.45, mouth: 0.7 },  skin: '#6b4430', hair: ['fringe', '#c8c4bc'], top: '#f1efe8', open: '#5a4838', vest: true, tie: '#8a1e30', pants: '#2e2a26', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#2a1a12', mustache: '#d4d0c8', mood: 'flat', idle: 'lean' },
+  faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85, gap: 0.92, eye: 0.86, brow: 0.62, mouth: 0.7 },   skin: '#f6dcc6', hair: ['bun', '#f0e0a8'], top: '#f8f5ee', open: '#ddd0a0', skirt: '#2a2c38', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
+  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1, gap: 1.04, eye: 1.0, brow: 1.05, mouth: 0.9 },  skin: '#b9855f', hair: ['short', '#120e0c'], top: '#8e82c8', tie: '#2e2458', pants: '#3a3e48', h: 1.0, mood: 'sly' },
+  conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.45, nose: 1.1, gap: 1.24, eye: 0.76, brow: 0.85, mouth: 1.4 },    skin: '#f0c7a4', hair: ['receding', '#6a4a30'], top: '#ecebe4', open: '#6e8a48', sweater: true, pants: '#343028', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
+  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.25, nose: 1.42, gap: 1.16, eye: 0.92, brow: 0.72, mouth: 1.08 },   skin: '#eecbb0', hair: ['messy', '#d0cdc8'], top: '#4a5560', pants: '#22262a', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
+  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9, gap: 1.05, eye: 1.0, brow: 0.8, mouth: 1.0 }, skin: '#f0c9ad', hair: ['bob', '#c03010'], top: '#1e8a84', skirt: '#26262e', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
+  designer: { who: 'Kelly Kapoor', face: { jaw: 0.85, chin: 1.1, nose: 0.85, gap: 1.08, eye: 1.32, brow: 0.7, mouth: 1.12 },    skin: '#a8714f', hair: ['long', '#0a0806', { len: 0.44 }], top: '#ff2d8a', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#d02050', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
+  profile:  { who: 'Toby Flenderson', face: { jaw: 0.95, chin: 0.8, gap: 1.02, eye: 0.94, brow: 0.9, mouth: 0.95 }, skin: '#efc9aa', hair: ['thin', '#5a5044'], top: '#9eb4ce', open: '#c4b090', sweater: true, pants: '#524e46', h: 1.0, stubble: '#7a6a5a', slump: 0.12, mood: 'sad', idle: 'slump' },
+  darryl:   { who: 'Darryl Philbin', face: { jaw: 1.15, chin: 1, gap: 1.06, eye: 1.0, brow: 1.15, mouth: 1.0 },  skin: '#5e3c2a', hair: ['short', '#0e0a08'], top: '#3e6a98', sleeves: 'short', pants: '#262c38', h: 1.07, beard: '#14100e', mood: 'smirk', idle: 'upright' },
 };
 const BY_NAME = Object.fromEntries(Object.values(LOOKS).map(l => [l.who, l]));
 export function lookFor(st) { return LOOKS[st.id] || BY_NAME[st.name] || { who: st.name, skin: '#f1c9a5', hair: ['short', '#3a2a1e'], top: st.color, pants: '#2f3640', mood: 'smile' }; }
@@ -128,6 +130,7 @@ const G = {
   finger: CAP(0.0105, 0.042, 2, 6), sole: BOX(0.1, 0.018, 0.2), lace: BOX(0.04, 0.006, 0.05), crease: BOX(0.004, 0.3, 0.004), shirtPocket: BOX(0.05, 0.055, 0.008),
   lidBlink: SPH(0.0225, 12, 8, 0, PI * 2, 0, PI * 0.62),
   button: CYL(0.009, 0.009, 0.006, 8).rotateX(PI / 2),
+  oh: new THREE.TorusGeometry(0.013, 0.0048, 6, 14),
 };
 const shade = (hex, k) => { const c = new THREE.Color(hex); c.multiplyScalar(k); return '#' + c.getHexString(); };
 
@@ -142,29 +145,53 @@ function addHair(head, look) {
     case 'floppy': // Jim: shaggy, longer on top, swept across the forehead
       A(G.cap(0.46), hc, [0, 0.018, 0], [0.22, 0, 0], [1.04, 1.08, 1.04]); A(G.back(0.28, 0.66), hc, [0, 0, 0.004], [0, 0, 0], [1.03, 1, 1.03]);
       A(G.fringe, hc, [-0.015, 0.088, -0.092], [0.6, 0, 0.22], [1.05, 1.3, 1.3]); A(G.tuft, dk, [0.05, 0.12, -0.04]); A(G.tuft, hc, [-0.06, 0.12, 0.0]); A(G.tuft, lt, [0.0, 0.128, -0.07], [0, 0, 0], [1.2, 0.6, 0.8]); break;
-    case 'center': // Dwight: center part, flat sides
-      A(G.cap(0.44), hc, [0, 0.01, 0.006], [0.28, 0, 0]); A(G.back(0.28, 0.62), hc);
-      A(G.fringe, hc, [-0.05, 0.088, -0.088], [0.45, 0, 0.32], [0.55, 1, 1.2]); A(G.fringe, hc, [0.05, 0.088, -0.088], [0.45, 0, -0.32], [0.55, 1, 1.2]);
-      A(CAP(0.012, 0.05, 2, 6), hc, [-0.104, -0.0, -0.03], [0, 0, 0], [0.6, 1, 1]); A(CAP(0.012, 0.05, 2, 6), hc, [0.104, 0, -0.03], [0, 0, 0], [0.6, 1, 1]); break;
+    case 'center': // Dwight: tall center part, flat sides, a dark valley down the crown
+      A(G.cap(0.5), hc, [0, 0.028, 0.004], [0.12, 0, 0], [1.02, 1.22, 1.02]); A(G.back(0.32, 0.66), hc, [0, -0.004, 0.006]);
+      A(BOX(0.01, 0.016, 0.11), shade(hc, 0.45), [0, 0.132, -0.01], [0.35, 0, 0]);
+      A(G.fringe, hc, [-0.048, 0.102, -0.092], [0.32, 0, 0.48], [0.62, 1.2, 1.3]); A(G.fringe, hc, [0.048, 0.102, -0.092], [0.32, 0, -0.48], [0.62, 1.2, 1.3]);
+      A(CAP(0.011, 0.08, 2, 6), hc, [-0.108, 0.01, -0.02], [0, 0, 0.12], [0.55, 1.15, 0.85]); A(CAP(0.011, 0.08, 2, 6), hc, [0.108, 0.01, -0.02], [0, 0, -0.12], [0.55, 1.15, 0.85]); break;
     case 'short': // Oscar / Darryl: neat, close-cropped
       A(G.cap(0.4), hc, [0, 0.008, 0.006], [0.36, 0, 0]); A(G.back(0.3, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
-    case 'receding': // Kevin: short and thin up top
-      A(G.cap(0.34), hc, [0, 0.006, 0.02], [0.62, 0, 0], [0.98, 0.98, 0.98]); A(G.back(0.32, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
+    case 'receding': // Kevin: horseshoe — bald crown, hair only on the sides and back
+      A(G.back(0.42, 0.68), hc, [0, -0.018, 0.016], [0.18, 0, 0], [1.05, 0.9, 1.04]);
+      A(G.back(0.28, 0.42), dk, [0, 0.002, 0.035], [0.75, 0, 0], [0.7, 0.5, 0.5]);
+      A(G.tuft, hc, [-0.098, 0.028, -0.028], [0.5, 0, 0.55], [0.62, 0.38, 0.5]); A(G.tuft, hc, [0.098, 0.028, -0.028], [0.5, 0, -0.55], [0.62, 0.38, 0.5]);
+      A(CAP(0.02, 0.07, 2, 6), hc, [-0.102, -0.012, 0.02], [0, 0, 0.18], [0.85, 1.25, 0.8]); A(CAP(0.02, 0.07, 2, 6), hc, [0.102, -0.012, 0.02], [0, 0, -0.18], [0.85, 1.25, 0.8]); break;
     case 'thin': // Toby: thinning, short
       A(G.cap(0.36), hc, [0, 0.005, 0.012], [0.45, 0, 0], [0.99, 0.99, 0.99]); A(G.back(0.3, 0.6), hc); break;
     case 'fringe': // Stanley: bald on top, short gray band around the back
       A(G.back(0.42, 0.6), hc, [0, -0.005, 0], [0, 0, 0], [1.0, 1, 1.0]); break;
-    case 'messy': // Creed: wispy gray, sticking up
-      A(G.cap(0.4), hc, [0, 0.01, 0.012], [0.4, 0, 0]); A(G.back(0.3, 0.62), hc);
-      for (const [x, y, z] of [[-0.07, 0.11, -0.02], [0.06, 0.12, 0.02], [0, 0.13, 0.05], [-0.09, 0.07, 0.07], [0.1, 0.07, 0.06], [-0.11, 0.03, 0.03], [0.11, 0.03, 0.03]]) A(G.tuft, hc, [x, y, z], [0, 0, 0], [0.8, 0.7, 0.8]); break;
-    case 'long': { // Pam / Kelly: long, down past the shoulders
-      const len = o.len || 0.3;
-      A(G.cap(0.5), hc, [0, 0.012, 0.004], [0.18, 0, 0], [1.04, 1.04, 1.06]); A(G.back(0.25, 0.75), hc, [0, 0, 0.004], [0, 0, 0], [1.06, 1.02, 1.06]);
-      A(CAP(0.12, len, 4, 16), hc, [0, -len / 2 + 0.0, 0.06], [0.08, 0, 0], [1.08, 1, 0.42]);
-      A(CAP(0.032, len * 0.7, 3, 8), hc, [-0.112, -len * 0.36 + 0.01, -0.005], [0, 0, -0.06]); A(CAP(0.032, len * 0.7, 3, 8), hc, [0.112, -len * 0.36 + 0.01, -0.005], [0, 0, 0.06]);
-      if (o.curl) { A(G.curl, hc, [-0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]); A(G.curl, hc, [0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]); }
-      if (o.bangs) A(G.fringe, hc, [0, 0.088, -0.095], [0.55, 0, 0], [1.0, 1.1, 1.3]);
-      else A(G.fringe, hc, [0.035, 0.09, -0.09], [0.5, 0, -0.35], [0.7, 1, 1.2]);
+    case 'messy': { // Creed: thin cap, long uneven wisps
+      A(G.cap(0.34), hc, [0, 0.006, 0.022], [0.7, 0.2, 0.12], [0.9, 0.82, 0.88]);
+      A(G.back(0.3, 0.7), hc, [0, -0.014, 0.012], [0, 0.3, 0], [1.1, 1.06, 1.12]);
+      const wisps = [
+        [-0.07, 0.132, -0.04, 0.5, 0.2, 0.8, 0.42, 1.65, 0.38, hc],
+        [0.055, 0.148, 0.0, -0.35, 0.3, -0.55, 0.38, 1.85, 0.32, lt],
+        [0.0, 0.155, 0.045, 0.2, 0, 0.15, 0.32, 1.75, 0.32, dk],
+        [-0.1, 0.08, 0.05, 0.3, 0.8, 0.9, 0.48, 1.25, 0.38, hc],
+        [0.11, 0.07, 0.04, -0.2, -0.55, -0.7, 0.52, 1.35, 0.38, lt],
+        [-0.112, 0.02, 0.02, 0.1, 0.4, 1.05, 0.55, 0.95, 0.45, dk],
+        [0.1, 0.018, -0.02, 0.35, -0.45, -0.75, 0.48, 1.15, 0.38, hc],
+        [-0.04, 0.12, 0.08, -0.55, 0.2, 0.25, 0.36, 1.45, 0.32, lt],
+        [0.03, 0.1, -0.08, 0.75, 0, -0.35, 0.32, 1.35, 0.28, dk],
+        [0.12, 0.105, -0.05, 0.15, 0.9, -0.85, 0.38, 1.55, 0.32, hc],
+      ];
+      for (const [x, y, z, rx, ry, rz, sx, sy, sz, c] of wisps) A(G.tuft, c, [x, y, z], [rx, ry, rz], [sx, sy, sz]);
+      break; }
+    case 'long': { // Pam (vol + bangs + curl) / Kelly (straighter, darker): past the shoulders
+      const len = o.len || 0.3, vol = o.vol || 1;
+      A(G.cap(0.52), hc, [0, 0.02, 0.0], [0.1, 0, 0], [1.08 * vol, 1.14, 1.1 * vol]);
+      A(G.back(0.22, 0.78), hc, [0, -0.012, 0.008], [0, 0, 0], [1.14 * vol, 1.05, 1.12]);
+      A(CAP(0.125 * vol, len, 4, 16), hc, [0, -len / 2 - 0.02, 0.05], [0.05, 0, 0], [1.18, 1, 0.52]);
+      A(CAP(0.04 * vol, len * 0.88, 3, 8), hc, [-0.12, -len * 0.42, 0.0], [0.04, 0, -0.14]);
+      A(CAP(0.04 * vol, len * 0.88, 3, 8), hc, [0.12, -len * 0.42, 0.0], [0.04, 0, 0.14]);
+      A(G.curl, dk, [-0.1, -0.01, 0.04], [0.25, 0, 0.35], [1.05 * vol, 0.75, 0.85]);
+      A(G.curl, dk, [0.1, -0.01, 0.04], [0.25, 0, -0.35], [1.05 * vol, 0.75, 0.85]);
+      if (o.curl) { A(G.curl, hc, [-0.1, -len + 0.04, 0.02], [0, 0, 0.2], [0.95, 0.8, 0.85]); A(G.curl, lt, [0.1, -len + 0.04, 0.02], [0, 0, -0.2], [0.95, 0.8, 0.85]); }
+      if (o.bangs) {
+        A(G.fringe, hc, [0, 0.072, -0.104], [0.72, 0, 0], [1.2, 1.4, 1.5]);
+        A(G.fringe, dk, [0.015, 0.062, -0.112], [0.85, 0, 0.06], [0.95, 0.75, 1.15]);
+      } else A(G.fringe, hc, [0.04, 0.09, -0.092], [0.5, 0, -0.4], [0.75, 1.05, 1.25]);
       break; }
     case 'bob': // Meredith: red, chin length, a bit messy
       A(G.cap(0.5), hc, [0, 0.012, 0], [0.18, 0, 0], [1.06, 1.05, 1.07]); A(G.back(0.25, 0.8), hc, [0, -0.005, 0.005], [0, 0, 0], [1.1, 1.0, 1.1]);
@@ -180,58 +207,110 @@ function addHair(head, look) {
   return style;
 }
 
-// ---------- face: eye whites + pupils, rounded nose, per-person mouth + brows ----------
-function addFace(head, look) {
-  const sk = look.skin, brow = look.hair[0] === 'fringe' ? '#2a2420' : shade(look.hair[1], 0.8), mood = look.mood || 'smile';
-  const fz = -0.112; // eye plane (just proud of the head surface)
-  head.add(headGeo(look.face), sk, [0, 0, 0], [0, 0, 0], [0.97, 1.1, 1.02]);
-  for (const sx of [-1, 1]) { // ears: shell + rim + darker inner fold, set back and angled out
-    head.add(G.ear, sk, [sx * 0.116, -0.004, 0.01], [0, sx * 0.35, 0], [0.5, 1.1, 0.85]);
-    head.add(new THREE.TorusGeometry(0.02, 0.0045, 5, 12, PI * 1.3), sk, [sx * 0.124, 0.0, 0.008], [0, sx * PI / 2 + sx * 0.35, PI * 0.15]);
-    head.add(SPH(0.012, 8, 6), shade(sk, 0.75), [sx * 0.125, -0.004, 0.004], [0, 0, 0], [0.4, 0.9, 0.7]);
-  }
-  head.add(SPH(0.03, 12, 8), sk, [0, -0.098, -0.085], [0, 0, 0], [1.1 * (look.face?.jaw || 1), 0.75, 0.8]); // chin pad
-  // eyes
-  const eyeX = 0.042, eyeY = 0.014;
+// ---------- face: skull (procedural only) + mood features that also overlay the glTF head ----------
+// HQ #90d: brows, lids, and mouth shapes are big enough to read across the bullpen. `overlay` skips the skull
+// (the kit head is already there) and sits the features a few mm proud of the skin.
+const LIP = [0.4, 0, 0.55];
+const MOOD = {
+  grin:  { lid: -0.06, bAng: -0.2, lift: 0.008, thick: 1.05, asym: 0 },
+  smile: { lid: -0.16, bAng: -0.1, lift: 0.003, thick: 0.9, asym: 0 },
+  smirk: { lid: -0.2, bAng: 0.42, lift: 0, thick: 1.15, asym: 0.014 },
+  flat:  { lid: -0.52, bAng: 0.05, lift: -0.006, thick: 1.45, asym: 0 },
+  stern: { lid: -0.26, bAng: 0.5, lift: -0.008, thick: 1.6, asym: 0 },
+  sad:   { lid: -0.36, bAng: -0.46, lift: 0.004, thick: 1.05, asym: 0 },
+  sly:   { lid: -0.4, bAng: 0.34, lift: -0.002, thick: 1.05, asym: 0.008, wink: 1 },
+  blank: { lid: -0.62, bAng: 0.0, lift: -0.01, thick: 1.1, asym: 0 },
+};
+function addFaceFeatures(head, look, overlay = false) {
+  const sk = look.skin, brow = look.hair[0] === 'fringe' ? '#2a2420' : shade(look.hair[1], 0.5);
+  const mood = look.mood || 'smile', md = MOOD[mood] || MOOD.smile, F = look.face || {};
+  const gap = F.gap ?? 1, eyeS = F.eye ?? 1, browW = F.brow ?? 1, mouthS = F.mouth ?? 1, noseS = F.nose ?? 1;
+  // GlTF Head bone sits at the neck. Hair shells grow upward from that origin; face cards need the same lift
+  // or they float on the collar. Tuck pulls them back onto the skull (world scale is ~1, so these are meters).
+  const lift = overlay ? 0.09 : 0, tuck = overlay ? 0.05 : 0, fz = -0.112;
+  const put = (geo, color, p, r = [0, 0, 0], s = [1, 1, 1], surf = SURF.skin) => head.add(geo, color, [p[0], p[1] + lift, p[2] + tuck], r, s, surf);
+  const eyeX = 0.04 * gap, eyeY = 0.012;
   for (const sx of [-1, 1]) {
-    head.add(G.eyeW, '#f7f4ef', [sx * eyeX, eyeY, fz], [0, 0, 0], [1.05, 0.95, 0.55]);
-    head.add(G.pupil, look.eyes || '#2a1d14', [sx * eyeX, eyeY - 0.001, fz - 0.008], [0, 0, 0], [1, 1.05, 0.5]);
-    head.add(G.shine, '#ffffff', [sx * eyeX + 0.004, eyeY + 0.004, fz - 0.0135], [0, 0, 0], [0.8, 0.8, 0.5]);
-    head.add(G.lid, shade(sk, 0.92), [sx * eyeX, eyeY + 0.001, fz + 0.002], [mood === 'blank' || mood === 'sly' ? -0.55 : -0.25, 0, 0], [1.05, 1, 0.6]); // upper lid
-    if (look.lashes) head.add(CAPX(0.003, 0.03, 2, 4), '#111', [sx * eyeX, eyeY + 0.016, fz - 0.008], [0, 0, sx * -0.12]);
+    const wink = md.wink && sx > 0 ? 0.32 : 0;
+    if (overlay) put(G.eyeW, shade(sk, 0.98), [sx * eyeX, eyeY, fz + 0.014], [0, 0, 0], [1.5 * eyeS, 1.25 * eyeS, 0.32]);
+    put(G.eyeW, '#f7f4ef', [sx * eyeX, eyeY, fz], [0, 0, 0], [1.2 * eyeS, 1.05 * eyeS, 0.48], SURF.eye);
+    put(G.pupil, look.eyes || '#1a120c', [sx * eyeX, eyeY - 0.001, fz - 0.01], [0, 0, 0], [1.2 * eyeS, 1.25 * eyeS, 0.42], SURF.eye);
+    put(G.shine, '#ffffff', [sx * eyeX + 0.005, eyeY + 0.005, fz - 0.015], [0, 0, 0], [0.95, 0.95, 0.35], SURF.eye);
+    put(G.lid, shade(sk, 0.9), [sx * eyeX, eyeY + 0.003, fz - 0.004], [md.lid - wink, 0, 0], [1.25 * eyeS, 1.08, 0.72]);
+    put(G.lid, shade(sk, 0.86), [sx * eyeX, eyeY - 0.014, fz - 0.002], [1.05, 0, 0], [1.05 * eyeS, 0.42, 0.4]);
+    if (look.lashes) put(CAPX(0.0035, 0.034, 2, 4), '#1a120e', [sx * eyeX, eyeY + 0.02 * eyeS, fz - 0.01], [0, 0, sx * -0.14], [1, 1.15, 1], SURF.hair);
+    if (mood === 'grin' || mood === 'smile') put(SPH(0.01, 6, 4), shade(sk, 0.9), [sx * eyeX + sx * 0.016 * eyeS, eyeY - 0.01, fz - 0.004], [0, 0, sx * 0.7], [0.75, 0.32, 0.32]);
   }
-  // brows (angle sells the personality)
-  const bAng = { stern: 0.32, sad: -0.3, sly: 0.12, smirk: 0.05, grin: -0.1, blank: -0.05, flat: 0.12, smile: -0.06 }[mood] ?? 0;
-  const bY = 0.048 + (mood === 'grin' ? 0.006 : 0) + (mood === 'stern' ? -0.004 : 0);
-  head.add(G.brow, brow, [-eyeX, bY + (mood === 'smirk' ? 0.006 : 0), fz - 0.01], [0, 0, -bAng], [1, look.fem ? 0.8 : 1.3, 1]);
-  head.add(G.brow, brow, [eyeX, bY, fz - 0.01], [0, 0, bAng], [1, look.fem ? 0.8 : 1.3, 1]);
-  // nose
-  head.add(CAP(0.011 * (look.face?.nose || 1), 0.04, 2, 8), sk, [0, 0.0, -0.122], [-0.32, 0, 0], [1, 1, 0.9]); // nose bridge
-  head.add(G.nose, shade(sk, 0.97), [0, -0.022, -0.126], [0, 0, 0], [0.68 * (look.face?.nose || 1), 0.8, 0.8]); // tip
-  head.add(SPH(0.011, 8, 6), shade(sk, 0.94), [-0.015, -0.027, -0.117]).add(SPH(0.011, 8, 6), shade(sk, 0.94), [0.015, -0.027, -0.117]); // alae
-  head.add(CAPX(0.006, 0.05, 2, 6), shade(sk, 0.85), [0, -0.068, -0.108], [0, 0, 0], [1, 1, 0.6]); // lower-lip shadow
-  head.add(G.nostril, shade(sk, 0.85), [-0.01, -0.028, -0.119], [0, 0, 0], [0.8, 0.7, 0.8]).add(G.nostril, shade(sk, 0.85), [0.01, -0.028, -0.119], [0, 0, 0], [0.8, 0.7, 0.8]);
-  // mouth
-  const mc = look.lips || shade(sk, 0.55), my = -0.058, mz = -0.119;
-  if (mood === 'grin') { // big Michael / Andy smile with teeth
-    head.add(SPH(0.03, 14, 8, 0, PI * 2, PI * 0.5, PI * 0.5), '#f5f2ea', [0, my + 0.01, mz + 0.004], [0, 0, 0], [1.2, 0.75, 0.5]);
-    head.add(ARC(0.032, 0.0055, PI * 0.75), mc, [0, my + 0.03, mz], [0, 0, 0], [1.1, 0.75, 1]);
-  } else if (mood === 'smile') head.add(ARC(0.026, 0.005, PI * 0.6), mc, [0, my + 0.022, mz], [0, 0, 0], [1, 0.7, 1]);
-  else if (mood === 'smirk') head.add(ARC(0.03, 0.0048, PI * 0.45), mc, [0.008, my + 0.026, mz], [0, 0, 0.32], [1, 0.6, 1]);
-  else if (mood === 'sly') head.add(ARC(0.034, 0.0045, PI * 0.35), mc, [0.004, my + 0.03, mz], [0, 0, 0.18], [1, 0.5, 1]);
-  else if (mood === 'sad') head.add(ARC(0.026, 0.0045, PI * 0.5), mc, [0, my - 0.02, mz], [0, 0, PI], [1, 0.45, 1]);
-  else if (mood === 'stern') head.add(CAPX(0.0045, 0.034, 2, 6), mc, [0, my, mz], [0, 0, 0], [1, 1, 1]).add(ARC(0.02, 0.004, PI * 0.5), mc, [0, my - 0.016, mz], [0, 0, PI], [1.2, 0.3, 1]);
-  else if (mood === 'blank') head.add(SPH(0.012, 10, 8), shade(mc, 0.7), [0, my, mz + 0.002], [0, 0, 0], [1.4, 0.9, 0.5]); // Kevin's little "o"
-  else head.add(CAPX(0.0048, 0.04, 2, 6), mc, [0, my, mz]);
-  if (look.cheeks) head.add(G.cheek, shade('#e88a8a', 1), [-0.07, -0.03, -0.092], [0, 0, 0], [1, 0.7, 0.3]).add(G.cheek, '#e88a8a', [0.07, -0.03, -0.092], [0, 0, 0], [1, 0.7, 0.3]);
-  if (look.wrinkles) for (const sx of [-1, 1]) head.add(CAPX(0.0025, 0.02, 2, 4), shade(sk, 0.75), [sx * 0.07, 0.005, -0.094], [0, sx * 0.6, sx * 0.4]);
-  if (look.glasses) { const gc = look.glasses;
-    head.add(G.lens, gc, [-eyeX, eyeY, -0.124]).add(G.lens, gc, [eyeX, eyeY, -0.124]).add(G.bridge, gc, [0, eyeY + 0.004, -0.126])
-      .add(G.temple, gc, [-0.11, eyeY + 0.004, -0.07]).add(G.temple, gc, [0.11, eyeY + 0.004, -0.07]); }
-  if (look.mustache) head.add(G.stache, look.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1]);
-  if (look.beard) head.add(G.beard, look.beard, [0, 0, 0], [0, 0, 0], [1.03, 1.06, 1.05]).add(G.stache, look.beard, [0, -0.039, -0.117]);
-  if (look.stubble) head.add(G.beard, look.stubble, [0, 0, 0], [0, 0, 0], [1.0, 1.06, 1.01]);
-  if (look.props?.includes('earrings')) head.add(G.earring, '#e3c25a', [-0.12, -0.035, -0.0]).add(G.earring, '#e3c25a', [0.12, -0.035, -0.0]);
+  const bY = 0.052 + md.lift, bThick = (look.fem ? 0.72 : 1.2) * md.thick * (0.55 + browW * 0.45);
+  const bLen = Math.min(1.38, 0.95 + browW * 0.22), asym = md.asym || 0;
+  put(G.brow, brow, [-eyeX, bY + asym, fz - 0.014], [0.12, 0, -md.bAng], [bLen, bThick, 1.15], SURF.hair);
+  put(G.brow, brow, [eyeX, bY - asym * 0.35, fz - 0.014], [0.12, 0, md.bAng * (mood === 'smirk' ? 0.22 : 1)], [bLen, bThick * (mood === 'smirk' ? 0.82 : 1), 1.15], SURF.hair);
+  if (mood === 'stern' || browW > 1.5) put(CAP(0.004, 0.022, 2, 4), shade(sk, 0.72), [0, bY - 0.012, fz - 0.01], [0.5, 0, 0], [1, 1, 0.55]);
+  if (!overlay) {
+    put(CAP(0.011 * noseS, 0.042, 2, 8), sk, [0, 0.002, -0.124], [-0.32, 0, 0], [1, 1, 0.9]);
+    put(G.nose, shade(sk, 0.97), [0, -0.022, -0.128], [0, 0, 0], [0.7 * noseS, 0.82, 0.85]);
+    put(SPH(0.011, 8, 6), shade(sk, 0.94), [-0.016 * noseS, -0.028, -0.118]);
+    put(SPH(0.011, 8, 6), shade(sk, 0.94), [0.016 * noseS, -0.028, -0.118]);
+    put(G.nostril, shade(sk, 0.82), [-0.01, -0.03, -0.122], [0, 0, 0], [0.85, 0.7, 0.8]);
+    put(G.nostril, shade(sk, 0.82), [0.01, -0.03, -0.122], [0, 0, 0], [0.85, 0.7, 0.8]);
+  } else if (noseS >= 1.15) put(G.nose, shade(sk, 0.96), [0, -0.02, -0.142], [0, 0, 0], [0.5 * noseS, 0.65, 0.9]);
+  const mc = look.lips || shade(sk, 0.48), my = -0.056, mz = -0.122, ms = mouthS;
+  if (mood === 'grin') {
+    put(SPH(0.026, 12, 8, 0, PI * 2, PI * 0.42, PI * 0.55), '#f4f0e6', [0, my + 0.004, mz], [0, 0, 0], [1.55 * ms, 0.72, 0.4], SURF.eye);
+    put(ARC(0.034 * ms, 0.0072, PI * 0.9), mc, [0, my + 0.03, mz - 0.004], [0, 0, 0], [1.12, 0.9, 1], LIP);
+    put(ARC(0.03 * ms, 0.006, PI * 0.72), shade(mc, 0.82), [0, my - 0.006, mz], [0, 0, 0], [1.02, 0.55, 1], LIP);
+  } else if (mood === 'smile') {
+    put(SPH(0.012, 8, 6, 0, PI * 2, PI * 0.5, PI * 0.4), '#f4f0e6', [0, my + 0.002, mz], [0, 0, 0], [1.35 * ms, 0.42, 0.32], SURF.eye);
+    put(ARC(0.03 * ms, 0.0068, PI * 0.72), mc, [0, my + 0.02, mz - 0.002], [0, 0, 0], [1.08, 0.85, 1], LIP);
+  } else if (mood === 'smirk') {
+    put(ARC(0.028 * ms, 0.0062, PI * 0.58), mc, [0.012, my + 0.02, mz], [0, 0, 0.62], [1.12, 0.8, 1], LIP);
+    put(CAPX(0.004, 0.022, 2, 4), shade(mc, 0.8), [-0.018, my + 0.002, mz], [0, 0, 0.15], [1, 1, 1], LIP);
+  } else if (mood === 'sly') put(ARC(0.026 * ms, 0.0048, PI * 0.42), mc, [0.014, my + 0.016, mz], [0, 0, 0.48], [1.15, 0.6, 1], LIP);
+  else if (mood === 'sad') put(ARC(0.03 * ms, 0.0062, PI * 0.7), mc, [0, my - 0.01, mz], [0, 0, PI], [1.08, 0.75, 1], LIP);
+  else if (mood === 'stern') {
+    put(CAPX(0.0052, 0.048 * ms, 2, 6), mc, [0, my, mz], [0, 0, 0], [1, 1.35, 1], LIP);
+    put(ARC(0.015, 0.0042, PI * 0.48), mc, [-0.022 * ms, my - 0.01, mz], [0, 0, PI * 0.82], [0.85, 0.5, 1], LIP);
+    put(ARC(0.015, 0.0042, PI * 0.48), mc, [0.022 * ms, my - 0.01, mz], [0, 0, PI * 1.18], [0.85, 0.5, 1], LIP);
+  } else if (mood === 'blank') {
+    put(G.oh, mc, [0, my - 0.002, mz], [0, 0, 0], [1.2 * ms, 1.35 * ms, 0.55], LIP);
+    put(SPH(0.008, 8, 6), shade(sk, 0.42), [0, my - 0.002, mz + 0.002], [0, 0, 0], [0.65 * ms, 0.85 * ms, 0.28]);
+  } else put(CAPX(0.0036, 0.052 * ms, 2, 6), shade(mc, 0.72), [0, my, mz], [0, 0, 0], [1, 0.85, 0.8], LIP);
+  if (look.cheeks) {
+    put(G.cheek, '#e09090', [-0.072, -0.028, fz + 0.008], [0, 0, 0], [1.15, 0.75, 0.42]);
+    put(G.cheek, '#e09090', [0.072, -0.028, fz + 0.008], [0, 0, 0], [1.15, 0.75, 0.42]);
+  }
+  if (look.wrinkles) {
+    for (const sx of [-1, 1]) put(CAPX(0.0026, 0.024, 2, 4), shade(sk, 0.7), [sx * 0.072, 0.004, fz + 0.006], [0, sx * 0.6, sx * 0.45]);
+    put(CAPX(0.0022, 0.04, 2, 4), shade(sk, 0.75), [0, 0.07, fz + 0.004], [0.4, 0, 0], [1, 0.6, 0.5]);
+    put(CAPX(0.0022, 0.032, 2, 4), shade(sk, 0.78), [0, 0.086, fz + 0.002], [0.25, 0, 0.08], [0.8, 0.5, 0.4]);
+  }
+  if (!overlay) {
+    if (look.glasses) { const gc = look.glasses;
+      put(G.lens, gc, [-eyeX, eyeY, -0.126], [0, 0, 0], [1, 1, 1], SURF.plastic);
+      put(G.lens, gc, [eyeX, eyeY, -0.126], [0, 0, 0], [1, 1, 1], SURF.plastic);
+      put(G.bridge, gc, [0, eyeY + 0.004, -0.128], [0, 0, 0], [1, 1, 1], SURF.plastic);
+      put(G.temple, gc, [-0.11, eyeY + 0.004, -0.07], [0, 0, 0], [1, 1, 1], SURF.plastic);
+      put(G.temple, gc, [0.11, eyeY + 0.004, -0.07], [0, 0, 0], [1, 1, 1], SURF.plastic);
+    }
+    if (look.mustache) put(G.stache, look.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1], SURF.hair);
+    if (look.beard) { put(G.beard, look.beard, [0, 0, 0], [0, 0, 0], [1.03, 1.06, 1.05], SURF.hair); put(G.stache, look.beard, [0, -0.039, -0.117], [0, 0, 0], [1, 1, 1], SURF.hair); }
+    if (look.stubble) put(G.beard, look.stubble, [0, 0, 0], [0, 0, 0], [1.0, 1.06, 1.01], SURF.hair);
+    if (look.props?.includes('earrings')) {
+      put(G.earring, '#e3c25a', [-0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal);
+      put(G.earring, '#e3c25a', [0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal);
+    }
+  }
+}
+function addFace(head, look) {
+  const sk = look.skin;
+  head.add(headGeo(look.face), sk, [0, 0, 0], [0, 0, 0], [0.97, 1.1, 1.02], SURF.skin);
+  for (const sx of [-1, 1]) {
+    head.add(G.ear, sk, [sx * 0.116, -0.004, 0.01], [0, sx * 0.35, 0], [0.5, 1.1, 0.85], SURF.skin);
+    head.add(new THREE.TorusGeometry(0.02, 0.0045, 5, 12, PI * 1.3), sk, [sx * 0.124, 0.0, 0.008], [0, sx * PI / 2 + sx * 0.35, PI * 0.15], [1, 1, 1], SURF.skin);
+    head.add(SPH(0.012, 8, 6), shade(sk, 0.75), [sx * 0.125, -0.004, 0.004], [0, 0, 0], [0.4, 0.9, 0.7], SURF.skin);
+  }
+  head.add(SPH(0.03, 12, 8), sk, [0, -0.098, -0.085], [0, 0, 0], [1.1 * (look.face?.jaw || 1), 0.75, 0.8], SURF.skin);
+  addFaceFeatures(head, look, false);
 }
 
 let bossTex = null;
@@ -470,6 +549,17 @@ function dress(rig) {
     if (pn === 'Head' && (HAIR_MATS.has(mn) || (mn === 'Red' && spec.head === 'formalW'))) m.visible = false;
   });
     if (spec.glasses) addGlasses(base, bones, spec.glasses);
+  // HQ #90d: drop stock eyes/brows (small cards only) so the mood overlay is the face you actually see
+  parent.traverse(m => {
+    if (!m.isSkinnedMesh || !m.visible) return;
+    const mn = m.userData.kitMat || '';
+    if (mn !== 'Eye' && mn !== 'Eyebrows' && mn !== 'Brown' && mn !== 'Hair_Brown') return;
+    let q = m, pn = null; while (q && !pn) { pn = partOf(q); q = q.parent; }
+    if (pn !== 'Head') return;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    const sz = m.geometry.boundingBox.getSize(_v);
+    if (Math.max(sz.x, sz.y, sz.z) < 0.22) m.visible = false;
+  });
   mergeParts(parent); const headFrame = measureHead(base, bones, spec.head); // HQ #97: rest-pose head frame (base-local)
   // fit: same standing height as the procedural person, hips drop onto the chair when seated
   base.rotation.y = PI; const fit = new THREE.Group(); fit.add(base);
@@ -553,6 +643,7 @@ function addHeadLikeness(rig, bones, L, base, F) {
   const specHead = CAST[rig.st.id]?.head;
   const P = new Part();
   addHair(P, L);
+  addFaceFeatures(P, L, true);
   if (L.mustache && specHead !== 'workerM') P.add(G.stache, L.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1], SURF.hair);
   if (L.beard) { P.add(G.beard, L.beard, [0, 0.016, -0.004], [0, 0, 0], [0.96, 0.82, 1.0], SURF.hair); P.add(G.stache, L.beard, [0, -0.039, -0.117], [0, 0, 0], [1, 1, 1], SURF.hair); }
   // HQ #97: stubble skipped on the glTF head (read as a dark neck band at this scale)
