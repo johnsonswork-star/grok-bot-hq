@@ -264,7 +264,7 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
       // standing still: slow weight shift from foot to foot (hips slide, the relaxed knee bends)
       const still = (1 - walkAmt) * (1 - s);
       const shift = Math.sin(t * 0.45 + w.seed * 3) * still;
-      w.body.position.x = shift * 0.018; w.body.rotation.z = shift * 0.012;
+      w.body.position.x = shift * 0.018 + (moving ? Math.sin(w.phase) * 0.012 * walkAmt : 0); w.body.rotation.z = shift * 0.012 + (moving ? Math.sin(w.phase) * 0.025 * walkAmt : 0); // HQ #90b hip sway
       let kL = -Math.max(0, shift) * 0.16, kR = -Math.max(0, -shift) * 0.16;
       let lLx = swing * (1 - s) + s * 1.45 - kL * 0.45, lRx = -swing * (1 - s) + s * 1.45 - kR * 0.45;
       if (moving) { kL = -Math.max(0, Math.sin(w.phase + 1.6)) * 0.75 * walkAmt; kR = -Math.max(0, Math.sin(w.phase + 1.6 + Math.PI)) * 0.75 * walkAmt; }
@@ -291,7 +291,8 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
         const cyc = (t / 26 + w.seed) % 1, bout = Math.floor(t / 26 + w.seed);
         const u = Math.min(1, Math.max(0, Math.min((cyc - 0.72) / 0.05, (1 - cyc) / 0.05))) * s; // 0 typing .. 1 idle bout
         const typ = s * (1 - u);
-        const tl = 0.42 + Math.sin(k) * 0.05, tr = 0.42 + Math.sin(k + 1.9) * 0.05;
+        const jit = Math.sin(k * 2.7 + w.seed * 9) * Math.sin(k * 0.6) * 0.025; // HQ #90b uneven keystrokes
+        const tl = 0.42 + Math.max(0, Math.sin(k)) ** 2 * 0.07 + jit, tr = 0.42 + Math.max(0, Math.sin(k + 1.9)) ** 2 * 0.07 - jit;
         aLx = aLx * (1 - s) + tl * s; aRx = aRx * (1 - s) + tr * s; aLz = aLz * (1 - s) + 0.16 * s; aRz = aRz * (1 - s) - 0.16 * s;
         eL = eL * (1 - s) + (1.0 + Math.sin(k * 0.5) * 0.04) * s; eR = eR * (1 - s) + (1.0 + Math.sin(k * 0.5 + 1) * 0.04) * s;
         hx = hx * (1 - s) + (0.12 + Math.sin(t * 0.5 + w.phase) * 0.04) * s; hy = hy * (1 - s) + Math.sin(t * 0.37 + w.phase) * 0.12 * s;
@@ -313,14 +314,14 @@ export function createWorkers({ scene, stations, colliders: baseColliders, extra
       }
       if (w.cup.visible && s < 0.5) w.cup.rotation.x = -(aRx + eR) + (w.act === 'water' ? 0.25 : 0);
       for (const e of w.extras || []) if (e.upright && e.obj.visible) e.obj.rotation.x = -(aLx + eL);
-      w.spine.rotation.set(spX, 0, spZ);
+      w.spine.rotation.set(spX, moving ? -swing * 0.16 * (1 - s) : Math.sin(t * 0.23 + w.seed * 5) * 0.03 * still, spZ - (moving ? Math.sin(w.phase) * 0.02 * walkAmt : 0)); // HQ #90b shoulder counter-twist
       w.torso.scale.set(1 + breath * 0.012, 1, 1 + breath * 0.02);
       w.legL.rotation.x = lLx; w.legR.rotation.x = lRx; w.kneeL.rotation.x = kL; w.kneeR.rotation.x = kR;
       // glance at the player when they're close and we're not busy walking
       const pd = Math.hypot(player.pos.x - w.x, player.pos.z - w.z);
       if (pd < 2.6 && !moving) { const look = angTo(w.yaw, Math.atan2(-(player.pos.x - w.x), -(player.pos.z - w.z))); if (Math.abs(look) < 1.6) hy = hy * 0.3 + look * 0.7; }
       w.armL.rotation.set(aLx, 0, aLz); w.armR.rotation.set(aRx, 0, aRz); w.elbowL.rotation.x = eL; w.elbowR.rotation.x = eR;
-      w.headG.rotation.set(-(hx + breathe), hy, 0); // hx > 0 = look down
+      w.headG.rotation.set(-(hx + breathe) + (moving ? Math.cos(w.phase * 2) * 0.02 * walkAmt : 0), hy + (moving ? swing * 0.1 : 0), -spZ * 0.6 + Math.sin(t * 0.31 + w.seed * 7) * 0.025 * still); // hx > 0 = look down
       w.tag.position.y = 2.02 - s * 0.27;
       w.tag.material.opacity = (pd > 14 ? 0 : pd > 10 ? (14 - pd) / 4 : 1) * Math.max(0, 1 - s * 1.5); // seated: the desk screen says it
       w.tag.visible = w.tag.material.opacity > 0.02;

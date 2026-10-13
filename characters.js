@@ -10,21 +10,21 @@ const PI = Math.PI;
 // tie, skirt (color) / dress (skirt = top), sleeves 'long'|'short', hair style + color, face extras, body shape, props.
 // mood = mouth/brow expression: grin | smile | smirk | flat | stern | sad | sly | blank
 export const LOOKS = {
-  grok:     { who: 'Michael Scott',   skin: '#f0c4a0', hair: ['side', '#3a2a1e'], top: '#c6d8ee', open: '#2a2e38', tie: '#b3262e', pants: '#2a2e38', h: 1.0, belly: 1.05, mood: 'grin', props: ['bossMug'], idle: 'boss' },
-  inbox:    { who: 'Pam Beesly',      skin: '#f3cfb3', hair: ['long', '#8a4a2b', { len: 0.3, bangs: 1, curl: 1 }], top: '#f4f1ea', open: '#e7a1b0', skirt: '#6d6158', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
-  cos:      { who: 'Jim Halpert',     skin: '#f1c9a5', hair: ['floppy', '#5c3b22'], top: '#a9c0d8', tie: '#34445e', pants: '#3a3d44', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
-  assist:   { who: 'Dwight Schrute',  skin: '#f2cfae', hair: ['center', '#4a3220'], top: '#d1ad4f', sleeves: 'short', tie: '#5a3b1d', pants: '#4b3d2e', h: 1.04, glasses: '#2a2a2a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
-  icons:    { who: 'Andy Bernard',    skin: '#f3cfb0', hair: ['side', '#8c6a3e'], top: '#f4f1ea', open: '#b31b1b', sweater: true, tie: '#1d3f8f', pants: '#c4ab7c', h: 1.0, mood: 'grin' },
-  onpad:    { who: 'Phyllis Vance',   skin: '#f2cdb4', hair: ['curly', '#a7714f'], top: '#b9a1d4', skirt: '#5b5468', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
-  builder:  { who: 'Stanley Hudson',  skin: '#6b4430', hair: ['fringe', '#bdb8b0'], top: '#f1efe8', open: '#6a5643', vest: true, tie: '#7a2335', pants: '#3a3530', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#3a2a20', mustache: '#cfcac0', mood: 'flat', idle: 'lean' },
-  faith:    { who: 'Angela Martin',   skin: '#f6dcc6', hair: ['bun', '#e6d39a'], top: '#f6f3ec', open: '#e8dcb2', skirt: '#33343f', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
-  broker:   { who: 'Oscar Martinez',  skin: '#b9855f', hair: ['short', '#161210'], top: '#a99fd2', tie: '#3c2f6b', pants: '#474b55', h: 1.0, beard: '#1e1814', mood: 'sly' },
-  conn:     { who: 'Kevin Malone',    skin: '#f0c7a4', hair: ['receding', '#7a5a3c'], top: '#ecebe4', open: '#8c8452', sweater: true, pants: '#3e3a33', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
-  review:   { who: 'Creed Bratton',   skin: '#eecbb0', hair: ['messy', '#c9c6c0'], top: '#55606b', pants: '#2c2f33', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
-  kids:     { who: 'Meredith Palmer', skin: '#f0c9ad', hair: ['bob', '#a63a1c'], top: '#2c8a86', skirt: '#2f2f36', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
-  designer: { who: 'Kelly Kapoor',    skin: '#a8714f', hair: ['long', '#120d0b', { len: 0.42 }], top: '#e8408f', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#c2335f', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
-  profile:  { who: 'Toby Flenderson', skin: '#efc9aa', hair: ['thin', '#6a5c4e'], top: '#a9bdd6', open: '#b9a888', sweater: true, pants: '#5f5a52', h: 1.0, stubble: '#8a7a6a', slump: 0.12, mood: 'sad', idle: 'slump' },
-  darryl:   { who: 'Darryl Philbin',  skin: '#5e3c2a', hair: ['short', '#151110'], top: '#4f6f95', sleeves: 'short', pants: '#2f3542', h: 1.07, beard: '#1a1412', mood: 'smirk', idle: 'upright' }, // HQ #79 warehouse foreman (static set dressing)
+  grok:     { who: 'Michael Scott', face: { jaw: 1.05, chin: 1.2 },   skin: '#f0c4a0', hair: ['side', '#3a2a1e'], top: '#c6d8ee', open: '#2a2e38', tie: '#b3262e', pants: '#2a2e38', h: 1.0, belly: 1.05, mood: 'grin', props: ['bossMug'], idle: 'boss' },
+  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.9 },      skin: '#f3cfb3', hair: ['long', '#8a4a2b', { len: 0.3, bangs: 1, curl: 1 }], top: '#f4f1ea', open: '#e7a1b0', skirt: '#6d6158', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
+  cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#5c3b22'], top: '#a9c0d8', tie: '#34445e', pants: '#3a3d44', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
+  assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.8, nose: 1.1 },  skin: '#f2cfae', hair: ['center', '#4a3220'], top: '#d1ad4f', sleeves: 'short', tie: '#5a3b1d', pants: '#4b3d2e', h: 1.04, glasses: '#2a2a2a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
+  icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3 },    skin: '#f3cfb0', hair: ['side', '#8c6a3e'], top: '#f4f1ea', open: '#b31b1b', sweater: true, tie: '#1d3f8f', pants: '#c4ab7c', h: 1.0, mood: 'grin' },
+  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6 },   skin: '#f2cdb4', hair: ['curly', '#a7714f'], top: '#b9a1d4', skirt: '#5b5468', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
+  builder:  { who: 'Stanley Hudson', face: { jaw: 1.25, chin: 0.7, nose: 1.2 },  skin: '#6b4430', hair: ['fringe', '#bdb8b0'], top: '#f1efe8', open: '#6a5643', vest: true, tie: '#7a2335', pants: '#3a3530', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#3a2a20', mustache: '#cfcac0', mood: 'flat', idle: 'lean' },
+  faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85 },   skin: '#f6dcc6', hair: ['bun', '#e6d39a'], top: '#f6f3ec', open: '#e8dcb2', skirt: '#33343f', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
+  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#161210'], top: '#a99fd2', tie: '#3c2f6b', pants: '#474b55', h: 1.0, beard: '#1e1814', mood: 'sly' },
+  conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.4, nose: 1.1 },    skin: '#f0c7a4', hair: ['receding', '#7a5a3c'], top: '#ecebe4', open: '#8c8452', sweater: true, pants: '#3e3a33', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
+  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#eecbb0', hair: ['messy', '#c9c6c0'], top: '#55606b', pants: '#2c2f33', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
+  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#a63a1c'], top: '#2c8a86', skirt: '#2f2f36', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
+  designer: { who: 'Kelly Kapoor', face: { jaw: 0.85, chin: 1.1, nose: 0.85 },    skin: '#a8714f', hair: ['long', '#120d0b', { len: 0.42 }], top: '#e8408f', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#c2335f', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
+  profile:  { who: 'Toby Flenderson', face: { jaw: 0.95, chin: 0.8 }, skin: '#efc9aa', hair: ['thin', '#6a5c4e'], top: '#a9bdd6', open: '#b9a888', sweater: true, pants: '#5f5a52', h: 1.0, stubble: '#8a7a6a', slump: 0.12, mood: 'sad', idle: 'slump' },
+  darryl:   { who: 'Darryl Philbin', face: { jaw: 1.15, chin: 1 },  skin: '#5e3c2a', hair: ['short', '#151110'], top: '#4f6f95', sleeves: 'short', pants: '#2f3542', h: 1.07, beard: '#1a1412', mood: 'smirk', idle: 'upright' }, // HQ #79 warehouse foreman (static set dressing)
 };
 const BY_NAME = Object.fromEntries(Object.values(LOOKS).map(l => [l.who, l]));
 export function lookFor(st) { return LOOKS[st.id] || BY_NAME[st.name] || { who: st.name, skin: '#f1c9a5', hair: ['short', '#3a2a1e'], top: st.color, pants: '#2f3640', mood: 'smile' }; }
@@ -85,6 +85,29 @@ const CAPX = (r, len, cs = 3, rs = 10) => CAP(r, len, cs, rs).rotateZ(PI / 2); /
 const CAPZ = (r, len, cs = 3, rs = 10) => CAP(r, len, cs, rs).rotateX(PI / 2); // lying along z
 const ARC = (r, tube, arc) => new THREE.TorusGeometry(r, tube, 5, 14, arc).rotateZ(-PI / 2 - arc / 2); // U-shape, low point at (0,-r)
 const LATHE = (pts, n = 20) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), n);
+// HQ #90b: sculpted head. Sphere pushed into a skull: tapered jaw, defined chin, cheekbones, flatter temples, rounder occiput.
+function headGeo(o = {}) {
+  const g = SPH(0.12, 32, 26), P = g.attributes.position, r = 0.12, jaw = o.jaw ?? 1, chin = o.chin ?? 1;
+  for (let i = 0; i < P.count; i++) {
+    let x = P.getX(i), y = P.getY(i), z = P.getZ(i); const ny = y / r, fz = Math.max(0, -z / r), bz = Math.max(0, z / r);
+    const lo = Math.max(0, -ny);
+    x *= 1 - 0.26 * Math.pow(lo, 1.4) * (2 - jaw);                       // jaw taper (jaw>1 = squarer)
+    if (ny < -0.35) z -= fz * 0.018 * chin * Math.min(1, (-ny - 0.35) / 0.4); // chin forward
+    if (ny > -0.35 && ny < 0.15) x *= 1 + 0.05 * fz * (1 - Math.abs(ny + 0.1) / 0.25 > 0 ? 1 - Math.abs(ny + 0.1) / 0.25 : 0); // cheekbones
+    if (Math.abs(x / r) > 0.75 && ny > -0.1) x *= 0.96;                 // flatter temples
+    z += bz * 0.012 * Math.max(0, 1 - Math.abs(ny - 0.15) / 0.6);         // occiput
+    if (fz > 0.6 && ny > 0.2 && ny < 0.6) z += 0.006;                     // brow ridge/eye socket
+    P.setXYZ(i, x, y, z);
+  }
+  g.computeVertexNormals(); return g;
+}
+// HQ #90b: hair shells get strand clumps (radial ridges) so hair reads as hair, not a helmet
+function clump(g, n = 18, amp = 0.05, seed = 0) {
+  const P = g.attributes.position;
+  for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), a = Math.atan2(z, x), l = Math.hypot(x, y, z) || 1;
+    const k = 1 + amp * (0.5 + 0.5 * Math.sin(a * n + seed + y * 40)) * Math.min(1, (0.13 - y) * 8 + 0.3); P.setXYZ(i, x * k, y * (1 + amp * 0.3), z * k); }
+  g.computeVertexNormals(); return g;
+}
 const G = {
   head: SPH(0.12, 28, 20), ear: SPH(0.026, 10, 8), hand: SPH(0.042, 12, 10), thumb: CAP(0.013, 0.03, 2, 6),
   eyeW: SPH(0.021, 12, 10), pupil: SPH(0.0115, 10, 8), shine: SPH(0.004, 4, 3), lid: SPH(0.023, 12, 6, 0, PI * 2, 0, PI * 0.42),
@@ -96,7 +119,7 @@ const G = {
   thigh: CAP(0.066, 0.26, 4, 12), shin: CAP(0.054, 0.28, 4, 12), shoe: CAPZ(0.046, 0.12, 4, 12), ankle: CAP(0.04, 0.12, 3, 10),
   upper: CAP(0.046, 0.19, 4, 12), fore: CAP(0.04, 0.19, 4, 12), sleeveShort: CYL(0.062, 0.058, 0.14, 14), cuff: CYL(0.047, 0.047, 0.03, 12),
   fringe: CAPX(0.028, 0.15, 3, 8), tuft: SPH(0.045, 10, 8), curl: SPH(0.052, 10, 8), bun: SPH(0.058, 14, 10),
-  cap: f => SPH(0.129, 28, 14, 0, PI * 2, 0, PI * f), back: (a, b) => SPH(0.128, 24, 10, 0, PI, PI * a, PI * (b - a)),
+  cap: f => clump(SPH(0.129, 40, 16, 0, PI * 2, 0, PI * f), 22, 0.035), back: (a, b) => clump(SPH(0.128, 32, 12, 0, PI, PI * a, PI * (b - a)), 16, 0.04, 1),
   beard: SPH(0.124, 22, 10, PI, PI, PI * 0.6, PI * 0.3), stache: CAPX(0.012, 0.055, 2, 8),
   tiny: BOX(0.03, 0.04, 0.012), pager: BOX(0.05, 0.07, 0.025), pen: CYL(0.006, 0.006, 0.06, 6), earring: SPH(0.012, 8, 6), bead: SPH(0.011, 6, 4),
   finger: CAP(0.0105, 0.042, 2, 6), sole: BOX(0.1, 0.018, 0.2), lace: BOX(0.04, 0.006, 0.05), crease: BOX(0.004, 0.3, 0.004), shirtPocket: BOX(0.05, 0.055, 0.008),
@@ -118,7 +141,7 @@ function addHair(head, look) {
     case 'center': // Dwight: center part, flat sides
       head.add(G.cap(0.44), hc, [0, 0.01, 0.006], [0.28, 0, 0]).add(G.back(0.28, 0.62), hc);
       head.add(G.fringe, hc, [-0.05, 0.088, -0.088], [0.45, 0, 0.32], [0.55, 1, 1.2]).add(G.fringe, hc, [0.05, 0.088, -0.088], [0.45, 0, -0.32], [0.55, 1, 1.2]);
-      head.add(CAP(0.012, 0.05, 2, 6), hc, [-0.117, -0.0, -0.035]).add(CAP(0.012, 0.05, 2, 6), hc, [0.117, 0, -0.035]); break; // sideburns
+      head.add(CAP(0.012, 0.05, 2, 6), hc, [-0.104, -0.0, -0.03], [0, 0, 0], [0.6, 1, 1]).add(CAP(0.012, 0.05, 2, 6), hc, [0.104, 0, -0.03], [0, 0, 0], [0.6, 1, 1]); break; // sideburns
     case 'short': // Oscar: neat, close-cropped
       head.add(G.cap(0.4), hc, [0, 0.008, 0.006], [0.36, 0, 0]).add(G.back(0.3, 0.58), hc, [0, 0, 0], [0, 0, 0], [0.99, 1, 0.99]); break;
     case 'receding': // Kevin: short and thin up top
@@ -157,9 +180,13 @@ function addHair(head, look) {
 function addFace(head, look) {
   const sk = look.skin, brow = look.hair[0] === 'fringe' ? '#2a2420' : shade(look.hair[1], 0.8), mood = look.mood || 'smile';
   const fz = -0.112; // eye plane (just proud of the head surface)
-  head.add(G.head, sk, [0, 0, 0], [0, 0, 0], [0.97, 1.1, 1.02]);
-  head.add(SPH(0.065, 16, 10), sk, [0, -0.078, -0.03], [0, 0, 0], [1.1, 0.7, 1.0]); // jaw / chin (stays behind the mouth)
-  head.add(G.ear, sk, [-0.118, 0, 0.005], [0, 0, 0], [0.55, 1.05, 0.9]).add(G.ear, sk, [0.118, 0, 0.005], [0, 0, 0], [0.55, 1.05, 0.9]);
+  head.add(headGeo(look.face), sk, [0, 0, 0], [0, 0, 0], [0.97, 1.1, 1.02]);
+  for (const sx of [-1, 1]) { // ears: shell + rim + darker inner fold, set back and angled out
+    head.add(G.ear, sk, [sx * 0.116, -0.004, 0.01], [0, sx * 0.35, 0], [0.5, 1.1, 0.85]);
+    head.add(new THREE.TorusGeometry(0.02, 0.0045, 5, 12, PI * 1.3), sk, [sx * 0.124, 0.0, 0.008], [0, sx * PI / 2 + sx * 0.35, PI * 0.15]);
+    head.add(SPH(0.012, 8, 6), shade(sk, 0.75), [sx * 0.125, -0.004, 0.004], [0, 0, 0], [0.4, 0.9, 0.7]);
+  }
+  head.add(SPH(0.03, 12, 8), sk, [0, -0.098, -0.085], [0, 0, 0], [1.1 * (look.face?.jaw || 1), 0.75, 0.8]); // chin pad
   // eyes
   const eyeX = 0.042, eyeY = 0.014;
   for (const sx of [-1, 1]) {
@@ -175,10 +202,13 @@ function addFace(head, look) {
   head.add(G.brow, brow, [-eyeX, bY + (mood === 'smirk' ? 0.006 : 0), fz - 0.01], [0, 0, -bAng], [1, look.fem ? 0.8 : 1.3, 1]);
   head.add(G.brow, brow, [eyeX, bY, fz - 0.01], [0, 0, bAng], [1, look.fem ? 0.8 : 1.3, 1]);
   // nose
-  head.add(G.nose, shade(sk, 0.96), [0, -0.016, -0.118], [0, 0, 0], [0.72, 0.95, 0.85]);
+  head.add(CAP(0.011 * (look.face?.nose || 1), 0.04, 2, 8), sk, [0, 0.0, -0.122], [-0.32, 0, 0], [1, 1, 0.9]); // nose bridge
+  head.add(G.nose, shade(sk, 0.97), [0, -0.022, -0.126], [0, 0, 0], [0.68 * (look.face?.nose || 1), 0.8, 0.8]); // tip
+  head.add(SPH(0.011, 8, 6), shade(sk, 0.94), [-0.015, -0.027, -0.117]).add(SPH(0.011, 8, 6), shade(sk, 0.94), [0.015, -0.027, -0.117]); // alae
+  head.add(CAPX(0.006, 0.05, 2, 6), shade(sk, 0.85), [0, -0.068, -0.108], [0, 0, 0], [1, 1, 0.6]); // lower-lip shadow
   head.add(G.nostril, shade(sk, 0.85), [-0.01, -0.028, -0.119], [0, 0, 0], [0.8, 0.7, 0.8]).add(G.nostril, shade(sk, 0.85), [0.01, -0.028, -0.119], [0, 0, 0], [0.8, 0.7, 0.8]);
   // mouth
-  const mc = look.lips || shade(sk, 0.55), my = -0.058, mz = -0.115;
+  const mc = look.lips || shade(sk, 0.55), my = -0.058, mz = -0.119;
   if (mood === 'grin') { // big Michael / Andy smile with teeth
     head.add(SPH(0.03, 14, 8, 0, PI * 2, PI * 0.5, PI * 0.5), '#f5f2ea', [0, my + 0.01, mz + 0.004], [0, 0, 0], [1.2, 0.75, 0.5]);
     head.add(ARC(0.032, 0.0055, PI * 0.75), mc, [0, my + 0.03, mz], [0, 0, 0], [1.1, 0.75, 1]);
@@ -193,7 +223,7 @@ function addFace(head, look) {
   if (look.wrinkles) for (const sx of [-1, 1]) head.add(CAPX(0.0025, 0.02, 2, 4), shade(sk, 0.75), [sx * 0.07, 0.005, -0.094], [0, sx * 0.6, sx * 0.4]);
   if (look.glasses) { const gc = look.glasses;
     head.add(G.lens, gc, [-eyeX, eyeY, -0.124]).add(G.lens, gc, [eyeX, eyeY, -0.124]).add(G.bridge, gc, [0, eyeY + 0.004, -0.126])
-      .add(G.temple, gc, [-0.118, eyeY + 0.004, -0.07]).add(G.temple, gc, [0.118, eyeY + 0.004, -0.07]); }
+      .add(G.temple, gc, [-0.11, eyeY + 0.004, -0.07]).add(G.temple, gc, [0.11, eyeY + 0.004, -0.07]); }
   if (look.mustache) head.add(G.stache, look.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1]);
   if (look.beard) head.add(G.beard, look.beard, [0, 0, 0], [0, 0, 0], [1.03, 1.06, 1.05]).add(G.stache, look.beard, [0, -0.039, -0.117]);
   if (look.stubble) head.add(G.beard, look.stubble, [0, 0, 0], [0, 0, 0], [1.0, 1.06, 1.01]);
@@ -249,7 +279,9 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   const T = new Part();
   T.add(LATHE(prof), outer, [0, 0, 0], [0, 0, 0], [xs, 1, zs]);
   if (belly > 1.01) T.add(G.belly, outer, [0, 0.19, -0.03 - (belly - 1) * 0.07], [0, 0, 0], [xs * 0.88, 0.8 + (belly - 1) * 0.3, 0.6 + (belly - 1) * 0.42]);
-  T.add(G.neck, L.skin, [0, 0.63, 0]);
+  T.add(G.neck, L.skin, [0, 0.63, 0], [0.12, 0, 0], [1, 1, 0.95]);
+  T.add(SPH(0.14, 20, 10, 0, PI * 2, 0, PI * 0.5), outer, [0, 0.5, 0.01], [0, 0, 0], [xs * 1.18, 0.55, zs * 0.95]); // trapezius / shoulder slope
+  T.add(SPH(0.04, 10, 8), shade(L.skin, 0.92), [0, 0.58, -0.05], [0, 0, 0], [1, 0.6, 0.5]); // throat/collarbone notch
   // pelvis / hips (skirts cover this)
   if (!(L.skirt || L.dress)) {
     T.add(LATHE([[0.0, -0.1], [0.1, -0.095], [0.142, -0.05], [0.15, 0.0], [0.15, 0.06], [0.0, 0.06]], 18), pants, [0, 0, 0], [0, 0, 0], [xs, 1, zs * 1.05]);
@@ -260,7 +292,8 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   const shirtShows = !!(L.open || L.tie || (!L.dress && !L.skirt && !L.sweater));
   if (!L.dress && !(L.skirt && !L.open)) { // collared shirt
     T.add(CYL(0.062, 0.07, 0.04, 14, true), L.open ? top : outer, [0, 0.585, 0]);
-    T.add(G.collarTip, L.open ? top : outer, [-0.03, 0.57, -0.06], [0.5, 0.4, -0.5]).add(G.collarTip, L.open ? top : outer, [0.03, 0.57, -0.06], [0.5, -0.4, 0.5]);
+    for (const sx of [-1, 1]) T.add(BOX(0.06, 0.048, 0.008), L.open ? top : outer, [sx * 0.04, 0.575, -0.062], [0.35, sx * 0.55, sx * 0.62]); // spread collar points
+    T.add(new THREE.TorusGeometry(0.066, 0.009, 5, 18), L.open ? top : outer, [0, 0.6, 0.004], [PI / 2 + 0.15, 0, 0], [1, 1.05, 1]); // collar band roll
   } else if (L.dress || L.skirt) T.add(CYL(0.058, 0.064, 0.02, 14, true), shade(outer, 0.9), [0, 0.6, 0]); // round neckline
   if (L.open) { // jacket / cardigan / vest: shirt panel down the front
     const pw = L.vest ? 0.1 : L.sweater ? 0.075 : 0.1;
