@@ -18,10 +18,10 @@ export const LOOKS = {
   cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#4a2e18'], top: '#7fa3c4', tie: '#2a3850', pants: '#2e3238', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
   assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.8, nose: 1.1 },  skin: '#f2cfae', hair: ['center', '#3a2818'], top: '#e0b83a', sleeves: 'short', tie: '#4a3018', pants: '#3f3224', h: 1.04, glasses: '#1a1a1a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
   icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3 },    skin: '#f3cfb0', hair: ['side', '#7a5a30'], top: '#f4f1ea', open: '#c41018', sweater: true, tie: '#1a3478', pants: '#b89a68', h: 1.0, mood: 'grin' },
-  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6 },   skin: '#f2cdb4', hair: ['curly', '#9a6040'], top: '#a888d0', skirt: '#4a4458', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
+  onpad:    { who: 'Phyllis Vance', face: { jaw: 1.2, chin: 0.6 },   skin: '#f2cdb4', hair: ['curly', '#a08c7c'], top: '#a888d0', skirt: '#4a4458', legs: '#e6c1a7', h: 0.93, belly: 1.25, wide: 1.18, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1, props: ['beads'] },
   builder:  { who: 'Stanley Hudson', face: { jaw: 1.25, chin: 0.7, nose: 1.2 },  skin: '#6b4430', hair: ['fringe', '#c8c4bc'], top: '#f1efe8', open: '#5a4838', vest: true, tie: '#8a1e30', pants: '#2e2a26', h: 1.0, belly: 1.35, wide: 1.2, glasses: '#2a1a12', mustache: '#d4d0c8', mood: 'flat', idle: 'lean' },
   faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85 },   skin: '#f6dcc6', hair: ['bun', '#f0e0a8'], top: '#f8f5ee', open: '#ddd0a0', skirt: '#2a2c38', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
-  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#120e0c'], top: '#8e82c8', tie: '#2e2458', pants: '#3a3e48', h: 1.0, beard: '#1a1410', mood: 'sly' },
+  broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#120e0c'], top: '#8e82c8', tie: '#2e2458', pants: '#3a3e48', h: 1.0, mood: 'sly' },
   conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.4, nose: 1.1 },    skin: '#f0c7a4', hair: ['receding', '#6a4a30'], top: '#ecebe4', open: '#6e8a48', sweater: true, pants: '#343028', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
   review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#eecbb0', hair: ['messy', '#d0cdc8'], top: '#4a5560', pants: '#22262a', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
   kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#c03010'], top: '#1e8a84', skirt: '#26262e', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
@@ -540,7 +540,7 @@ function addGlasses(base, bones, hex) {
 }
 // HQ #97: head frame measured from the kit's own skinned rest-pose skull, so procedural hair fits any kit head
 // (kit vertex data is meshopt-quantized, so the frame is anchored on the Head bone and tuned per head family instead)
-const HEAD_FIT = { M: { up: 0.155, fwd: 0.02, s: [1.05, 1.08, 1.06] }, W: { up: 0.145, fwd: 0.022, s: [0.98, 1.02, 1.0] } };
+const HEAD_FIT = { M: { up: 0.082, fwd: 0.006, s: [1.22, 1.14, 1.2] }, W: { up: 0.145, fwd: 0.022, s: [0.98, 1.02, 1.0] } };
 function measureHead(base, bones, kit) {
   if (!bones.Head) return null; base.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(base.matrixWorld).invert(), hp = bones.Head.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
@@ -554,8 +554,8 @@ function addHeadLikeness(rig, bones, L, base, F) {
   const P = new Part();
   addHair(P, L);
   if (L.mustache && specHead !== 'workerM') P.add(G.stache, L.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1], SURF.hair);
-  if (L.beard) { P.add(G.beard, L.beard, [0, 0, 0], [0, 0, 0], [1.03, 1.06, 1.05], SURF.hair); P.add(G.stache, L.beard, [0, -0.039, -0.117], [0, 0, 0], [1, 1, 1], SURF.hair); }
-  if (L.stubble) P.add(G.beard, L.stubble, [0, 0, 0], [0, 0, 0], [1.0, 1.06, 1.01], SURF.hair);
+  if (L.beard) { P.add(G.beard, L.beard, [0, 0.016, -0.004], [0, 0, 0], [0.96, 0.82, 1.0], SURF.hair); P.add(G.stache, L.beard, [0, -0.039, -0.117], [0, 0, 0], [1, 1, 1], SURF.hair); }
+  // HQ #97: stubble skipped on the glTF head (read as a dark neck band at this scale)
   if (L.props?.includes('earrings')) { P.add(G.earring, '#e3c25a', [-0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal); P.add(G.earring, '#e3c25a', [0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal); }
   if (!P.items.length) return;
   const mesh = P.mesh(false); mesh.name = 'likenessHair';
