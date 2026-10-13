@@ -1226,11 +1226,29 @@ const suggestBox = createSuggestBox({
 const swipeWall = createSwipeWall({ THREE, parent: BASEMENT, x: SWIPE_AT.x, y: SWIPE_AT.y, z: SWIPE_AT.z, ry: -Math.PI / 2, w: 2.4, h: 1.5, sendSwipes, toast: (...a) => toast(...a),
   onSuggest: ctx => suggestBox.show(ctx || {}) });
 BASEMENT.add(plate('DESIGN TRAINER', SWIPE_AT.x - 0.01, SWIPE_AT.y + 1.03, SWIPE_AT.z, -Math.PI / 2, { w: 1.1, sub: 'SWIPE ▶ KEEP · ◀ PASS · ✉ SUGGEST' }));
-// HQ #92: small physical Suggestion Box prop under the wall (south of screen, toward Darryl)
-{ const bx = SWIPE_AT.x - 0.35, bz = SWIPE_AT.z + 1.15;
-  box(0.28, 0.22, 0.22, M.oak || std('#7a5a35', 0.8), bx, 0.11, bz, BASEMENT, false);
-  box(0.3, 0.02, 0.24, std('#3a2a18', 0.85), bx, 0.23, bz, BASEMENT, false); // lid
-  BASEMENT.add(plate('SUGGESTION BOX', bx, 0.55, bz, -Math.PI / 2, { w: 0.55, sub: 'TAP ✉ ON THE WALL' }));
+// HQ #92b: a real wall-mounted SUGGESTION BOX right under the Design Trainer screen (the exact spot Chris pointed at:
+// standing x -13.6, z -1.6 facing east). Oak box with a brass slot + card pocket, labeled face. Tap / aim + A opens the
+// Suggestion Box overlay (iPad keyboard) → type:'suggest' → design-train/suggestions.jsonl for Kelly's next deck.
+let SUGGEST_MESH = null;
+{ const sx = SWIPE_AT.x - 0.1, sy = 0.66, sz = SWIPE_AT.z, oak = M.oak || std('#7a5a35', 0.8);
+  box(0.2, 0.46, 0.56, oak, sx, sy, sz, BASEMENT, false);                                  // body (depth along x, width along z)
+  box(0.24, 0.04, 0.6, std('#4a3420', 0.8), sx - 0.02, sy + 0.25, sz, BASEMENT, false);    // sloped-look lid cap
+  box(0.03, 0.03, 0.34, std('#c9a24a', 0.35, 0.8), sx - 0.1, sy + 0.15, sz, BASEMENT, false); // brass slot frame
+  box(0.032, 0.012, 0.3, std('#140e08', 0.9), sx - 0.105, sy + 0.15, sz, BASEMENT, false);    // the slot
+  box(0.1, 0.16, 0.14, std('#3a2a18', 0.85), sx - 0.14, sy - 0.12, sz + 0.36, BASEMENT, false); // card pocket (side)
+  for (const dz of [-0.03, 0, 0.03]) box(0.01, 0.12, 0.09, std('#f6f1e4', 0.9), sx - 0.13, sy - 0.04, sz + 0.36 + dz * 0.3, BASEMENT, false); // blank cards
+  const tex = canvasTex(512, 300, (g, cw, ch) => {
+    g.fillStyle = '#6e4f2c'; g.fillRect(0, 0, cw, ch);
+    roundRect(g, 18, 70, cw - 36, ch - 88, 14); g.fillStyle = '#f3ead6'; g.fill();
+    g.strokeStyle = '#c9a24a'; g.lineWidth = 6; roundRect(g, 26, 78, cw - 52, ch - 104, 10); g.stroke();
+    g.fillStyle = '#2c2416'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `700 64px ${PLATE_FONT}`; g.fillText('SUGGESTION BOX', cw / 2, 140);
+    g.fillStyle = '#3d5c3a'; g.fillRect(cw * 0.18, 186, cw * 0.64, 5);
+    g.fillStyle = '#2c2416'; g.font = '700 30px Arial,Helvetica,sans-serif'; g.fillText('✉ NEW PHRASES · DESIGN IDEAS', cw / 2, 222);
+    g.fillStyle = '#6b4f12'; g.font = '700 24px Arial,Helvetica,sans-serif'; g.fillText('TAP / A TO DROP ONE IN · FOR KELLY', cw / 2, 258);
+  });
+  SUGGEST_MESH = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.316), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  SUGGEST_MESH.position.set(sx - 0.102, sy - 0.06, sz); SUGGEST_MESH.rotation.y = -Math.PI / 2; BASEMENT.add(SUGGEST_MESH);
 }
 // hangPlate() with a custom ceiling height (the warehouse ceiling is higher than the office's)
 function hangPlateAt(make, x, y, z, ry, w, ceil) {
@@ -2257,7 +2275,8 @@ let hoverKind = null;
 function swipeHit() {
   if (player.level !== -1 || !BASEMENT.visible || player.pos.x > BASE.x1 || Math.hypot(player.pos.x - SWIPE_AT.x, player.pos.z - SWIPE_AT.z) > 7.5) return null;
   raycaster.far = 8;
-  const h = raycaster.intersectObject(swipeWall.mesh, false)[0]; return h ? 'swipe:' + swipeWall.hit(h.uv) : null;
+  const h = raycaster.intersectObjects(SUGGEST_MESH ? [swipeWall.mesh, SUGGEST_MESH] : [swipeWall.mesh], false)[0]; if (!h) return null;
+  return h.object === SUGGEST_MESH ? 'swipe:suggest' : 'swipe:' + swipeWall.hit(h.uv);
 }
 // HQ #89: controller works whenever you're standing at the wall facing it (no pixel-perfect aim needed for X / Y / A / B)
 function swipeNear() {
@@ -2485,7 +2504,7 @@ function tick() {
     else if (paused && gp.A) setPaused(false);
     else if (!paused && !panelOpen && ((hoverKind && hoverKind.startsWith('swipe:')) || swipeNear())) {
       // HQ #85/#89: at the Design Trainer wall: A / RB / ▶ keep, B / LB / ◀ pass, X / ▼ undo, Y twice reset, RB on Deck done = new round
-      const k = swipeWall.padKey(gp); if (k) { const r = swipeAct(k); if (r === 'keep' || r === 'pass') rumble(gp.pad, r === 'keep' ? 60 : 35, r === 'keep' ? 0.45 : 0.25); else if (r === 'undo' || r === 'reset') rumble(gp.pad, 40, 0.3); }
+      const k = (hoverKind === 'swipe:suggest' && gp.A) ? 'suggest' : swipeWall.padKey(gp); if (k) { const r = swipeAct(k); if (r === 'keep' || r === 'pass') rumble(gp.pad, r === 'keep' ? 60 : 35, r === 'keep' ? 0.45 : 0.25); else if (r === 'undo' || r === 'reset') rumble(gp.pad, 40, 0.3); }
     }
     else if (!paused) {
       if (gp.A) interact();
