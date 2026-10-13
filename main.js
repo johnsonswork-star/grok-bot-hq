@@ -149,6 +149,63 @@ const M = {
   bldg: std('#d6dde4', 0.9),
 };
 
+
+// ---------- HQ #90: visual upgrade (procedural PBR + cheap env lighting; iPad-safe) ----------
+// Quality: ?q=low|high or localStorage 'hqQuality'. Low = iPad default (no extra maps on big surfaces, smaller env).
+const QUALITY = (new URLSearchParams(location.search).get('q') || localStorage.getItem('hqQuality') || (IS_MOBILE ? 'med' : 'high'));
+window.hqSetQuality = q => { localStorage.setItem('hqQuality', q); location.reload(); };
+if (QUALITY === 'low') { renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1)); renderer.shadowMap.type = THREE.PCFShadowMap; }
+
+renderer.toneMappingExposure = 1.0;
+// image-based light from a tiny procedural "office room" (bright ceiling panels, warm floor, window wall), prefiltered once
+{
+  const envScene = new THREE.Scene();
+  const room = new THREE.Mesh(new THREE.BoxGeometry(20, 6, 20), new THREE.MeshBasicMaterial({ color: '#6d6a64', side: THREE.BackSide }));
+  envScene.add(room);
+  const panel = (w, d, x, y, z, c, ry = 0, rx = Math.PI / 2) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); envScene.add(m); };
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) panel(3, 1.4, i * 6, 2.9, j * 6, '#fff6e6');
+  panel(18, 3, 0, 1.5, -9.9, '#bcd8ef', 0, 0);          // window wall: soft sky
+  panel(20, 20, 0, -2.9, 0, '#5d636b');                  // carpet bounce
+  const pm = new THREE.PMREMGenerator(renderer);
+  const env = pm.fromScene(envScene, 0.04).texture; pm.dispose();
+  scene.environment = env;
+  if ('environmentIntensity' in scene) scene.environmentIntensity = 0.55;
+}
+// hemi/fill slightly lower since the env map now carries ambient
+scene.traverse(o => { if (o.isHemisphereLight) o.intensity = 0.8; });
+sun.shadow.radius = 4; sun.shadow.blurSamples = 12;
+// helper: grayscale canvas texture (roughness/bump), linear colour space
+function dataTex(w, h, draw, repeat) { const t = canvasTex(w, h, draw, repeat); t.colorSpace = THREE.NoColorSpace; return t; }
+const rnd = Math.random;
+// carpet bump: dense loop pile noise
+if (QUALITY !== 'low') {
+  const carpetBump = dataTex(256, 256, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 9000; k++) { const v = 90 + rnd() * 90 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(rnd() * w, rnd() * h, 1.3, 1.3); } }, [56, 36]);
+  M.floor.bumpMap = carpetBump; M.floor.bumpScale = 0.6;
+  for (const k of ['carpet', 'carpetWarm', 'rug']) { M[k].bumpMap = carpetBump; M[k].bumpScale = 0.6; }
+}
+// wall: eggshell paint with faint orange-peel roller texture
+const wallTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#ece4d4'; g.fillRect(0, 0, w, h);
+  for (let k = 0; k < 2500; k++) { g.fillStyle = `rgba(${rnd() < .5 ? '255,255,255' : '120,100,80'},0.05)`; const r = 1 + rnd() * 3; g.beginPath(); g.arc(rnd() * w, rnd() * h, r, 0, 7); g.fill(); } }, [6, 2]);
+M.wall.map = wallTex; M.wall.color.set('#f4ece0'); M.wall.roughness = 0.85;
+if (QUALITY !== 'low') { M.wall.bumpMap = wallTex; M.wall.bumpScale = 0.15; }
+// ceiling: 2x4 acoustic drop tiles with T-bar grid + fissured speckle
+const ceilTex = canvasTex(256, 512, (g, w, h) => { g.fillStyle = '#f3f0ea'; g.fillRect(0, 0, w, h);
+  for (let k = 0; k < 3000; k++) { g.fillStyle = `rgba(110,100,90,${0.05 + rnd() * 0.15})`; g.fillRect(rnd() * w, rnd() * h, 1 + rnd() * 2, 1); }
+  g.fillStyle = '#e2ddd4'; g.fillRect(0, 0, w, 6); g.fillRect(0, 0, 6, h); g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(6, 6, w, 2); g.fillRect(6, 6, 2, h); });
+ceilTex.wrapS = ceilTex.wrapT = THREE.RepeatWrapping; ceilTex.repeat.set(36, 12);
+M.ceiling.map = ceilTex; M.ceiling.emissiveMap = ceilTex; M.ceiling.emissiveIntensity = 0.45;
+// wood: desk laminate grain for oak / walnut / pallets / reception
+function woodTex(base, dark, rep) { return canvasTex(512, 256, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 1) { const a = 0.04 + 0.08 * Math.abs(Math.sin(y * 0.11 + Math.sin(y * 0.03) * 3)); g.fillStyle = `rgba(${dark},${a})`; g.fillRect(0, y, w, 1); }
+  for (let k = 0; k < 40; k++) { g.strokeStyle = `rgba(${dark},0.12)`; g.beginPath(); const y = rnd() * h; g.moveTo(0, y); for (let x = 0; x <= w; x += 32) g.lineTo(x, y + Math.sin(x * 0.02 + k) * 4); g.stroke(); } }, rep); }
+const oakT = woodTex('#ffffff', '120,80,40', [1, 1]), walT = woodTex('#ffffff', '50,25,10', [1, 1]);
+M.oak.map = oakT; M.oak.roughness = 0.5; M.walnut.map = walT; M.walnut.roughness = 0.5; M.recep.map = oakT; M.pallet.map = woodTex('#ffffff', '80,50,20', [1, 1]);
+// brushed metal on steel/cabinets/mullions picks up the env map; glass gets a real reflection
+for (const k of ['steel', 'cabinet', 'mullion', 'copierDark']) { M[k].envMapIntensity = 1.2; }
+for (const k of ['glass', 'vendGlass', 'glassJar']) { M[k].envMapIntensity = 1.6; M[k].roughness = 0.03; }
+M.chair.roughness = 0.85; M.chairSeat.roughness = 0.95;
+for (const k in M) if (M[k].isMaterial) M[k].needsUpdate = true;
 // ---------- collision ----------
 const colliders = []; // {minX,maxX,minZ,maxZ}
 function addCollider(x, z, w, d, ry = 0) {
