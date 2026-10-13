@@ -39,6 +39,11 @@
       "task": "Visual upgrade: signs, posters & desk props",
       "since": "2026-10-13T01:17:57.758Z",
       "until": "2026-10-13T03:17:57.759Z"
+    },
+    "review": {
+      "task": "Visual upgrade: QA pass on lighting & materials",
+      "since": "2026-10-13T01:17:59.453Z",
+      "until": "2026-10-13T02:47:59.454Z"
     }
   }
 }
