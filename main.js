@@ -23,8 +23,17 @@ const CAN_LOCK = !IS_IOS && !IS_MOBILE && 'requestPointerLock' in Element.protot
 document.documentElement.classList.toggle('touch', HAS_TOUCH && !CAN_LOCK);
 document.documentElement.classList.toggle('ios', IS_IOS);
 
-// HQ #102: quality tier early so renderer + textures can go HD on iPad. ?q=low|med|high|hd or localStorage hqQuality.
-const QUALITY_RAW = (new URLSearchParams(location.search).get('q') || localStorage.getItem('hqQuality') || 'high').toLowerCase();
+// HQ #104: quality tier kept, but default back to iPad-safe (not HD). ?q=low|med|high|hd or localStorage hqQuality.
+// Prior HQ #102 defaulted to 'high' (2x DPR + soft shadows) and tanked iPad FPS — Chris asked to revert.
+// One-shot: HQ #102 left many iPads on localStorage hqQuality=high. Drop that back to med unless URL overrides.
+(function () {
+  if (new URLSearchParams(location.search).get('q')) return;
+  try {
+    const stored = localStorage.getItem('hqQuality');
+    if (stored === 'high' || stored === 'hd') localStorage.setItem('hqQuality', 'med');
+  } catch (e) {}
+})();
+const QUALITY_RAW = (new URLSearchParams(location.search).get('q') || localStorage.getItem('hqQuality') || 'med').toLowerCase();
 const QUALITY = QUALITY_RAW === 'hd' ? 'high' : QUALITY_RAW; // hd == high
 window.hqSetQuality = q => { localStorage.setItem('hqQuality', q); location.reload(); };
 const HQ_HD = QUALITY === 'high';
@@ -32,14 +41,14 @@ const HQ_LOW = QUALITY === 'low';
 
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-// HD: use more of the iPad's retina pixels (was capped at 1.25 — looked soft). low keeps 1x.
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, HQ_LOW ? 1 : (HQ_HD ? (IS_MOBILE ? 2 : 2.5) : (IS_MOBILE ? 1.5 : 1.75))));
+// HQ #104: restore pre-#102 iPad caps (1.25 DPR, PCF shadows). HD only when explicitly ?q=high|hd.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, HQ_LOW ? 1 : (HQ_HD ? (IS_MOBILE ? 1.5 : 2) : (IS_MOBILE ? 1.25 : 1.75))));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = HQ_LOW || (!HQ_HD && IS_MOBILE) ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = HQ_LOW || IS_MOBILE || !HQ_HD ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -57,7 +66,7 @@ scene.add(new THREE.HemisphereLight('#fff4e4', '#7a6a58', 0.95));
 const sun = new THREE.DirectionalLight('#ffe8c8', 1.35);
 sun.position.set(8, 22, -10);
 sun.castShadow = true;
-sun.shadow.mapSize.set(HQ_LOW ? 512 : (HQ_HD ? (IS_MOBILE ? 2048 : 4096) : (IS_MOBILE ? 1024 : 2048)), HQ_LOW ? 512 : (HQ_HD ? (IS_MOBILE ? 2048 : 4096) : (IS_MOBILE ? 1024 : 2048)));
+sun.shadow.mapSize.set(HQ_LOW ? 512 : (HQ_HD ? (IS_MOBILE ? 1024 : 2048) : (IS_MOBILE ? 1024 : 2048)), HQ_LOW ? 512 : (HQ_HD ? (IS_MOBILE ? 1024 : 2048) : (IS_MOBILE ? 1024 : 2048)));
 Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 14, bottom: -14, near: 1, far: 55 });
 sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias = -0.0004;
