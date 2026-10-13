@@ -467,7 +467,7 @@ const FRONT_DOOR = { open: 0, target: 0, leaves: [], col: { minX: -0.8, maxX: 0.
   const doorGlass = new THREE.MeshStandardMaterial({ color: '#bcd7e6', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.3, depthWrite: false });
   const vinyl = canvasTex(256, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.font = '700 30px Oswald,"Arial Narrow",Arial'; g.fillText('DUNDER', w / 2, 34); g.fillText('MIFFLIN', w / 2, 70); g.font = '600 15px Arial'; g.fillText('PAPER COMPANY, INC.', w / 2, 104); });
-  const vinylM = new THREE.MeshBasicMaterial({ map: vinyl, transparent: true, depthWrite: false, toneMapped: false });
+  const vinylM = signMat(vinyl, { transparent: true, depthWrite: false });
   // frame: jambs, header, threshold, center mullion stop
   for (const sx of [-1, 1]) box(0.07, 2.42, 0.22, alu, sx * 0.795, 1.21, Z1, scene, false);
   box(1.66, 0.1, 0.22, alu, 0, 2.39, Z1, scene, false); box(1.6, 0.02, 0.3, kick, 0, 0.01, Z1, scene, false);
@@ -556,9 +556,18 @@ function wall(ax, az, bx, bz, { gaps = [], glass = false, blinds = false, t = 0.
   for (const [g0, g1] of gaps) for (const a of [g0, g1]) // door frames
     alongX ? box(0.08, DOOR, t + 0.04, M.walnut, a, DOOR / 2, f, scene, false) : box(t + 0.04, DOOR, 0.08, M.walnut, f, DOOR / 2, a, scene, false);
 }
+// HQ #90d: signs stay bright enough to read on iPad, but pick up a little office light instead of flat unlit cards.
+function signMat(map, { transparent = false, alphaTest = 0, depthWrite = true } = {}) {
+  return new THREE.MeshStandardMaterial({
+    map, roughness: 0.84, metalness: 0,
+    emissive: new THREE.Color('#ffffff'), emissiveMap: map, emissiveIntensity: 0.4,
+    transparent, alphaTest, depthWrite,
+  });
+}
 // a flat sign (canvas text) on a wall. ry: 0 faces +z (south), PI faces -z (north), PI/2 faces +x (east), -PI/2 faces -x (west)
 function sign(text, x, y, z, ry, { w = 1.6, h = 0.32, bg = '#1f2a44', fg = '#ffffff', sub = '', font = 'system-ui,Segoe UI,Arial', weight = 800 } = {}) {
-  const cw = 512, ch = Math.round(512 * h / w);
+  let cw = 512, ch = Math.round(512 * h / w);
+  if (ch > 512) { ch = 512; cw = Math.max(64, Math.round(512 * w / h)); }
   const tex = canvasTex(cw, ch, (g, w2, h2) => {
     if (bg) { roundRect(g, 2, 2, w2 - 4, h2 - 4, Math.min(18, h2 / 4)); g.fillStyle = bg; g.fill(); } else g.clearRect(0, 0, w2, h2);
     g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -567,7 +576,7 @@ function sign(text, x, y, z, ry, { w = 1.6, h = 0.32, bg = '#1f2a44', fg = '#fff
     g.fillText(text, w2 / 2, sub ? h2 * 0.38 : h2 / 2 + 2);
     if (sub) { g.globalAlpha = 0.85; g.font = `600 ${Math.round(h2 * 0.22)}px ${font}`; g.fillText(sub, w2 / 2, h2 * 0.78); g.globalAlpha = 1; }
   });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: !bg, toneMapped: false }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), signMat(tex, { transparent: !bg }));
   m.position.set(x, y, z); m.rotation.y = ry; scene.add(m); return m;
 }
 // HQ #42: show-style plaques. Icon Shop's PNGs (assets/signs/png, cream face, brown border, green rule) for the reception,
@@ -576,7 +585,7 @@ const texLoader = new THREE.TextureLoader();
 const SIGN_PNG = { reception: 213 / 512, conference: 329 / 512, 'dunder-mifflin': 155 / 512, sales: 256 / 512 };
 function pngSign(name, x, y, z, ry, w) {
   const t = texLoader.load(`./assets/signs/png/sign-${name}-512.png`); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = IS_MOBILE ? 4 : 8;
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w * SIGN_PNG[name]), new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.04, toneMapped: false }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w * SIGN_PNG[name]), signMat(t, { transparent: true, alphaTest: 0.04 }));
   m.position.set(x, y, z); m.rotation.y = ry; scene.add(m); return m;
 }
 const PLATE_FONT = 'Oswald,"Arial Narrow","Helvetica Neue",Impact,Arial,sans-serif';
@@ -599,7 +608,7 @@ function plate(text, x, y, z, ry, { w = 1.0, h = 0, sub = '', dark = false } = {
       g.fillStyle = ink; g.fillText(sub, cw / 2, ch * 0.77);
     }
   });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), signMat(tex, { transparent: true }));
   m.position.set(x, y, z); m.rotation.y = ry; scene.add(m); return m;
 }
 // a plate hung from the ceiling on two rods, readable from both sides
@@ -1037,7 +1046,8 @@ function dundie(x, y, z, ry = 0) { // the Dundie: gold figure on a black base
 function framed(x, y, z, ry, w, h, draw) { // framed picture (draw = canvas painter)
   const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; scene.add(g);
   box(w + 0.04, h + 0.04, 0.025, M.walnut, 0, 0, 0, g, false);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: canvasTex(256, Math.round(256 * h / w), draw), toneMapped: false }));
+  const tw = 512, th = Math.max(64, Math.min(512, Math.round(512 * h / w)));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), signMat(canvasTex(tw, th, draw)));
   m.position.z = 0.014; g.add(m); return g;
 }
 const paintBuilding = (g, w, h) => { // Pam's watercolor of the office building
@@ -1247,6 +1257,131 @@ moved(-1.6, 1.5, () => { box(1.6, 1.6, 0.4, M.walnut, -6.2, 0.8, 5.7); addCollid
     box(0.004, 0.9 + i * 0.12, 0.004, M.white, ph.x - 0.7 + i * 0.18, 1.2, ph.z + 0.9, scene, false); }
   for (let i = 0; i < 6; i++) { const st = box(0.03, 0.9, 0.006, std(['#ec407a', '#fdd835', '#42a5f5'][i % 3], 0.6), COLUMNS[1][0] + Math.cos(i) * 0.27, 2.5, COLUMNS[1][1] + Math.sin(i) * 0.27, scene, false); st.rotation.y = i; }
 }
+
+// HQ #90d: lived-in desks + show-style boards. One vertex-colored mesh for the clutter; posters are ≤512 canvases.
+function addOfficeLife() {
+  const P = [], Nv = [], C = [];
+  const col = new THREE.Color();
+  const paper = new THREE.BoxGeometry(0.2, 0.007, 0.26);
+  const sticky = new THREE.BoxGeometry(0.08, 0.0035, 0.08);
+  const pen = new THREE.CylinderGeometry(0.005, 0.005, 0.13, 5);
+  const phone = new THREE.BoxGeometry(0.055, 0.014, 0.11);
+  const cup = new THREE.CylinderGeometry(0.038, 0.032, 0.07, 8);
+  const tray = new THREE.BoxGeometry(0.24, 0.015, 0.18);
+  const clipB = new THREE.BoxGeometry(0.18, 0.01, 0.24);
+  const addM = (geo, color, m4) => {
+    const g = geo.index ? geo.toNonIndexed() : geo.clone();
+    g.applyMatrix4(m4);
+    const pa = g.attributes.position.array, na = g.attributes.normal.array;
+    col.set(color);
+    for (let i = 0; i < pa.length; i += 3) {
+      P.push(pa[i], pa[i + 1], pa[i + 2]); Nv.push(na[i], na[i + 1], na[i + 2]); C.push(col.r, col.g, col.b);
+    }
+    g.dispose();
+  };
+  const compose = (x, y, z, rx, ry, rz, sx, sy, sz) => new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
+  const put = (geo, color, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => addM(geo, color, compose(x, y, z, rx, ry, rz, sx, sy, sz));
+  const place = (st, geo, color, lx, ly, lz, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => {
+    addM(geo, color, compose(st.x, 0, st.z, 0, st.ry, 0, 1, 1, 1).multiply(compose(lx, ly, lz, rx, ry, rz, sx, sy, sz)));
+  };
+  const NOTES = { grok: '#fff3b0', inbox: '#f4efe4', cos: '#d6e6ff', assist: '#ffe082', icons: '#ffd7a8', onpad: '#f8d0e0', builder: '#f3efe4', faith: '#f6d5de', broker: '#e6eef8', conn: '#fff6d8', review: '#ececec', kids: '#d7f0e2', designer: '#ffd0ea', profile: '#e4e7ea' };
+  for (const s of stations) {
+    const sc = s.hero ? 1.25 : 1;
+    place(s, paper, '#f4f1ea', -0.42 * sc, 0.792, 0.16);
+    place(s, paper, '#fffdf8', -0.4 * sc, 0.8, 0.17, 0, 0.12, 0, 0.9, 1, 0.88);
+    place(s, sticky, NOTES[s.id] || '#fff59d', 0.36 * sc, 0.78, 0.0, 0, 0.35, 0);
+    place(s, pen, '#1a3a8a', 0.1 * sc, 0.786, 0.24, 0, 0.4, Math.PI / 2);
+  }
+  const byId = id => stations.find(s => s.id === id);
+  const mike = byId('grok'); if (mike) { place(mike, paper, '#efe8dc', 0.48, 0.8, -0.02, 0, -0.25, 0, 1.05, 4, 0.95); place(mike, phone, '#2a2e34', -0.1, 0.8, 0.24); }
+  const dw = byId('assist'); if (dw) place(dw, pen, '#c62828', -0.15, 0.788, 0.22, 0, 0.2, 1.15);
+  const kv = byId('conn'); if (kv) ['#e53935', '#fdd835', '#43a047', '#1e88e5'].forEach((c, i) => place(kv, sticky, c, 0.12 + i * 0.045, 0.78, -0.12, 0, i * 0.4, 0, 0.42, 1, 0.65));
+  const oc = byId('broker'); if (oc) { place(oc, paper, '#f7f5f0', -0.18, 0.786, -0.06, 0, 0.02, 0, 0.75, 1, 0.75); place(oc, paper, '#e7eef6', -0.16, 0.794, -0.04, 0, -0.05, 0, 0.7, 1, 0.7); }
+  const ang = byId('faith'); if (ang) place(ang, sticky, '#f8bbd0', 0.18, 0.786, 0.18, 0, -0.2, 0, 0.7, 1, 0.85);
+  const andy = byId('icons'); if (andy) place(andy, cup, '#f6f3ec', 0.22, 0.82, 0.14);
+  const kel = byId('designer'); if (kel) place(kel, phone, '#e11d74', -0.12, 0.8, 0.18, 0, 0.5, 0, 0.75, 1, 1.25);
+  const tob = byId('profile'); if (tob) place(tob, sticky, '#eceff1', -0.2, 0.786, 0.16, 0, 0.15, 0, 1.3, 1, 0.75);
+  const rx = -0.2, rz = 4.82, ty = 1.185;
+  put(clipB, '#f3efe4', rx - 0.2, ty, rz + 0.02, 0, 0.18, 0);
+  put(pen, '#b71c1c', rx + 0.02, ty + 0.01, rz + 0.06, 0, 0.2, 1.05);
+  put(cup, '#2a2c30', rx + 0.55, ty + 0.04, rz - 0.02);
+  put(pen, '#1a3a8a', rx + 0.54, ty + 0.09, rz - 0.02, 0.15, 0, 0.05);
+  put(pen, '#c62828', rx + 0.57, ty + 0.09, rz, -0.1, 0.4, 0.08);
+  put(pen, '#2e7d32', rx + 0.53, ty + 0.08, rz + 0.01, 0.05, 0.8, -0.1);
+  put(tray, '#d9d3c6', rx + 1.43, ty, rz - 0.58);
+  put(paper, '#f7f4ee', rx + 1.43, ty + 0.02, rz - 0.58, 0, 0.08, 0, 0.72, 5, 0.7);
+  put(tray, '#c5d0c0', rx - 1.43, ty, rz - 0.5);
+  put(phone, '#1c1e22', rx - 1.43, ty + 0.02, rz - 0.85);
+  put(paper, '#fff8c4', rx - 0.85, ty, rz, 0, -0.25, 0, 0.65, 1, 0.5);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(Nv, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.74, metalness: 0.02 }));
+  mesh.castShadow = false; mesh.receiveShadow = true; mesh.name = 'officeLife'; scene.add(mesh);
+  for (const g of [paper, sticky, pen, phone, cup, tray, clipB]) g.dispose();
+}
+addOfficeLife();
+function paintCork(notes) {
+  return (g, w, h) => {
+    g.fillStyle = '#c4894e'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 1600; i++) { const v = 80 + Math.random() * 80 | 0; g.fillStyle = `rgba(${v},${(v * 0.55) | 0},28,0.3)`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+    for (const n of notes) {
+      g.save(); g.translate(n.x * w, n.y * h); g.rotate(n.rot || 0);
+      const nw = n.w * w, nh = n.h * h;
+      g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(-nw / 2 + 3, -nh / 2 + 4, nw, nh);
+      g.fillStyle = n.c; g.fillRect(-nw / 2, -nh / 2, nw, nh);
+      g.fillStyle = n.pin || '#c62828'; g.beginPath(); g.arc(0, -nh / 2 + 8, 5, 0, 7); g.fill();
+      g.fillStyle = '#241c14'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `700 ${Math.max(12, Math.round(nh * 0.2))}px Arial,Helvetica,sans-serif`;
+      const lines = n.t.split('\n');
+      lines.forEach((ln, k) => g.fillText(ln, 0, (k - (lines.length - 1) / 2) * Math.round(nh * 0.22) + 4));
+      g.restore();
+    }
+  };
+}
+// bullpen cork (west wall) + a smaller one by reception. Stylized notes, no photographic logos.
+framed(-10.86, 1.58, 0.9, Math.PI / 2, 1.2, 0.9, paintCork([
+  { x: 0.22, y: 0.24, w: 0.3, h: 0.3, rot: -0.05, c: '#fff59d', t: 'PRETZEL\nDAY' },
+  { x: 0.52, y: 0.22, w: 0.32, h: 0.28, rot: 0.04, c: '#fff', t: 'Dundie\nnominations' },
+  { x: 0.8, y: 0.26, w: 0.28, h: 0.3, rot: 0.07, c: '#ffccbc', t: 'Lost stapler\ncheck Jell-O' },
+  { x: 0.24, y: 0.55, w: 0.32, h: 0.28, rot: 0.04, c: '#c5e1a5', t: 'SCHRUTE FARMS\nbeets' },
+  { x: 0.54, y: 0.56, w: 0.28, h: 0.26, rot: -0.06, c: '#b3e5fc', t: 'FLONKERTON\ntryouts' },
+  { x: 0.8, y: 0.58, w: 0.24, h: 0.22, rot: 0.1, c: '#f8bbd0', pin: '#1565c0', t: 'PARKOUR' },
+  { x: 0.28, y: 0.82, w: 0.34, h: 0.22, rot: -0.02, c: '#fff', t: 'It is your\nbirthday.' },
+  { x: 0.66, y: 0.82, w: 0.36, h: 0.24, rot: 0.03, c: '#fff8e1', t: 'Identity theft\nis not a joke' },
+]));
+framed(-4.7, 1.72, 7.36, Math.PI, 0.95, 0.7, paintCork([
+  { x: 0.28, y: 0.32, w: 0.4, h: 0.36, rot: -0.04, c: '#fff', t: 'PLEASE\nSIGN IN' },
+  { x: 0.72, y: 0.3, w: 0.38, h: 0.34, rot: 0.05, c: '#fff59d', t: 'Visitor\nbadges' },
+  { x: 0.3, y: 0.72, w: 0.4, h: 0.32, rot: 0.03, c: '#ffccbc', t: 'Out of\ntoner' },
+  { x: 0.72, y: 0.72, w: 0.38, h: 0.32, rot: -0.05, c: '#e3f2fd', t: 'Copier code\nask Pam' },
+]));
+framed(9.55, 1.72, 7.36, Math.PI, 0.58, 0.86, (g, w, h) => {
+  g.fillStyle = '#0e1016'; g.fillRect(0, 0, w, h);
+  const sky = g.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#1a140c'); sky.addColorStop(0.55, '#0e1016'); sky.addColorStop(1, '#2a2112');
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#d7b15a'; g.textAlign = 'center';
+  g.font = '700 28px Georgia,serif'; g.fillText('THREAT LEVEL', w / 2, h * 0.14);
+  g.font = '900 46px Georgia,serif'; g.fillText('MIDNIGHT', w / 2, h * 0.24);
+  g.fillStyle = '#c8ccd4';
+  g.beginPath(); g.arc(w * 0.48, h * 0.42, 28, 0, 7); g.fill();
+  g.fillRect(w * 0.48 - 22, h * 0.46, 44, 78);
+  g.fillStyle = '#8d939e'; g.fillRect(w * 0.48 + 16, h * 0.52, 62, 7);
+  g.fillStyle = '#f3ead6'; g.font = '600 16px Georgia,serif';
+  g.fillText('AGENT MICHAEL SCARN', w / 2, h * 0.84);
+  g.font = '600 13px Arial'; g.fillText('a very serious film', w / 2, h * 0.9);
+});
+framed(-7.4, 1.85, 7.36, Math.PI, 0.9, 0.55, (g, w, h) => {
+  g.fillStyle = '#f3ead6'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#3d5c3a'; g.fillRect(w * 0.12, h * 0.46, w * 0.76, 5);
+  g.fillStyle = '#2c2416'; g.textAlign = 'center';
+  g.font = '700 34px Georgia,serif'; g.fillText('DUNDER MIFFLIN', w / 2, h * 0.28);
+  g.font = '600 16px Arial'; g.fillText('PAPER COMPANY  ·  SCRANTON', w / 2, h * 0.4);
+  g.font = '700 22px Georgia,serif'; g.fillText('Limitless paper', w / 2, h * 0.68);
+  g.fillText('in a paperless world', w / 2, h * 0.84);
+});
 
 // ---------- kitchen + break room (back west corner, cramped like the show) ----------
 // HQ #43: same build, slid 2 m west + 1.5 m north into the bigger shell
