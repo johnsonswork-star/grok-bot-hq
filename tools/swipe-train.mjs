@@ -236,6 +236,7 @@ async function push(deck = loadDeck()) {
 // HQ #87: the same deck, still sealed to each device key, also hosted on Pages at swipe/<sha256(topic)[0:24]>.json so the
 // wall never spins forever if the ntfy relay / attachment fails on the iPad. Ciphertext only (no art or text in the clear).
 // Committed + pushed only when the deck id changes (or force), touching just the swipe/ path.
+const SECRETISH = /AK(LT|TP)[A-Za-z0-9+\/=_-]{8,}|(AKIA|ASIA|LTAI)[A-Z0-9]{12,}|gh[pousr]_[A-Za-z0-9]{30,}|xox[abpr]-|AIza[0-9A-Za-z_-]{30,}|sk-[A-Za-z0-9]{20,}/;
 const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function pagesFallback(f, devs, deck, force = process.argv.includes('--force')) {
   try {
@@ -244,7 +245,12 @@ async function pagesFallback(f, devs, deck, force = process.argv.includes('--for
       const h = crypto.createHash('sha256').update(d.topic).digest('hex').slice(0, 24), fp = `${dir}/${h}.json`;
       let cur = null; try { cur = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch {}
       if (!force && cur?.id === deck.id && cur?.pub === d.pub.x) continue;
-      fs.writeFileSync(fp, JSON.stringify({ v: 1, id: deck.id, at: Date.now(), pub: d.pub.x, env: await seal(f, d.pub) })); files.push(`swipe/${h}.json`);
+      let out, tries = 0;
+      // Ciphertext is random base64; it can by chance contain key-like substrings that trip GitHub push protection
+      // (e.g. VolcEngine AKLT/AKTP). Re-seal (fresh nonce) until clean rather than bypassing secret scanning.
+      do { out = JSON.stringify({ v: 1, id: deck.id, at: Date.now(), pub: d.pub.x, env: await seal(f, d.pub) }); } while (SECRETISH.test(out) && ++tries < 50);
+      if (SECRETISH.test(out)) throw new Error('ciphertext kept matching secret patterns');
+      fs.writeFileSync(fp, out); files.push(`swipe/${h}.json`);
     }
     if (!files.length) return 'unchanged';
     const git = (...a) => execFileSync('git', ['-C', SITE, ...a], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
