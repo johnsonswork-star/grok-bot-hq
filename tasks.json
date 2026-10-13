@@ -18,7 +18,8 @@
     },
     "builder": {
       "task": "Visual upgrade: lighting & materials",
-      "since": "2026-10-13T01:17:20.087Z"
+      "since": "2026-10-13T01:17:20.087Z",
+      "until": "2026-10-13T03:18:00.807Z"
     },
     "designer": {
       "task": "Visual upgrade: character models & faces",
