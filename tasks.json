@@ -39,6 +39,10 @@
     "designer": {
       "task": "HQ #90c: real rigged glTF characters",
       "since": "2026-10-13T01:24:52.860Z"
+    },
+    "review": {
+      "task": "HQ #90c: reviewing new characters",
+      "since": "2026-10-13T01:24:54.326Z"
     }
   }
 }
