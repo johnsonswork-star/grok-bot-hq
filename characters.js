@@ -1,6 +1,9 @@
 // Office cast character models (HQ #46, upgraded HQ #70): smooth, rounded, iPad-friendly people that read as the show's characters.
 // HQ #70: lathe-turned torsos, capsule limbs with real elbows + knees, mitten hands with thumbs, eyes with whites,
 // per-person expression (mouth/brows), smoother hair. Each body part is still ONE merged vertex-colored mesh (cheap draws).
+// HQ #90c: when the CC0 Quaternius glTF cast loads (assets/chars, see CREDITS.md) each person is re-dressed as a real
+// rigged/skinned model driven by AnimationMixer (Idle/Walk) plus the same procedural pose deltas (sit, type, sip, phone).
+// The procedural figure below stays as the fallback (?q=low, ?chars=proc, or any load error).
 // Front of a person = -z (same as workers.js). Keyed by station id (stable bot ids), falls back by display name.
 import * as THREE from './vendor/three.module.js';
 
@@ -377,6 +380,7 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   };
   const [legL, kneeL] = mkLeg(-1), [legR, kneeR] = mkLeg(1);
 
+  const procMeshes = []; root.traverse(o => { if (o.isMesh) procMeshes.push(o); }); // HQ #90c: hidden once the glTF cast loads
   // hand props (workers.js shows/hides cup + phone); they ride the forearm so they follow the elbow
   const cup = new THREE.Mesh(cupGeo || CYL(0.035, 0.03, 0.09, 8), cupMat || new THREE.MeshStandardMaterial({ color: '#f2f2f0' })); cup.position.set(0, -0.31, -0.045); cup.visible = false; elbowR.add(cup);
   const phone = new THREE.Mesh(phoneGeo || BOX(0.07, 0.13, 0.012), phoneMat || new THREE.MeshStandardMaterial({ color: '#16181c' })); phone.position.set(0, -0.31, -0.03); phone.rotation.x = PI / 2; phone.visible = false; elbowR.add(phone);
@@ -385,5 +389,178 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
 
   root.scale.setScalar(L.h || 1);
   root.userData.look = L;
-  return { root, body, spine, torso, headG, legL, legR, kneeL, kneeR, armL, armR, elbowL, elbowR, cup, phone, extras, look: L };
+  const rig = { root, body, spine, torso, headG, neck, legL, legR, kneeL, kneeR, armL, armR, elbowL, elbowR, cup, phone, extras, look: L, procMeshes, st };
+  attachGLB(rig);
+  return rig;
 }
+
+// ======================= HQ #90c: rigged glTF cast =======================
+// Every Quaternius modular character shares one 62-bone skeleton, so heads / bodies / legs / feet from different packs mix
+// freely. Each Office cast member is composed from parts + recolored per (part/material). Materials are shared by color.
+import { GLTFLoader } from './vendor/jsm/GLTFLoader.js';
+import { MeshoptDecoder } from './vendor/jsm/meshopt_decoder.module.js';
+import * as SkeletonUtils from './vendor/jsm/SkeletonUtils.js';
+const QS = new URLSearchParams(location.search);
+const GLB_OFF = (QS.get('q') || localStorage.getItem('hqQuality')) === 'low' || QS.get('chars') === 'proc';
+const KITS = ['suitM', 'casualM', 'casual2M', 'workerM', 'suitW', 'formalW', 'casualW'];
+// head / body / legs / feet kit + color overrides keyed 'Part/Material' (Skin + hair defaults come from LOOKS)
+const CAST = {
+  grok:     { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#2b2f3a', 'Legs/Suit': '#2b2f3a', 'Body/White': '#dfe8f4', 'Body/Tie': '#b3262e' } },
+  inbox:    { head: 'formalW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#e7a1b0', 'Legs/LimeGreen': '#6d6158', 'Feet/Red': '#4a3428' } },
+  cos:      { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#a9c0d8', 'Body/White': '#c4d4e6', 'Body/Tie': '#34445e', 'Legs/Suit': '#3a3d44' } },
+  assist:   { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', glasses: '#2a2a2a', c: { 'Body/Suit': '#d1ad4f', 'Body/White': '#e2c56c', 'Body/Tie': '#5a3b1d', 'Legs/Suit': '#4b3d2e' } },
+  icons:    { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#b31b1b', 'Legs/Suit': '#c4ab7c', 'Feet/Black': '#5a3a22' } },
+  onpad:    { head: 'casualW', body: 'formalW', legs: 'formalW', feet: 'formalW', wide: 1.16, c: { 'Body/LimeGreen': '#b9a1d4', 'Legs/LimeGreen': '#5b5468', 'Body/Gold': '#e9e2d0', 'Feet/Red': '#3a2f2a' } },
+  builder:  { head: 'workerM', body: 'suitM', legs: 'suitM', feet: 'suitM', wide: 1.18, glasses: '#3a2a20', hide: ['Head/Worker_Yellow'], c: { 'Body/Suit': '#6a5643', 'Body/White': '#f1efe8', 'Body/Tie': '#7a2335', 'Legs/Suit': '#3a3530' } },
+  faith:    { head: 'suitW', body: 'suitW', legs: 'formalW', feet: 'formalW', c: { 'Body/Black': '#e8dcb2', 'Body/White': '#f6f3ec', 'Legs/LimeGreen': '#33343f', 'Feet/Red': '#2a1d18' } },
+  broker:   { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#a99fd2', 'Body/White': '#bdb5e0', 'Body/Tie': '#3c2f6b', 'Legs/Suit': '#474b55' } },
+  conn:     { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', wide: 1.24, c: { 'Body/Purple': '#8c8452', 'Legs/Suit': '#3e3a33' } },
+  review:   { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#55606b', 'Body/White': '#8a8f96', 'Body/Tie': '#55606b', 'Legs/Suit': '#2c2f33' } },
+  kids:     { head: 'casualW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#2c8a86', 'Legs/LimeGreen': '#2f2f36', 'Feet/Red': '#2a1d18' } },
+  designer: { head: 'suitW', body: 'formalW', legs: 'formalW', feet: 'formalW', c: { 'Body/LimeGreen': '#e8408f', 'Legs/LimeGreen': '#e8408f', 'Body/Gold': '#f2d36b', 'Feet/Red': '#1a1214' } },
+  profile:  { head: 'casual2M', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#b9a888', 'Legs/Suit': '#5f5a52' } },
+  darryl:   { head: 'workerM', body: 'casual2M', legs: 'suitM', feet: 'suitM', hide: ['Head/Worker_Yellow'], c: { 'Body/LightBrown': '#4f6f95', 'Legs/Suit': '#2f3542' } },
+};
+const HAIR_MATS = new Set(['Hair', 'Hair_Blond']);
+const gmat = new Map(); // shared materials by color
+const matFor = (hex, rough = 0.78) => { const k = hex + rough; if (!gmat.has(k)) gmat.set(k, new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 })); return gmat.get(k); };
+let KIT = null; const pending = [];
+const rigs = [];
+if (!GLB_OFF) {
+  const ld = new GLTFLoader(); ld.setMeshoptDecoder(MeshoptDecoder);
+  Promise.all(KITS.map(n => ld.loadAsync('./assets/chars/' + n + '.glb').then(g => [n, g])))
+    .then(list => { KIT = Object.fromEntries(list); KIT.clips = KIT.suitM.animations; for (const r of pending.splice(0)) try { dress(r); } catch (e) { console.warn('glTF cast fallback', e); } startTick(); })
+    .catch(e => { console.warn('glTF cast failed to load, keeping procedural people', e); pending.length = 0; });
+}
+function attachGLB(rig) { if (GLB_OFF || !CAST[rig.st.id] && !rig.st.id) return; if (KIT) { try { dress(rig); } catch (e) { console.warn(e); } } else pending.push(rig); }
+const partOf = o => { const m = /_(Head|Body|Legs|Feet|Pants)$/.exec(o.name || ''); return m ? (m[1] === 'Pants' ? 'Legs' : m[1]) : null; };
+const bn = n => n.replace(/[.\[\]:/]/g, '');
+function dress(rig) {
+  const L = rig.look, spec = CAST[rig.st.id] || { head: 'suitM', body: L.fem ? 'casualW' : 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': L.top || '#445', 'Body/White': L.top || '#ddd' } };
+  const base = SkeletonUtils.clone(KIT.suitM.scene);
+  const bones = {}; base.traverse(o => { if (o.isBone) bones[bn(o.name)] = o; });
+  // drop the base kit's own parts, then graft the four chosen parts (rebinding them onto the base skeleton)
+  const holder = []; base.traverse(o => { if (partOf(o)) holder.push(o); });
+  const parent = holder[0].parent; for (const o of holder) o.removeFromParent();
+  for (const part of ['Head', 'Body', 'Legs', 'Feet']) {
+    const kit = KIT[spec[part.toLowerCase()]].scene; let src = null; kit.traverse(o => { if (!src && partOf(o) === part) src = o; });
+    if (!src) continue;
+    const cl = src.clone(true); parent.add(cl);
+    cl.traverse(m => { if (!m.isSkinnedMesh) return;
+      const sk = m.skeleton; m.bind(new THREE.Skeleton(sk.bones.map(b => bones[bn(b.name)]), sk.boneInverses), m.bindMatrix);
+      const mn = m.material.name, key = part + '/' + mn; m.userData.kitMat = mn;
+      if (spec.hide?.includes(key)) { m.visible = false; return; }
+      let col = spec.c?.[key], rough = 0.78;
+      if (!col && /^Skin/.test(mn)) col = mn === 'Skin_Darker' ? shade(L.skin, 0.85) : L.skin, rough = 0.6;
+      else if (!col && part === 'Head' && (HAIR_MATS.has(mn) || (mn === 'Red' && spec.head === 'formalW'))) col = L.hair[1], rough = 0.5;
+      else if (!col && mn === 'Moustache') col = L.mustache || L.beard || L.hair[1];
+      else if (!col && (mn === 'Eyebrows' || (part === 'Head' && /Hair_Brown|^Brown$/.test(mn)))) col = shade(L.hair[1] === '#e6d39a' ? '#8a7040' : L.hair[1], 0.7);
+      else if (!col && mn === 'Eye') col = '#1a120c', rough = 0.2;
+      m.material = col ? matFor(col, rough) : matFor('#' + m.material.color.getHexString());
+      m.castShadow = part === 'Body' || part === 'Legs'; });
+  }
+  parent.updateMatrixWorld(true); base.rotation.y = PI;
+  if (spec.glasses) addGlasses(base, bones, spec.glasses);
+  mergeParts(parent);
+  // fit: same standing height as the procedural person, hips drop onto the chair when seated
+  base.rotation.y = PI; const fit = new THREE.Group(); fit.add(base);
+  base.updateMatrixWorld(true); const hipW = bones.Hips.getWorldPosition(new THREE.Vector3());
+  const k = 1.74 / 1.82; fit.scale.set(k * (spec.wide || 1), k, k * (spec.wide || 1));
+  rig.body.add(fit);
+  for (const m of rig.procMeshes) m.visible = false;
+  const mixer = new THREE.AnimationMixer(base);
+  const clip = n => KIT.clips.find(c => c.name === n);
+  const idle = mixer.clipAction(clip('Idle')), walk = mixer.clipAction(clip('Walk'));
+  idle.play(); walk.play(); walk.setEffectiveWeight(0); mixer.update(Math.random() * 3);
+  const flip = bones.UpperArmL.getWorldPosition(new THREE.Vector3()).x > hipW.x; // which way left/right ended up in body space
+  const rest = Object.values(bones).map(b => [b, b.position.clone(), b.quaternion.clone()]);
+  rig.glb = { rest, fit, base, bones, mixer, idle, walk, hipY: hipW.y * k, flip, last: rig.root.position.clone(), speed: 0 };
+  rigs.push(rig);
+}
+// iPad: fold every visible part into ONE skinned mesh (vertex colors, one shared material) when the kits' bind poses agree
+const castMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 });
+function mergeParts(parent) {
+  const parts = []; parent.traverse(o => { if (o.isSkinnedMesh && o.visible) parts.push(o); });
+  if (parts.length < 2) return;
+  const ref = parts[0].skeleton, names = ref.bones.map(b => b.name), idx = Object.fromEntries(names.map((n, i) => [n, i]));
+  const near = (a, b) => a.elements.every((x, k) => Math.abs(x - b.elements[k]) < 2e-3);
+  for (const m of parts) { if (!near(m.bindMatrix, parts[0].bindMatrix)) { console.warn('cast: bind mismatch, not merging'); return; }
+    for (const b of m.skeleton.bones) if (idx[b.name] == null) return; }
+  const P = [], N = [], C = [], SI = [], SW = [], I = []; let base = 0; const col = new THREE.Color();
+  for (const m of parts) {
+    const g = m.geometry, n = g.attributes.position.count, map = m.skeleton.bones.map(b => idx[b.name]);
+    col.copy(m.material.color);
+    const pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    // correction per bone: put this part's bind space into the reference skeleton's bind space
+    const refBindInv = parts[0].bindMatrix.clone().invert();
+    const T = m.skeleton.bones.map((b, i) => new THREE.Matrix4().copy(ref.boneInverses[map[i]]).invert().multiply(m.skeleton.boneInverses[i]).premultiply(refBindInv).multiply(m.bindMatrix));
+    const acc = new THREE.Matrix4(), vv = new THREE.Vector3(), nn = new THREE.Vector3(), nm = new THREE.Matrix3();
+    for (let v = 0; v < n; v++) { acc.set(0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+      for (let c = 0; c < 4; c++) { const wv = sw.getComponent(v, c); if (wv > 0) { const e = T[si.getComponent(v, c)].elements, o = acc.elements; for (let k = 0; k < 16; k++) o[k] += e[k] * wv; } }
+      vv.fromBufferAttribute(pos, v).applyMatrix4(acc); nn.fromBufferAttribute(nor, v).applyMatrix3(nm.setFromMatrix4(acc)).normalize();
+      P.push(vv.x, vv.y, vv.z); N.push(nn.x, nn.y, nn.z); C.push(col.r, col.g, col.b);
+      SI.push(map[si.getX(v)], map[si.getY(v)], map[si.getZ(v)], map[si.getW(v)]); SW.push(sw.getX(v), sw.getY(v), sw.getZ(v), sw.getW(v)); }
+    if (g.index) for (let k = 0; k < g.index.count; k++) I.push(g.index.getX(k) + base); else for (let k = 0; k < n; k++) I.push(k + base);
+    base += n;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(SW, 4)); geo.setIndex(I);
+  const one = new THREE.SkinnedMesh(geo, castMat); one.name = 'cast_merged'; one.castShadow = true;
+  parts[0].parent.add(one); one.position.copy(parts[0].position); one.quaternion.copy(parts[0].quaternion); one.scale.copy(parts[0].scale);
+  one.bind(new THREE.Skeleton(ref.bones, ref.boneInverses), parts[0].bindMatrix);
+  for (const m of parts) { m.removeFromParent(); m.userData.kitMat === 'Eye' && (one.userData.eye = m); }
+  parent.userData.merged = one;
+}
+function addGlasses(base, bones, hex) {
+  let eye = null; base.traverse(o => { if (!eye && o.isSkinnedMesh && o.visible && o.userData.kitMat === 'Eye') eye = o; });
+  base.updateMatrixWorld(true);
+  let c, half, zf;
+  if (eye) { eye.computeBoundingBox(); const bb = eye.boundingBox.clone().applyMatrix4(eye.matrixWorld); const inv = new THREE.Matrix4().copy(base.matrixWorld).invert(); bb.applyMatrix4(inv);
+    c = bb.getCenter(new THREE.Vector3()); half = Math.max(0.03, (bb.max.x - bb.min.x) / 2); zf = Math.abs(bb.max.z) > Math.abs(bb.min.z) ? bb.max.z : bb.min.z; }
+  else { const h = bones.Head.getWorldPosition(new THREE.Vector3()); c = h.add(new THREE.Vector3(0, 0.12, 0)); half = 0.05; zf = 0.14; }
+  const g = new THREE.Group(), m = matFor(hex, 0.35);
+  const ring = new THREE.TorusGeometry(0.03, 0.005, 6, 16);
+  for (const sx of [-1, 1]) { const r = new THREE.Mesh(ring, m); r.position.set(sx * half, 0, 0); g.add(r); }
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.01, half * 2 - 0.055), 0.007, 0.007), m));
+  g.position.set(c.x, c.y, zf + Math.sign(zf) * 0.015); base.add(g); base.updateMatrixWorld(true); bones.Head.attach(g);
+}
+// ---- per-frame: mixer + procedural deltas (driven by the same groups workers.js already poses) ----
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion(), _qi = new THREE.Quaternion();
+function applyDelta(proc, bone, amt) {
+  if (!bone || amt <= 0.001) return;
+  proc.parent.getWorldQuaternion(_qa); _qb.copy(proc.quaternion); if (amt < 1) _qb.slerp(_qi, 1 - amt);
+  const d = _qc.copy(_qa).multiply(_qb).multiply(_qa.invert()); // delta in world space
+  bone.parent.getWorldQuaternion(_qa); const inv = _qb.copy(_qa).invert();
+  bone.quaternion.premultiply(inv.multiply(d).multiply(_qa)); bone.updateMatrixWorld(true);
+}
+let lastT = 0, ticking = false;
+function startTick() { if (ticking) return; ticking = true; const loop = now => { requestAnimationFrame(loop); const dt = Math.min(0.1, lastT ? (now - lastT) / 1000 : 0.016); lastT = now; for (const r of rigs) tickRig(r, dt); }; requestAnimationFrame(loop); }
+function tickRig(r, dt) {
+  const g = r.glb, root = r.root;
+  if (!root.parent || !root.visible) return;
+  const d = Math.hypot(root.position.x - g.last.x, root.position.z - g.last.z); g.last.copy(root.position);
+  g.speed += (Math.min(3, d / Math.max(dt, 1e-3)) - g.speed) * Math.min(1, dt * 8);
+  const sit = Math.min(1, Math.max(0, -r.body.position.y / 0.27));
+  const walkW = Math.min(1, g.speed / 1.0) * (1 - sit);
+  g.idle.setEffectiveWeight(1 - walkW); g.walk.setEffectiveWeight(walkW); g.walk.timeScale = Math.max(0.6, g.speed / 1.25) * 1.05;
+  for (const [b, p, q] of g.rest) { b.position.copy(p); b.quaternion.copy(q); } // bones without tracks would accumulate deltas
+  g.mixer.update(dt);
+  g.fit.position.y = -sit * Math.max(0, g.hipY - 0.8); // procedural hip sits at 0.8; glTF hip is higher
+  g.fit.position.z = sit * 0.02;
+  root.updateMatrixWorld(true);
+  const B = g.bones, lim = 1 - walkW, [A, Z] = g.flip ? ['R', 'L'] : ['L', 'R'];
+  applyDelta(r.spine, B.Torso, 1);
+  applyDelta(r.neck, B.Neck, 1); applyDelta(r.headG, B.Head, 1);
+  applyDelta(r.armL, B['UpperArm' + A], lim); applyDelta(r.elbowL, B['LowerArm' + A], lim);
+  applyDelta(r.armR, B['UpperArm' + Z], lim); applyDelta(r.elbowR, B['LowerArm' + Z], lim);
+  // feet hang off Root in this rig (IK style): remember them relative to the shins, re-seat them after the leg deltas
+  const rel = [B.FootL, B.FootR].map(f => [f, _mA.copy(B[f === B.FootL ? 'LowerLegL' : 'LowerLegR'].matrixWorld).invert().multiply(f.matrixWorld).clone()]);
+  applyDelta(r.legL, B['UpperLeg' + A], lim); applyDelta(r.kneeL, B['LowerLeg' + A], lim);
+  applyDelta(r.legR, B['UpperLeg' + Z], lim); applyDelta(r.kneeR, B['LowerLeg' + Z], lim);
+  for (const [f, m] of rel) { const shin = B[f === B.FootL ? 'LowerLegL' : 'LowerLegR'];
+    _mB.copy(f.parent.matrixWorld).invert().multiply(_mA.copy(shin.matrixWorld).multiply(m)); _mB.decompose(f.position, f.quaternion, _sc); f.updateMatrixWorld(true); }
+}
+const _mA = new THREE.Matrix4(), _mB = new THREE.Matrix4(), _sc = new THREE.Vector3();
+export const castInfo = () => ({ glb: !!KIT, off: GLB_OFF, dressed: rigs.length });
