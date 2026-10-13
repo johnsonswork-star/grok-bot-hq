@@ -4,6 +4,7 @@
 // HQ #97: likeness pass — procedural hair/facial-hair overlays on the Head bone (kit hair hidden), punchier cast colors,
 // Dwight short-sleeve body, props (World's Best Boss mug / cup / phone) reparented onto Wrist bones so they stop clipping
 // through torsos. Procedural figure stays as fallback (?q=low, ?chars=proc, or load error).
+// HQ #102b: GLB face accents (cheeks/wrinkles/brows/lips) on Head bone + fuller Pam/Creed/Meredith hair.
 // Front of a person = -z (same as workers.js). Keyed by station id (stable bot ids), falls back by display name.
 import * as THREE from './vendor/three.module.js';
 
@@ -14,7 +15,7 @@ const PI = Math.PI;
 // mood = mouth/brow expression: grin | smile | smirk | flat | stern | sad | sly | blank
 export const LOOKS = {
   grok:     { who: 'Michael Scott', face: { jaw: 1.05, chin: 1.2 },   skin: '#f0c4a0', hair: ['side', '#2a1c14'], top: '#d7e4f4', open: '#1e2430', tie: '#c41e2a', pants: '#1e2430', h: 1.0, belly: 1.08, mood: 'grin', props: ['bossMug'], idle: 'boss' },
-  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.9 },      skin: '#f3cfb3', hair: ['long', '#7a3e22', { len: 0.32, bangs: 1, curl: 1 }], top: '#f7f3ec', open: '#ef9aaf', skirt: '#5c5248', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
+  inbox:    { who: 'Pam Beesly', face: { jaw: 0.9, chin: 1.0, nose: 0.9 },      skin: '#f3cfb3', hair: ['long', '#6b341c', { len: 0.36, bangs: 1, curl: 1 }], top: '#f7f3ec', open: '#ef9aaf', skirt: '#5c5248', legs: '#e8c2a6', h: 0.95, lips: '#b5586a', mood: 'smile', cheeks: 1, fem: 1 },
   cos:      { who: 'Jim Halpert', face: { jaw: 1.0, chin: 1.1, nose: 1.05 },     skin: '#f1c9a5', hair: ['floppy', '#4a2e18'], top: '#7fa3c4', tie: '#2a3850', pants: '#2e3238', h: 1.08, slim: 0.92, mood: 'smirk', idle: 'lean' },
   assist:   { who: 'Dwight Schrute', face: { jaw: 1.18, chin: 0.8, nose: 1.1 },  skin: '#f2cfae', hair: ['center', '#3a2818'], top: '#e0b83a', sleeves: 'short', tie: '#4a3018', pants: '#3f3224', h: 1.04, glasses: '#1a1a1a', mood: 'stern', props: ['pen', 'pager'], idle: 'upright' },
   icons:    { who: 'Andy Bernard', face: { jaw: 1.12, chin: 1.3 },    skin: '#f3cfb0', hair: ['side', '#7a5a30'], top: '#f4f1ea', open: '#c41018', sweater: true, tie: '#1a3478', pants: '#b89a68', h: 1.0, mood: 'grin' },
@@ -23,8 +24,8 @@ export const LOOKS = {
   faith:    { who: 'Angela Martin', face: { jaw: 0.8, chin: 1.3, nose: 0.85 },   skin: '#f6dcc6', hair: ['bun', '#f0e0a8'], top: '#f8f5ee', open: '#ddd0a0', skirt: '#2a2c38', legs: '#d9c3b3', h: 0.88, slim: 0.9, lips: '#a8505c', mood: 'stern', fem: 1, props: ['catPin'], idle: 'upright' },
   broker:   { who: 'Oscar Martinez', face: { jaw: 1.1, chin: 1 },  skin: '#b9855f', hair: ['short', '#120e0c'], top: '#8e82c8', tie: '#2e2458', pants: '#3a3e48', h: 1.0, mood: 'sly' },
   conn:     { who: 'Kevin Malone', face: { jaw: 1.35, chin: 0.4, nose: 1.1 },    skin: '#f0c7a4', hair: ['receding', '#6a4a30'], top: '#ecebe4', open: '#6e8a48', sweater: true, pants: '#343028', h: 1.04, belly: 1.5, wide: 1.3, mood: 'blank', idle: 'snack' },
-  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#eecbb0', hair: ['messy', '#d0cdc8'], top: '#4a5560', pants: '#22262a', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
-  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#c03010'], top: '#1e8a84', skirt: '#26262e', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
+  review:   { who: 'Creed Bratton', face: { jaw: 0.92, chin: 1.2, nose: 1.25 },   skin: '#e8c4a8', hair: ['messy', '#e4e0d8'], top: '#4a5560', pants: '#22262a', h: 0.98, slim: 0.92, mood: 'sly', wrinkles: 1 },
+  kids:     { who: 'Meredith Palmer', face: { jaw: 1.0, chin: 0.9 }, skin: '#f0c9ad', hair: ['bob', '#d42812'], top: '#1e8a84', skirt: '#26262e', legs: '#e3bea2', h: 0.93, lips: '#a33a4a', mood: 'smirk', cheeks: 1, fem: 1, idle: 'lean' },
   designer: { who: 'Kelly Kapoor', face: { jaw: 0.85, chin: 1.1, nose: 0.85 },    skin: '#a8714f', hair: ['long', '#0a0806', { len: 0.44 }], top: '#ff2d8a', dress: true, legs: '#9a6648', h: 0.9, slim: 0.9, lips: '#d02050', mood: 'smile', lashes: 1, fem: 1, props: ['earrings'], idle: 'phone' },
   profile:  { who: 'Toby Flenderson', face: { jaw: 0.95, chin: 0.8 }, skin: '#efc9aa', hair: ['thin', '#5a5044'], top: '#9eb4ce', open: '#c4b090', sweater: true, pants: '#524e46', h: 1.0, stubble: '#7a6a5a', slump: 0.12, mood: 'sad', idle: 'slump' },
   darryl:   { who: 'Darryl Philbin', face: { jaw: 1.15, chin: 1 },  skin: '#5e3c2a', hair: ['short', '#0e0a08'], top: '#3e6a98', sleeves: 'short', pants: '#262c38', h: 1.07, beard: '#14100e', mood: 'smirk', idle: 'upright' },
@@ -154,22 +155,28 @@ function addHair(head, look) {
       A(G.cap(0.36), hc, [0, 0.005, 0.012], [0.45, 0, 0], [0.99, 0.99, 0.99]); A(G.back(0.3, 0.6), hc); break;
     case 'fringe': // Stanley: bald on top, short gray band around the back
       A(G.back(0.42, 0.6), hc, [0, -0.005, 0], [0, 0, 0], [1.0, 1, 1.0]); break;
-    case 'messy': // Creed: wispy gray, sticking up
+    case 'messy': // Creed: wispy gray (HQ #102b denser tufts)
       A(G.cap(0.4), hc, [0, 0.01, 0.012], [0.4, 0, 0]); A(G.back(0.3, 0.62), hc);
-      for (const [x, y, z] of [[-0.07, 0.11, -0.02], [0.06, 0.12, 0.02], [0, 0.13, 0.05], [-0.09, 0.07, 0.07], [0.1, 0.07, 0.06], [-0.11, 0.03, 0.03], [0.11, 0.03, 0.03]]) A(G.tuft, hc, [x, y, z], [0, 0, 0], [0.8, 0.7, 0.8]); break;
-    case 'long': { // Pam / Kelly: long, down past the shoulders
+      for (const [x, y, z, sc] of [[-0.07, 0.11, -0.02, 0.85], [0.06, 0.12, 0.02, 0.8], [0, 0.135, 0.05, 0.9], [-0.09, 0.07, 0.07, 0.75], [0.1, 0.07, 0.06, 0.75], [-0.11, 0.03, 0.03, 0.7], [0.11, 0.03, 0.03, 0.7], [-0.04, 0.14, -0.04, 0.65], [0.05, 0.13, -0.06, 0.7], [0.02, 0.08, 0.1, 0.6]]) A(G.tuft, (sc > 0.75 ? hc : dk), [x, y, z], [0, 0, 0], [sc, sc * 0.85, sc]); break;
+    case 'long': { // Pam / Kelly (HQ #102b fuller bangs + side layers)
       const len = o.len || 0.3;
       A(G.cap(0.5), hc, [0, 0.012, 0.004], [0.18, 0, 0], [1.04, 1.04, 1.06]); A(G.back(0.25, 0.75), hc, [0, 0, 0.004], [0, 0, 0], [1.06, 1.02, 1.06]);
       A(CAP(0.12, len, 4, 16), hc, [0, -len / 2 + 0.0, 0.06], [0.08, 0, 0], [1.08, 1, 0.42]);
       A(CAP(0.032, len * 0.7, 3, 8), hc, [-0.112, -len * 0.36 + 0.01, -0.005], [0, 0, -0.06]); A(CAP(0.032, len * 0.7, 3, 8), hc, [0.112, -len * 0.36 + 0.01, -0.005], [0, 0, 0.06]);
+      A(CAP(0.028, len * 0.55, 3, 8), dk, [-0.09, -len * 0.28, -0.04], [0.15, 0, -0.1]); A(CAP(0.028, len * 0.55, 3, 8), dk, [0.09, -len * 0.28, -0.04], [0.15, 0, 0.1]);
       if (o.curl) { A(G.curl, hc, [-0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]); A(G.curl, hc, [0.1, -len + 0.06, 0.02], [0, 0, 0], [0.8, 0.7, 0.8]); }
-      if (o.bangs) A(G.fringe, hc, [0, 0.088, -0.095], [0.55, 0, 0], [1.0, 1.1, 1.3]);
-      else A(G.fringe, hc, [0.035, 0.09, -0.09], [0.5, 0, -0.35], [0.7, 1, 1.2]);
+      if (o.bangs) {
+        A(G.fringe, hc, [0, 0.090, -0.098], [0.58, 0, 0], [1.05, 1.15, 1.35]);
+        A(G.fringe, dk, [-0.04, 0.085, -0.092], [0.5, 0, 0.2], [0.55, 1.0, 1.15]);
+        A(G.fringe, dk, [0.04, 0.085, -0.092], [0.5, 0, -0.2], [0.55, 1.0, 1.15]);
+      } else A(G.fringe, hc, [0.035, 0.09, -0.09], [0.5, 0, -0.35], [0.7, 1, 1.2]);
       break; }
-    case 'bob': // Meredith: red, chin length, a bit messy
-      A(G.cap(0.5), hc, [0, 0.012, 0], [0.18, 0, 0], [1.06, 1.05, 1.07]); A(G.back(0.25, 0.8), hc, [0, -0.005, 0.005], [0, 0, 0], [1.1, 1.0, 1.1]);
-      A(CAP(0.04, 0.1, 3, 8), hc, [-0.12, -0.045, -0.01], [0, 0, 0.12]); A(CAP(0.04, 0.1, 3, 8), hc, [0.12, -0.045, -0.01], [0, 0, -0.12]);
-      A(G.tuft, dk, [0.07, 0.1, -0.05], [0, 0, 0], [0.8, 0.6, 0.8]); break;
+    case 'bob': // Meredith red bob (HQ #102b fuller)
+      A(G.cap(0.5), hc, [0, 0.012, 0], [0.18, 0, 0], [1.08, 1.06, 1.08]); A(G.back(0.25, 0.8), hc, [0, -0.005, 0.005], [0, 0, 0], [1.12, 1.02, 1.12]);
+      A(CAP(0.045, 0.12, 3, 8), hc, [-0.125, -0.05, -0.01], [0, 0, 0.14]); A(CAP(0.045, 0.12, 3, 8), hc, [0.125, -0.05, -0.01], [0, 0, -0.14]);
+      A(CAP(0.035, 0.09, 3, 8), dk, [-0.1, -0.02, -0.05], [0.2, 0, 0.1]); A(CAP(0.035, 0.09, 3, 8), dk, [0.1, -0.02, -0.05], [0.2, 0, -0.1]);
+      A(G.fringe, hc, [0.02, 0.086, -0.095], [0.5, 0, -0.15], [0.85, 1.05, 1.2]);
+      A(G.tuft, dk, [0.07, 0.1, -0.05], [0, 0, 0], [0.8, 0.6, 0.8]); A(G.tuft, lt, [-0.05, 0.1, -0.04], [0, 0, 0], [0.7, 0.55, 0.7]); break;
     case 'bun': // Angela: scraped back into a tight bun
       A(G.cap(0.52), hc, [0, 0.006, 0.004], [0.16, 0, 0], [1.0, 1.0, 1.02]); A(G.back(0.25, 0.62), hc); A(G.bun, hc, [0, 0.07, 0.12]); A(new THREE.TorusGeometry(0.04, 0.008, 6, 14), dk, [0, 0.07, 0.085], [0.5, 0, 0]); break;
     case 'curly': // Phyllis: short and curly
@@ -408,7 +415,7 @@ const KITS = ['suitM', 'casualM', 'casual2M', 'workerM', 'suitW', 'formalW', 'ca
 const CAST = {
   // HQ #97: kit picks + colors tuned so silhouette/outfit reads from across the room; hair comes from procedural overlay.
   grok:     { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#1e2430', 'Legs/Suit': '#1e2430', 'Body/White': '#d7e4f4', 'Body/Tie': '#c41e2a' } },
-  inbox:    { head: 'formalW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#ef9aaf', 'Legs/LimeGreen': '#5c5248', 'Feet/Red': '#4a3428' } },
+  inbox:    { head: 'formalW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#f7f3ec', 'Body/Purple': '#ef9aaf', 'Body/LimeGreen': '#ef9aaf', 'Legs/LimeGreen': '#5c5248', 'Feet/Red': '#4a3428' } },
   cos:      { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#7fa3c4', 'Body/White': '#c4d4e6', 'Body/Tie': '#2a3850', 'Legs/Suit': '#2e3238' } },
   assist:   { head: 'suitM', body: 'casual2M', legs: 'suitM', feet: 'suitM', glasses: '#1a1a1a', c: { 'Body/LightBrown': '#e0b83a', 'Body/White': '#f0d878', 'Legs/Suit': '#3f3224' } },
   icons:    { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#c41018', 'Legs/Suit': '#b89a68', 'Feet/Black': '#5a3a22' } },
@@ -417,8 +424,8 @@ const CAST = {
   faith:    { head: 'suitW', body: 'suitW', legs: 'formalW', feet: 'formalW', c: { 'Body/Black': '#ddd0a0', 'Body/White': '#f8f5ee', 'Legs/LimeGreen': '#2a2c38', 'Feet/Red': '#2a1d18' } },
   broker:   { head: 'suitM', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#8e82c8', 'Body/White': '#bdb5e0', 'Body/Tie': '#2e2458', 'Legs/Suit': '#3a3e48' } },
   conn:     { head: 'suitM', body: 'casualM', legs: 'suitM', feet: 'suitM', wide: 1.28, c: { 'Body/Purple': '#6e8a48', 'Legs/Suit': '#343028' } },
-  review:   { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#4a5560', 'Body/White': '#8a8f96', 'Body/Tie': '#4a5560', 'Legs/Suit': '#22262a' } },
-  kids:     { head: 'casualW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#1e8a84', 'Legs/LimeGreen': '#26262e', 'Feet/Red': '#2a1d18' } },
+  review:   { head: 'casual2M', body: 'suitM', legs: 'suitM', feet: 'suitM', c: { 'Body/Suit': '#3e4852', 'Body/White': '#9aa0a6', 'Body/Tie': '#3e4852', 'Legs/Suit': '#1c2024' } },
+  kids:     { head: 'casualW', body: 'casualW', legs: 'formalW', feet: 'formalW', c: { 'Body/White': '#1a7a74', 'Body/Purple': '#1a7a74', 'Legs/LimeGreen': '#26262e', 'Feet/Red': '#2a1d18' } },
   designer: { head: 'suitW', body: 'formalW', legs: 'formalW', feet: 'formalW', c: { 'Body/LimeGreen': '#ff2d8a', 'Legs/LimeGreen': '#ff2d8a', 'Body/Gold': '#f2d36b', 'Feet/Red': '#1a1214' } },
   profile:  { head: 'casual2M', body: 'casualM', legs: 'suitM', feet: 'suitM', c: { 'Body/Purple': '#c4b090', 'Legs/Suit': '#524e46' } },
   darryl:   { head: 'workerM', body: 'casual2M', legs: 'suitM', feet: 'suitM', hide: ['Head/Worker_Yellow'], c: { 'Body/LightBrown': '#3e6a98', 'Legs/Suit': '#262c38' } },
@@ -489,7 +496,7 @@ function dress(rig) {
   rigs.push(rig);
 }
 // iPad: fold every visible part into ONE skinned mesh (vertex colors, one shared material) when the kits' bind poses agree
-const castMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 });
+const castMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.68, metalness: 0.04, envMapIntensity: 0.45 });
 function mergeParts(parent) {
   const parts = []; parent.traverse(o => { if (o.isSkinnedMesh && o.visible) parts.push(o); });
   if (parts.length < 2) return;
@@ -547,7 +554,7 @@ function measureHead(base, bones, kit) {
   const f = HEAD_FIT[/W$/.test(kit) ? 'W' : 'M'];
   return { c: hp.add(new THREE.Vector3(0, f.up, f.fwd)), s: new THREE.Vector3(...f.s), front: 1 };
 }
-// HQ #97: distinctive hair / facial hair / earrings attached to the Head bone (one cheap non-skinned overlay per person)
+// HQ #97/#102b: hair / facial hair / face accents / earrings on the Head bone (one cheap overlay)
 function addHeadLikeness(rig, bones, L, base, F) {
   if (!bones.Head || !F) return;
   const specHead = CAST[rig.st.id]?.head;
@@ -556,10 +563,20 @@ function addHeadLikeness(rig, bones, L, base, F) {
   if (L.mustache && specHead !== 'workerM') P.add(G.stache, L.mustache, [0, -0.04, -0.118], [0, 0, 0], [1.1, 1.2, 1], SURF.hair);
   if (L.beard) { P.add(G.beard, L.beard, [0, 0.016, -0.004], [0, 0, 0], [0.96, 0.82, 1.0], SURF.hair); P.add(G.stache, L.beard, [0, -0.039, -0.117], [0, 0, 0], [1, 1, 1], SURF.hair); }
   // HQ #97: stubble skipped on the glTF head (read as a dark neck band at this scale)
+  // HQ #102b: face accents so Quaternius heads read as the cast
+  const brow = shade(L.hair[1], 0.72), mood = L.mood || 'smile', lips = L.lips || shade(L.skin, 0.55);
+  const bAng = { stern: 0.32, sad: -0.28, sly: 0.14, smirk: 0.06, grin: -0.08, blank: -0.04, flat: 0.1, smile: -0.05 }[mood] ?? 0;
+  P.add(G.brow, brow, [-0.042, 0.048, -0.108], [0, 0, -bAng], [1.05, L.fem ? 0.75 : 1.25, 1], SURF.hair);
+  P.add(G.brow, brow, [0.042, 0.048, -0.108], [0, 0, bAng], [1.05, L.fem ? 0.75 : 1.25, 1], SURF.hair);
+  if (mood === 'smile' || mood === 'grin') P.add(ARC(0.026, 0.0048, PI * 0.55), lips, [0, -0.036, -0.112], [0, 0, 0], [1, 0.7, 1], [0.4, 0, 0.5]);
+  else if (mood === 'smirk' || mood === 'sly') P.add(ARC(0.03, 0.0045, PI * 0.4), lips, [0.006, -0.032, -0.112], [0, 0, 0.25], [1, 0.55, 1], [0.4, 0, 0.5]);
+  else if (mood === 'stern') P.add(CAPX(0.004, 0.032, 2, 6), lips, [0, -0.055, -0.112], [0, 0, 0], [1, 1, 1], [0.4, 0, 0.5]);
+  else if (mood === 'sad') P.add(ARC(0.024, 0.004, PI * 0.45), lips, [0, -0.078, -0.112], [0, 0, PI], [1, 0.45, 1], [0.4, 0, 0.5]);
+  if (L.cheeks) { P.add(G.cheek, '#e88a8a', [-0.068, -0.028, -0.09], [0, 0, 0], [1, 0.65, 0.28], SURF.skin); P.add(G.cheek, '#e88a8a', [0.068, -0.028, -0.09], [0, 0, 0], [1, 0.65, 0.28], SURF.skin); }
+  if (L.wrinkles) for (const sx of [-1, 1]) { P.add(CAPX(0.0022, 0.022, 2, 4), shade(L.skin, 0.72), [sx * 0.068, 0.008, -0.09], [0, sx * 0.55, sx * 0.35], [1, 1, 1], SURF.skin); P.add(CAPX(0.002, 0.016, 2, 4), shade(L.skin, 0.7), [sx * 0.055, -0.02, -0.1], [0, sx * 0.4, 0], [1, 1, 1], SURF.skin); }
   if (L.props?.includes('earrings')) { P.add(G.earring, '#e3c25a', [-0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal); P.add(G.earring, '#e3c25a', [0.12, -0.035, 0], [0, 0, 0], [1, 1, 1], SURF.metal); }
   if (!P.items.length) return;
   const mesh = P.mesh(false); mesh.name = 'likenessHair';
-  // procedural frame: 0.12 skull at origin, face toward -z. Map onto the measured kit skull in base-local space.
   mesh.position.copy(F.c); mesh.scale.copy(F.s); mesh.rotation.y = F.front > 0 ? PI : 0;
   rig.root.updateMatrixWorld(true); base.add(mesh); mesh.updateMatrixWorld(true); bones.Head.attach(mesh);
   rig.glb.hair = mesh;
