@@ -35,31 +35,40 @@ renderer.shadowMap.type = IS_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMa
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#bcd8ef');
-scene.fog = new THREE.Fog('#cfe2f1', 60, 180);
+// HQ #101: gradient sky dome (replaces flat Color) — cheap, iPad-safe
+scene.background = new THREE.Color('#6aa3d4');
+scene.fog = new THREE.Fog('#b8cfe0', 70, 200);
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 250);
 camera.rotation.order = 'YXZ';
 const EYE = 1.65;
 
 // ---------- lights ----------
-scene.add(new THREE.HemisphereLight('#fff6ea', '#8a7a68', 1.15));
-const sun = new THREE.DirectionalLight('#fff1dc', 1.6);
-sun.position.set(6, 20, -8);
+// HQ #101: warmer interior ambient, softer sun, stronger window spill
+scene.add(new THREE.HemisphereLight('#fff4e4', '#7a6a58', 0.95));
+const sun = new THREE.DirectionalLight('#ffe8c8', 1.35);
+sun.position.set(8, 22, -10);
 sun.castShadow = true;
 sun.shadow.mapSize.set(IS_MOBILE ? 1024 : 2048, IS_MOBILE ? 1024 : 2048);
-Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 12, bottom: -12, near: 1, far: 50 });
+Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 14, bottom: -14, near: 1, far: 55 });
 sun.shadow.camera.updateProjectionMatrix();
-sun.shadow.bias = -0.0005;
-sun.shadow.normalBias = 0.02;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.025;
 scene.add(sun);
-// Daylight spill from north/east windows
-const winFill = new THREE.DirectionalLight('#dbeaff', 0.55);
-winFill.position.set(10, 6, -30);
+// Daylight spill from north windows (cooler, brighter — reads as sky)
+const winFill = new THREE.DirectionalLight('#e8f2ff', 0.85);
+winFill.position.set(2, 8, -28);
 scene.add(winFill);
-const warm = new THREE.PointLight('#ffcf94', 6, 14, 2);
+const winFill2 = new THREE.DirectionalLight('#fff0d8', 0.35);
+winFill2.position.set(-12, 5, -20);
+scene.add(winFill2);
+const warm = new THREE.PointLight('#ffc988', 5.5, 14, 2);
 warm.position.set(0, 2.6, 4.2); // warm spill over Pam's reception
 scene.add(warm);
+// soft ceiling bounce over the bullpen (fake GI)
+const bounce = new THREE.PointLight('#fff2e0', 3.2, 16, 2);
+bounce.position.set(0, 2.9, -1);
+scene.add(bounce);
 
 // ---------- helpers ----------
 const geoCache = new Map();
@@ -92,16 +101,23 @@ const std = (color, rough = 0.7, metal = 0, extra = {}) => new THREE.MeshStandar
 
 // ---------- materials ----------
 // commercial carpet tiles (the Dunder Mifflin floor): blue-grey, speckled, quarter-turned tiles
+// HQ #101: higher-contrast commercial carpet tiles (quarter-turned loop pile)
 const carpetTex = canvasTex(512, 512, (g, w, h) => {
   const n = 4, t = w / n;
   for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-    const l = 40 + Math.random() * 4; g.fillStyle = `hsl(212, 12%, ${l}%)`; g.fillRect(i * t, j * t, t, t);
+    const l = 36 + ((i * 3 + j * 5) % 7) + Math.random() * 3;
+    g.fillStyle = `hsl(215, 14%, ${l}%)`; g.fillRect(i * t, j * t, t, t);
     const vert = (i + j) % 2;
-    for (let k = 0; k < 220; k++) { g.fillStyle = `rgba(${Math.random() < .5 ? '20,28,40' : '200,210,220'},${0.08 + Math.random() * 0.12})`;
-      const x = i * t + Math.random() * t, y = j * t + Math.random() * t; vert ? g.fillRect(x, y, 1.5, 6) : g.fillRect(x, y, 6, 1.5); }
-    g.fillStyle = 'rgba(20,25,35,.25)'; g.fillRect(i * t, j * t, t, 1.5); g.fillRect(i * t, j * t, 1.5, t);
+    for (let k = 0; k < 320; k++) {
+      g.fillStyle = `rgba(${Math.random() < .5 ? '18,24,36' : '210,218,230'},${0.10 + Math.random() * 0.16})`;
+      const x = i * t + Math.random() * t, y = j * t + Math.random() * t;
+      vert ? g.fillRect(x, y, 1.4, 7) : g.fillRect(x, y, 7, 1.4);
+    }
+    // grout / tile edge
+    g.fillStyle = 'rgba(12,16,24,.38)'; g.fillRect(i * t, j * t, t, 2.2); g.fillRect(i * t, j * t, 2.2, t);
+    g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(i * t + 2, j * t + 2, t - 4, 1.2);
   }
-}, [14, 9]);
+}, [12, 8]);
 const vinylTex = canvasTex(256, 256, (g, w, h) => { // kitchen / break room floor tiles
   for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#d9d2c3' : '#e8e2d5'; g.fillRect(i * 64, j * 64, 64, 64); }
   g.strokeStyle = 'rgba(90,80,60,.25)'; for (let k = 0; k <= 256; k += 64) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 256); g.moveTo(0, k); g.lineTo(256, k); g.stroke(); }
@@ -134,21 +150,25 @@ const M = {
   vendGlass: new THREE.MeshStandardMaterial({ color: '#9fd0ff', roughness: 0.1, emissive: '#3a5a7a', emissiveIntensity: 0.6 }),
   glassJar: new THREE.MeshStandardMaterial({ color: '#e8f4ff', roughness: 0.05, transparent: true, opacity: 0.35, depthWrite: false }),
   blinds: new THREE.MeshStandardMaterial({ map: blindsTex, transparent: true, depthWrite: false, roughness: 0.8, alphaTest: 0.05 }),
-  chair: std('#3a3f47', 0.8),
-  chairSeat: std('#4b525c', 0.9),
+  chair: std('#2e333a', 0.88),
+  chairSeat: std('#3a424c', 0.92),
   bezel: std('#151618', 0.4, 0.3),
-  mullion: std('#33363b', 0.5, 0.5),
-  glass: new THREE.MeshStandardMaterial({ color: '#cfe6f5', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.18, depthWrite: false }),
+  mullion: std('#2a2d32', 0.45, 0.55),
+  glass: new THREE.MeshStandardMaterial({ color: '#cfe6f5', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.16, depthWrite: false, emissive: '#8ab4d8', emissiveIntensity: 0.12 }),
   light: new THREE.MeshBasicMaterial({ color: '#fffaf0' }),
   pot: std('#d9d3ca', 0.8),
-  leaf: std('#4f7d4a', 0.85),
-  leaf2: std('#6a9a55', 0.85),
+  leaf: std('#3d6b38', 0.82),
+  leaf2: std('#5a8a48', 0.8),
+  leaf3: std('#2f5530', 0.85),
   sofa: std('#5c4a3d', 0.95),
   white: std('#f2f2f0', 0.6),
   divider: std('#b9b2a7', 0.95),
-  ground: std('#8fae6b', 1),
+  ground: std('#7a9a55', 1),
   paving: std('#c9c4bb', 0.95),
   bldg: std('#d6dde4', 0.9),
+  bldgBrick: std('#c4a088', 0.88),
+  bldgDark: std('#6a7380', 0.85),
+  concrete: std('#c8c4bc', 0.92),
 };
 
 
@@ -158,7 +178,7 @@ const QUALITY = (new URLSearchParams(location.search).get('q') || localStorage.g
 window.hqSetQuality = q => { localStorage.setItem('hqQuality', q); location.reload(); };
 if (QUALITY === 'low') { renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1)); renderer.shadowMap.type = THREE.PCFShadowMap; }
 
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.08; // HQ #101: slightly brighter so wood + facade textures read
 // image-based light from a tiny procedural "office room" (bright ceiling panels, warm floor, window wall), prefiltered once
 {
   const envScene = new THREE.Scene();
@@ -171,7 +191,7 @@ renderer.toneMappingExposure = 1.0;
   const pm = new THREE.PMREMGenerator(renderer);
   const env = pm.fromScene(envScene, 0.04).texture; pm.dispose();
   scene.environment = env;
-  if ('environmentIntensity' in scene) scene.environmentIntensity = 0.55;
+  if ('environmentIntensity' in scene) scene.environmentIntensity = 0.7; // HQ #101: stronger desk/glass reflections
 }
 // hemi/fill slightly lower since the env map now carries ambient
 scene.traverse(o => { if (o.isHemisphereLight) o.intensity = 0.8; });
@@ -183,8 +203,8 @@ const rnd = Math.random;
 if (QUALITY !== 'low') {
   const carpetBump = dataTex(256, 256, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h);
     for (let k = 0; k < 9000; k++) { const v = 90 + rnd() * 90 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(rnd() * w, rnd() * h, 1.3, 1.3); } }, [56, 36]);
-  M.floor.bumpMap = carpetBump; M.floor.bumpScale = 0.6;
-  for (const k of ['carpet', 'carpetWarm', 'rug']) { M[k].bumpMap = carpetBump; M[k].bumpScale = 0.6; }
+  M.floor.bumpMap = carpetBump; M.floor.bumpScale = 0.85;
+  for (const k of ['carpet', 'carpetWarm', 'rug']) { M[k].bumpMap = carpetBump; M[k].bumpScale = 0.85; }
 }
 // wall: eggshell paint with faint orange-peel roller texture
 const wallTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#ece4d4'; g.fillRect(0, 0, w, h);
@@ -206,8 +226,107 @@ M.oak.map = oakT; M.oak.roughness = 0.5; M.walnut.map = walT; M.walnut.roughness
 // brushed metal on steel/cabinets/mullions picks up the env map; glass gets a real reflection
 for (const k of ['steel', 'cabinet', 'mullion', 'copierDark']) { M[k].envMapIntensity = 1.2; }
 for (const k of ['glass', 'vendGlass', 'glassJar']) { M[k].envMapIntensity = 1.6; M[k].roughness = 0.03; }
-M.chair.roughness = 0.85; M.chairSeat.roughness = 0.95;
+M.chair.roughness = 0.88; M.chairSeat.roughness = 0.94;
+// HQ #101: fabric weave on chairs, concrete/paint on columns, grass + facade maps, sky dome
+{
+  const fabric = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#3a424c'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+      g.fillStyle = (x + y) % 4 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.07)';
+      g.fillRect(x, y, 2, 2);
+    }
+    for (let k = 0; k < 400; k++) { g.fillStyle = `rgba(${rnd() < .5 ? '200,210,220' : '20,24,30'},0.06)`; g.fillRect(rnd() * w, rnd() * h, 1, 1); }
+  }, [3, 3]);
+  M.chair.map = fabric; M.chair.color.set('#ffffff'); M.chairSeat.map = fabric; M.chairSeat.color.set('#c8cdd4');
+  // concrete / painted structural column
+  const conc = canvasTex(256, 512, (g, w, h) => {
+    g.fillStyle = '#e4ddd0'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 5000; k++) { const v = 200 + rnd() * 40 | 0; g.fillStyle = `rgba(${v},${v - 8},${v - 16},0.35)`; g.fillRect(rnd() * w, rnd() * h, 1 + rnd() * 2, 1); }
+    g.fillStyle = 'rgba(120,100,80,0.08)'; for (let y = 0; y < h; y += 48) g.fillRect(0, y, w, 2);
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(0, 0, 18, h); // soft highlight edge
+  }, [1, 2]);
+  M.concrete.map = conc; M.concrete.roughness = 0.9; M.concrete.bumpMap = conc; M.concrete.bumpScale = 0.35;
+  // grass with subtle variation
+  const grassT = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#6f9450'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 8000; k++) {
+      const v = 80 + rnd() * 70 | 0; g.fillStyle = `rgb(${v * 0.55 | 0},${v},${v * 0.4 | 0})`;
+      g.fillRect(rnd() * w, rnd() * h, 1 + rnd() * 2, 1 + rnd());
+    }
+  }, [80, 80]);
+  M.ground.map = grassT; M.ground.color.set('#ffffff'); M.ground.roughness = 1;
+  // office-building facade: rows of windows (some lit)
+  function facadeTex(base, accent, litChance = 0.35) {
+    return canvasTex(256, 512, (g, w, h) => {
+      g.fillStyle = base; g.fillRect(0, 0, w, h);
+      // subtle panel lines
+      g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 1;
+      for (let x = 0; x <= w; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+      const rows = 14, cols = 6, mw = 18, mh = 22, gapX = (w - cols * mw) / (cols + 1), gapY = (h - rows * mh) / (rows + 1);
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const x = gapX + c * (mw + gapX), y = gapY + r * (mh + gapY);
+        const lit = rnd() < litChance;
+        g.fillStyle = lit ? accent : 'rgba(30,40,55,0.85)';
+        g.fillRect(x, y, mw, mh);
+        if (lit) { g.fillStyle = 'rgba(255,240,180,0.35)'; g.fillRect(x + 1, y + 1, mw - 2, mh * 0.35); }
+        g.strokeStyle = 'rgba(0,0,0,0.35)'; g.strokeRect(x, y, mw, mh);
+      }
+      // roof coping
+      g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(0, 0, w, 8);
+    }, [1, 1]);
+  }
+  const facA = facadeTex('#c8d0d8', '#ffe9a8', 0.4);
+  const facB = facadeTex('#a88870', '#ffd89a', 0.25);
+  const facC = facadeTex('#5a6570', '#9ec8ff', 0.5);
+  M.bldg.map = facA; M.bldg.color.set('#ffffff'); M.bldg.roughness = 0.82; M.bldg.envMapIntensity = 0.4;
+  M.bldgBrick.map = facB; M.bldgBrick.color.set('#ffffff'); M.bldgBrick.roughness = 0.88;
+  M.bldgDark.map = facC; M.bldgDark.color.set('#ffffff'); M.bldgDark.roughness = 0.75; M.bldgDark.envMapIntensity = 0.5;
+  // foliage variation via canvas noise (shared)
+  const leafT = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#3d6b38'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 900; k++) {
+      g.fillStyle = `rgba(${40 + rnd() * 80 | 0},${90 + rnd() * 100 | 0},${30 + rnd() * 40 | 0},0.55)`;
+      g.beginPath(); g.arc(rnd() * w, rnd() * h, 2 + rnd() * 6, 0, 7); g.fill();
+    }
+  }, [2, 2]);
+  for (const k of ['leaf', 'leaf2', 'leaf3']) { M[k].map = leafT; M[k].color.set(k === 'leaf2' ? '#c8e0a8' : k === 'leaf3' ? '#8aaa70' : '#a8c888'); M[k].roughness = 0.9; }
+  // wood roughness streak map
+  if (QUALITY !== 'low') {
+    const woodR = dataTex(256, 128, (g, w, h) => {
+      g.fillStyle = '#909090'; g.fillRect(0, 0, w, h);
+      for (let y = 0; y < h; y++) { const a = 0.35 + 0.3 * Math.sin(y * 0.2); g.fillStyle = `rgb(${(a * 255) | 0},${(a * 255) | 0},${(a * 255) | 0})`; g.fillRect(0, y, w, 1); }
+    }, [1, 1]);
+    M.oak.roughnessMap = woodR; M.walnut.roughnessMap = woodR; M.oak.roughness = 0.45; M.walnut.roughness = 0.5;
+  }
+  // warmer oak / richer walnut base so grain reads through the window light
+  M.oak.color.set('#d4a574'); M.walnut.color.set('#7a5236');
+  M.oak.envMapIntensity = 0.35; M.walnut.envMapIntensity = 0.3;
+}
 for (const k in M) if (M[k].isMaterial) M[k].needsUpdate = true;
+
+// HQ #101: sky dome (gradient + soft horizon haze). One draw call; fog:false so it stays vivid.
+{
+  const skyC = document.createElement('canvas'); skyC.width = 8; skyC.height = 512;
+  const sg = skyC.getContext('2d');
+  const grd = sg.createLinearGradient(0, 0, 0, 512);
+  grd.addColorStop(0.00, '#1a3a72'); // zenith
+  grd.addColorStop(0.28, '#3d7ec4');
+  grd.addColorStop(0.48, '#7eb6e8');
+  grd.addColorStop(0.62, '#b7d6f0');
+  grd.addColorStop(0.74, '#dce8f2');
+  grd.addColorStop(0.84, '#e8d4b0'); // warm horizon
+  grd.addColorStop(0.92, '#c8d4a8');
+  grd.addColorStop(1.00, '#9aaa78');
+  sg.fillStyle = grd; sg.fillRect(0, 0, 8, 512);
+  // soft cloud wisps (very cheap)
+  sg.globalAlpha = 0.18; sg.fillStyle = '#ffffff';
+  for (let i = 0; i < 14; i++) { const y = 160 + Math.random() * 160; sg.beginPath(); sg.ellipse(4, y, 6, 4 + Math.random() * 8, 0, 0, 7); sg.fill(); }
+  sg.globalAlpha = 1;
+  const skyTex = new THREE.CanvasTexture(skyC); skyTex.colorSpace = THREE.SRGBColorSpace; skyTex.wrapS = THREE.RepeatWrapping; skyTex.wrapT = THREE.ClampToEdgeWrapping;
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(240, 32, 16), new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false }));
+  sky.renderOrder = -10; scene.add(sky);
+}
+
 // ---------- collision ----------
 const colliders = []; // {minX,maxX,minZ,maxZ}
 function addCollider(x, z, w, d, ry = 0) {
@@ -465,11 +584,14 @@ wall(-8.4, -7.5, -8.4, -4.5, { gaps: [[-6.15, -5.0]] });
 // supply closet (front west corner)
 wall(-11, 5.9, -9.4, 5.9); wall(-9.4, 5.9, -9.4, 7.5, { gaps: [[6.1, 7.1]] });
 
-// structural columns in the bullpen
+// structural columns in the bullpen (HQ #101: concrete/paint texture + soft contact shadow)
 const COLUMNS = [[-5.9, 0.9], [1.2, -3.6]];
 for (const [x, z] of COLUMNS) {
-  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, H, 16), M.wall);
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, H, 20), M.concrete);
   col.position.set(x, H / 2, z); col.castShadow = col.receiveShadow = true; scene.add(col);
+  // cheap baked-feel contact shadow disc
+  const cs = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), new THREE.MeshBasicMaterial({ color: '#1a1410', transparent: true, opacity: 0.28, depthWrite: false }));
+  cs.rotation.x = -Math.PI / 2; cs.position.set(x, 0.012, z); cs.renderOrder = 1; scene.add(cs);
   addCollider(x, z, 0.56, 0.56);
 }
 // floor finishes: vinyl in the kitchen / break room, rug in Michael's office, accounting carpet patch, conference carpet
@@ -483,6 +605,7 @@ for (const [x, z] of COLUMNS) {
 // ---------- outside view ----------
 // HQ #81: everything outside sits at GROUND level (y = BY); the office is upstairs. Grass, road, trees, far buildings = GROUNDS
 // (drawn on every floor: you see them out of DM's windows, 4.4 m up).
+// HQ #101: layered foliage trees + windowed facade skyline (biggest visible win from the bullpen windows).
 const GROUNDS = new THREE.Group(); GROUNDS.position.y = BY; scene.add(GROUNDS);
 {
 const gn0 = scene.children.length;
@@ -492,27 +615,140 @@ box(60, 0.02, 6, M.paving, 0, -0.01, -11.2, scene, false);
 box(4, 0.02, 90, std('#3d3f43', 0.95), 22.6, -0.01, 10, scene, false); // Slough Avenue, past the lot entrance (HQ #76)
 box(0.12, 0.005, 90, new THREE.MeshBasicMaterial({ color: '#e3c11e' }), 22.6, 0.002, 10, scene, false);
 {
-  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.2, 2, 6), std('#6b4f3a'), 40);
-  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 0), M.leaf, 40);
-  const m4 = new THREE.Matrix4(); let i = 0;
-  const spots = [];
-  for (let x = -40; x <= 40; x += 7) spots.push([x + (Math.random() - .5) * 3, -20 - Math.random() * 10]);
-  for (let z = -30; z <= 30; z += 7) spots.push([27 + Math.random() * 8, z + (Math.random() - .5) * 3]);
-  for (let x = -30; x <= 30; x += 8) spots.push([x + (Math.random() - .5) * 3, 39 + Math.random() * 6]); // behind the parking lot
-  for (const [x, z] of spots.slice(0, 40)) {
-    if (x > -30 && x < 25.5 && z > -11.5 && z < 37) continue; // nothing growing on the building, the yard or the lot
-    const s = 0.8 + Math.random() * 0.7;
-    m4.makeScale(s, s, s).setPosition(x, 1 * s, z); trunk.setMatrixAt(i, m4);
-    m4.makeScale(s, s * 1.2, s).setPosition(x, 2.6 * s, z); crown.setMatrixAt(i, m4); i++;
+  // HQ #101: painted billboard trees (face the office) + a few near 3D layered trees for parallax
+  // Billboard atlas — 2 tree variants on one texture, alpha-tested (2 draw calls for the grove)
+  const treeAtlas = canvasTex(512, 512, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const paintTree = (ox, kind) => {
+      // trunk with bark notches
+      g.fillStyle = kind === 'oak' ? '#4a3220' : '#3a2818';
+      g.beginPath();
+      g.moveTo(ox - 9, h - 4); g.lineTo(ox + 9, h - 4);
+      g.lineTo(ox + 5, h * 0.48); g.lineTo(ox - 5, h * 0.48); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 2;
+      for (let y = h * 0.5; y < h - 10; y += 18) { g.beginPath(); g.moveTo(ox - 4, y); g.lineTo(ox + 3, y + 6); g.stroke(); }
+      // canopy: scalloped silhouette (not stacked circles)
+      const top = kind === 'oak' ? h * 0.08 : h * 0.04;
+      const mid = h * 0.38;
+      const cols = kind === 'oak'
+        ? ['#2a4a28', '#3d6b38', '#4f7d4a', '#5f8f52', '#6fa05c']
+        : ['#1e3a22', '#2f5530', '#3d6b38', '#4a7d44', '#5a8f4c'];
+      // base dark mass
+      g.fillStyle = cols[0];
+      g.beginPath();
+      g.moveTo(ox, top);
+      const lobes = kind === 'oak' ? 9 : 7;
+      for (let i = 0; i <= lobes; i++) {
+        const t = i / lobes, ang = -Math.PI + t * Math.PI;
+        const wobble = 18 + 22 * Math.sin(i * 2.3 + (kind === 'oak' ? 0 : 1));
+        const rx = (kind === 'oak' ? 105 : 88) + wobble * Math.sin(i * 1.7);
+        const ry = (mid - top) * (0.55 + 0.45 * Math.sin(t * Math.PI));
+        g.lineTo(ox + Math.cos(ang) * rx, top + (mid - top) * 0.55 + Math.sin(ang) * ry * 0.15 + t * (mid - top) * 0.5);
+      }
+      g.lineTo(ox + 70, mid + 30); g.lineTo(ox - 70, mid + 30); g.closePath(); g.fill();
+      // mid and highlight lobes with irregular arcs
+      for (let layer = 1; layer < cols.length; layer++) {
+        g.fillStyle = cols[layer];
+        const y0 = top + layer * 28;
+        g.beginPath();
+        for (let i = 0; i <= 12; i++) {
+          const t = i / 12;
+          const x = ox - 95 + t * 190 + Math.sin(t * 9 + layer) * 12;
+          const y = y0 + Math.sin(t * Math.PI) * (70 - layer * 8) + Math.sin(t * 6 + layer * 2) * 10;
+          if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        for (let i = 12; i >= 0; i--) {
+          const t = i / 12;
+          const x = ox - 80 + t * 160;
+          const y = y0 + 50 + Math.sin(t * Math.PI) * 20 + layer * 6;
+          g.lineTo(x, y);
+        }
+        g.closePath(); g.fill();
+      }
+      // leaf speckles
+      for (let k = 0; k < 180; k++) {
+        const px = ox + (Math.random() - 0.5) * 180, py = top + Math.random() * (mid - top + 40);
+        g.fillStyle = Math.random() < 0.5 ? 'rgba(20,40,18,0.35)' : 'rgba(200,230,140,0.25)';
+        g.fillRect(px, py, 2 + Math.random() * 3, 2 + Math.random() * 2);
+      }
+      // sun rim
+      g.strokeStyle = 'rgba(220,240,160,0.35)'; g.lineWidth = 3;
+      g.beginPath(); g.arc(ox - 20, top + 60, 70, -1.2, 0.4); g.stroke();
+    };
+    paintTree(128, 'oak');
+    paintTree(384, 'pine');
+  });
+  // Unlit + alphaTest so cards read clearly through windows (no Lambert lighting dependency)
+  treeAtlas.colorSpace = THREE.SRGBColorSpace;
+  const treeMat = new THREE.MeshBasicMaterial({ map: treeAtlas, transparent: true, alphaTest: 0.28, depthWrite: true, side: THREE.DoubleSide, fog: true });
+  function treePlane(variant) {
+    const geo = new THREE.PlaneGeometry(6.5, 9.0);
+    const uvs = geo.attributes.uv;
+    for (let i = 0; i < uvs.count; i++) {
+      const u = uvs.getX(i); uvs.setX(i, variant === 0 ? u * 0.5 : 0.5 + u * 0.5);
+    }
+    return geo;
   }
-  trunk.count = crown.count = i; scene.add(trunk, crown);
-  for (let k = 0; k < 6; k++) box(10 + Math.random() * 8, 8 + Math.random() * 18, 10, M.bldg, -50 + k * 20, 6, -70 - Math.random() * 20, scene, false);
+  const geoA = treePlane(0), geoB = treePlane(1);
+  const N = 64;
+  const cards = new THREE.InstancedMesh(geoA, treeMat, N);
+  const cardsB = new THREE.InstancedMesh(geoB, treeMat, N);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s3 = new THREE.Vector3(), pos = new THREE.Vector3();
+  let ia = 0, ib = 0;
+  const spots = [];
+  // dense near-window row (what Chris sees from the bullpen)
+  for (let x = -26; x <= 26; x += 5.5) spots.push([x + (Math.random() - .5) * 0.8, -14.2 - Math.random() * 2.0, 0, 1.05 + Math.random() * 0.3]);
+  for (let x = -40; x <= 40; x += 5.0) spots.push([x + (Math.random() - .5) * 2, -19 - Math.random() * 14, 0, 0.9 + Math.random() * 0.7]);
+  for (let z = -30; z <= 30; z += 6.5) spots.push([30 + Math.random() * 10, z + (Math.random() - .5) * 2, 1, 0.8 + Math.random() * 0.7]);
+  for (let x = -30; x <= 30; x += 7) spots.push([x + (Math.random() - .5) * 2, 42 + Math.random() * 8, 2, 0.8 + Math.random() * 0.6]);
+  for (const [x, z, facing, s] of spots) {
+    if (x > -30 && x < 25.5 && z > -11.5 && z < 37) continue;
+    // center of card sits ~45% up so trunks meet the ground plane
+    pos.set(x, 4.4 * s, z); s3.set(s, s, s);
+    const yaw = facing === 1 ? -Math.PI / 2 : facing === 2 ? Math.PI : 0;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw + (Math.random() - .5) * 0.2);
+    m4.compose(pos, q, s3);
+    if ((ia + ib) % 2 === 0) { if (ia < N) cards.setMatrixAt(ia++, m4); }
+    else { if (ib < N) cardsB.setMatrixAt(ib++, m4); }
+  }
+  cards.count = ia; cardsB.count = ib;
+  scene.add(cards, cardsB);
+
+  // City skyline: varied massing + shared windowed facade materials (still few meshes)
+  const skyline = [
+    // closer mid-distance row (peek through the tree line from the bullpen)
+    [-48, 14, -42, 11, 16, 9, M.bldg],
+    [-28, 9,  -48, 9, 20, 9, M.bldgBrick],
+    [-10, 18, -52, 12, 26, 10, M.bldgDark],
+    [8,   11, -46, 10, 15, 9, M.bldg],
+    [24,  16, -54, 13, 22, 11, M.bldgBrick],
+    [42,  8,  -44, 8, 13, 8, M.bldg],
+    [58,  20, -50, 11, 28, 10, M.bldgDark],
+    // farther row
+    [-40, 6,  -88, 14, 12, 12, M.bldg],
+    [-12, 24, -95, 10, 34, 10, M.bldgDark],
+    [16,  10, -90, 15, 18, 13, M.bldgBrick],
+    [40,  14, -92, 11, 22, 11, M.bldg],
+  ];
+  for (const [x, halfH, z, w, h, d, mat] of skyline) {
+    const b = box(w, h, d, mat, x, h / 2, z, scene, false);
+    b.castShadow = false; b.receiveShadow = true;
+    // thin roof cap so silhouettes aren't pure boxes
+    box(w * 1.02, 0.35, d * 1.02, M.mullion, x, h + 0.15, z, scene, false);
+  }
+  // distant soft haze strip (cheap mesh, sells depth)
+  {
+    const haze = new THREE.Mesh(new THREE.PlaneGeometry(220, 28), new THREE.MeshBasicMaterial({
+      color: '#c5d6e6', transparent: true, opacity: 0.35, depthWrite: false, fog: true, side: THREE.DoubleSide
+    }));
+    haze.position.set(0, 10, -120); scene.add(haze);
+  }
 }
 for (const o of scene.children.slice(gn0)) GROUNDS.add(o);
 }
 
 // ---------- props ----------
-const potGeo = new THREE.CylinderGeometry(0.22, 0.17, 0.45, 12), leafGeo = new THREE.IcosahedronGeometry(0.28, 0);
+const potGeo = new THREE.CylinderGeometry(0.22, 0.17, 0.45, 12), leafGeo = new THREE.SphereGeometry(0.26, 7, 5);
 function plant(x, z, s = 1) {
   const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(s);
   const pot = new THREE.Mesh(potGeo, M.pot); pot.position.y = 0.225; pot.castShadow = true; g.add(pot);
@@ -523,11 +759,20 @@ function plant(x, z, s = 1) {
   scene.add(g); addCollider(x, z, 0.45 * s, 0.45 * s);
 }
 function chair(parent, x, z, ry = 0) {
+  // HQ #101: nicer office chair without exploding draw calls (no per-caster spheres)
   const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry;
-  box(0.5, 0.08, 0.48, M.chairSeat, 0, 0.48, 0, g);
-  box(0.48, 0.55, 0.06, M.chair, 0, 0.82, 0.24, g);
-  box(0.06, 0.4, 0.06, M.steel, 0, 0.26, 0, g);
-  box(0.6, 0.04, 0.08, M.steel, 0, 0.05, 0, g); box(0.08, 0.04, 0.6, M.steel, 0, 0.05, 0, g);
+  box(0.48, 0.07, 0.46, M.chairSeat, 0, 0.50, -0.02, g);           // seat cushion
+  box(0.46, 0.52, 0.05, M.chair, 0, 0.82, 0.22, g);                  // back
+  box(0.34, 0.10, 0.04, M.chairSeat, 0, 0.68, 0.205, g, false);     // lumbar
+  for (const sx of [-1, 1]) {                                        // armrests
+    box(0.04, 0.16, 0.04, M.steel, sx * 0.26, 0.58, 0.0, g, false);
+    box(0.05, 0.03, 0.20, M.chair, sx * 0.26, 0.67, -0.02, g, false);
+  }
+  box(0.05, 0.36, 0.05, M.steel, 0, 0.28, -0.02, g, false);          // column
+  // 5-star feel with 3 boxes (cross + diagonal) — 3 meshes vs 10
+  box(0.56, 0.035, 0.055, M.steel, 0, 0.05, -0.02, g, false);
+  box(0.055, 0.035, 0.56, M.steel, 0, 0.05, -0.02, g, false);
+  const diag = box(0.50, 0.03, 0.045, M.steel, 0, 0.048, -0.02, g, false); diag.rotation.y = Math.PI / 4;
   parent.add(g); return g;
 }
 function cabinets(x, z, n, ry = 0) { // row of tall grey filing cabinets (front faces local +z)
@@ -614,17 +859,23 @@ for (const st of STATIONS) {
   const s = st.hero ? 1.25 : 1;
   const g = new THREE.Group(); g.position.set(st.x, 0, st.z); g.rotation.y = st.ry; scene.add(g);
   const dw = 1.6 * s, dd = 0.8 * s;
-  // Office-style desk: wood top, modesty panel, drawer pedestal
-  box(dw, 0.05, dd, st.hero ? M.walnut : M.oak, 0, 0.74, 0, g);
-  box(0.05, 0.72, dd - 0.06, M.steel, -dw / 2 + 0.06, 0.36, 0, g);
-  box(0.42, 0.7, dd - 0.08, M.cabinet, dw / 2 - 0.25, 0.36, 0, g);
-  box(dw - 0.2, 0.42, 0.02, M.steel, 0, 0.47, -dd / 2 + 0.04, g);
-  // monitor
+  // HQ #101: Office desk — thicker wood top with edge lip, pedestal drawers, modesty panel
+  box(dw, 0.055, dd, st.hero ? M.walnut : M.oak, 0, 0.745, 0, g);                 // top
+  box(dw + 0.02, 0.018, dd + 0.02, st.hero ? M.walnut : M.oak, 0, 0.712, 0, g);   // edge lip / bevel read
+  box(0.05, 0.70, dd - 0.08, M.steel, -dw / 2 + 0.05, 0.35, 0, g);                 // left leg
+  box(0.44, 0.70, dd - 0.06, M.cabinet, dw / 2 - 0.24, 0.35, 0, g);                // drawer pedestal
+  for (let d = 0; d < 3; d++) box(0.36, 0.015, 0.02, M.steel, dw / 2 - 0.24, 0.22 + d * 0.2, dd / 2 - 0.04, g, false); // drawer lines
+  box(dw - 0.25, 0.40, 0.025, M.steel, -0.05, 0.46, -dd / 2 + 0.03, g);            // modesty panel
+  // cable tray under front edge
+  box(dw * 0.55, 0.03, 0.08, M.steel, 0, 0.68, dd / 2 - 0.06, g, false);
+  // monitor with bezel + neck + weighted base
   const mw = st.hero ? 1.25 : 0.72, mh = mw * 300 / 512;
   const mz = -dd / 2 + 0.17, my = 0.77 + 0.14 + mh / 2;
-  box(mw + 0.04, mh + 0.04, 0.03, M.bezel, 0, my, mz - 0.017, g);
-  box(0.05, 0.16, 0.05, M.bezel, 0, 0.84, mz - 0.04, g);
-  box(0.24, 0.015, 0.16, M.bezel, 0, 0.775, mz - 0.03, g);
+  box(mw + 0.05, mh + 0.05, 0.028, M.bezel, 0, my, mz - 0.016, g);                 // outer bezel
+  box(mw + 0.02, mh + 0.02, 0.02, M.steel, 0, my, mz - 0.028, g, false);           // rear shell
+  box(0.045, 0.18, 0.04, M.bezel, 0, 0.83, mz - 0.05, g);                          // neck
+  box(0.28, 0.02, 0.18, M.bezel, 0, 0.772, mz - 0.02, g);                          // base plate
+  box(0.08, 0.025, 0.08, M.steel, 0, 0.79, mz - 0.05, g, false);                   // hinge joint
   const screenMat = new THREE.MeshBasicMaterial({ map: monitorScreenTex(st), toneMapped: false });
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(mw, mh), screenMat); screen.position.set(0, my, mz + 0.0); g.add(screen);
   // highlight frame
@@ -1310,22 +1561,31 @@ const DZ = 8.0; // HQ #81: lot shift south (pre-shift z + DZ = world z), and the
   postSign('VISITOR', 'DUNDER MIFFLIN', -10.8, 26.75, Math.PI);
   // curbed end islands with a tree each + light poles
   const islands = [[LOT.x0, -17.55, LOT.z0, 15.0], [17.55, LOT.x1, LOT.z0, 15.0], [LOT.x0, -17.55, 21.4, LOT.z1], [17.55, LOT.x1, 21.4, LOT.z1]];
-  const tr = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.16, 2.2, 6), std('#6b4f3a'), islands.length), cr = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.3, 1), M.leaf, islands.length), m4 = new THREE.Matrix4();
+  // HQ #101: layered canopy on lot-island trees (match the window grove)
+  const tr = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.16, 2.2, 7), std('#5a3e2a', 0.92), islands.length);
+  const crA = new THREE.InstancedMesh(new THREE.SphereGeometry(1.1, 8, 6), M.leaf3, islands.length);
+  const crB = new THREE.InstancedMesh(new THREE.SphereGeometry(0.9, 7, 5), M.leaf, islands.length);
+  const crC = new THREE.InstancedMesh(new THREE.SphereGeometry(0.65, 7, 5), M.leaf2, islands.length);
+  const m4 = new THREE.Matrix4();
   islands.forEach(([x0, x1, z0, z1], i) => {
     box(x1 - x0, 0.16, z1 - z0, curbM, (x0 + x1) / 2, 0.06, (z0 + z1) / 2, scene, false);
     box(x1 - x0 - 0.3, 0.02, z1 - z0 - 0.3, grass, (x0 + x1) / 2, 0.145, (z0 + z1) / 2, scene, false);
     const tx = (x0 + x1) / 2, tz = (z0 + z1) / 2 + (i < 2 ? 1.2 : -1.2);
-    tr.setMatrixAt(i, m4.makeTranslation(tx, 1.2, tz)); cr.setMatrixAt(i, m4.makeTranslation(tx, 3.1, tz)); addCollider(tx, tz, 0.4, 0.4);
+    tr.setMatrixAt(i, m4.makeTranslation(tx, 1.2, tz));
+    crA.setMatrixAt(i, m4.makeTranslation(tx, 2.9, tz));
+    crB.setMatrixAt(i, m4.makeTranslation(tx + 0.25, 3.2, tz - 0.1));
+    crC.setMatrixAt(i, m4.makeTranslation(tx - 0.2, 3.45, tz + 0.15));
+    addCollider(tx, tz, 0.4, 0.4);
     const px = tx, pz = (z0 + z1) / 2 + (i < 2 ? -1.2 : 1.2);
     box(0.14, 6.5, 0.14, M.steel, px, 3.25, pz, scene, false); box(0.9, 0.14, 0.35, M.steel, px + (px < 0 ? 0.4 : -0.4), 6.45, pz, scene, false);
     box(0.6, 0.03, 0.25, M.light, px + (px < 0 ? 0.55 : -0.55), 6.37, pz, scene, false); addCollider(px, pz, 0.25, 0.25);
   });
-  tr.castShadow = cr.castShadow = true; scene.add(tr, cr);
+  tr.castShadow = crA.castShadow = crB.castShadow = true; scene.add(tr, crA, crB, crC);
   // grass strips along the building front past the sidewalk: low shrubs (instanced)
   { const spots = []; for (let x = 11.9; x < 20; x += 1.3) if (Math.abs(x - 16.5) > 2.1) spots.push([x, 8.7]);
     for (let z = -15.0; z < 7.0; z += 1.4) spots.push([12.0, z]);   // HQ #81: along the building's east face (pre-shift z)
-    const sh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.5, 1), M.leaf2, spots.length);
-    spots.forEach(([x, z], i) => { m4.makeScale(1.2, 0.8, 1.0).setPosition(x, 0.32, z); sh.setMatrixAt(i, m4); }); sh.castShadow = true; scene.add(sh);
+    const sh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.48, 6, 5), M.leaf2, spots.length);
+    spots.forEach(([x, z], i) => { m4.makeScale(1.15 + Math.random() * 0.3, 0.7 + Math.random() * 0.25, 1.0).setPosition(x, 0.3, z); sh.setMatrixAt(i, m4); }); sh.castShadow = true; scene.add(sh);
     for (const [x, z] of spots) addCollider(x, z, 0.9, 0.8); }
   // SCRANTON BUSINESS PARK monument sign by the entrance drive
   { const bx = 16.5, bz = 8.7; box(3.2, 0.5, 0.6, std('#8c6b52', 0.9), bx, 0.25, bz); box(2.9, 1.0, 0.4, std('#3d4a3a', 0.8), bx, 1.0, bz);
