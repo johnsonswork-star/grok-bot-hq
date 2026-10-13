@@ -37,9 +37,9 @@
       "until": "2026-10-13T02:50:26.420Z"
     },
     "review": {
-      "task": "Visual upgrade: QA pass on iPad",
-      "since": "2026-10-13T01:20:27.767Z",
-      "until": "2026-10-13T02:20:27.767Z"
+      "task": "QA: character remodel shots",
+      "since": "2026-10-13T01:22:18.905Z",
+      "until": "2026-10-13T02:52:18.905Z"
     },
     "builder": {
       "task": "Visual upgrade: lighting & materials live; polishing",
