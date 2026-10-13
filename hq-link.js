@@ -237,3 +237,24 @@ export async function sendSwipes(items) {
     return r.ok;
   } catch (e) { return false; }
 }
+
+
+// HQ #92: Design Trainer Suggestion Box. Same privacy model as swipes (encrypted to inbox pub → bridge).
+// The bridge appends to ~/.config/grok-bot-hq/design-train/suggestions.jsonl for Kelly's next deck. No issue, no Slack.
+export async function sendSuggest({ text, cardId = null, deck = null, mid: fixedMid } = {}) {
+  try {
+    const d = await device();
+    const mid = fixedMid || ('sg' + randomId(9));
+    const msg = {
+      v: 2, type: 'suggest', mid,
+      text: String(text || '').trim().slice(0, 280),
+      cardId: cardId ? String(cardId).slice(0, 80) : null,
+      deck: deck ? String(deck).slice(0, 40) : null,
+      ts: new Date().toISOString(),
+      device: { id: d.id, topic: d.topic, pub: d.pubJwk },
+    };
+    if (!msg.text) return { ok: false, mid, error: 'empty' };
+    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    return { ok: r.ok, mid };
+  } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 80) }; }
+}

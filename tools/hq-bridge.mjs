@@ -157,6 +157,7 @@ async function handle(m, priv, st) {
   if (p.type === 'refresh') return handleRefresh(p, st);
   if (p.type === 'pick') return handlePick(p, st);
   if (p.type === 'swipe') return handleSwipe(p, st); // HQ #85: design-trainer wall swipes -> design-train/*.jsonl (no issue, no Slack)
+  if (p.type === 'suggest') return handleSuggest(p, st); // HQ #92: Design Trainer Suggestion Box -> design-train/suggestions.jsonl
   if (p.direct) return handleDirect(p, st); // HQ #63: Direct tab = 1:1 with a teammate, never filed for Grok Bot, no Slack wake
   if (!p.mid || alreadyFiled(p.mid, st)) return;
   let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
@@ -228,6 +229,32 @@ async function handleSwipe(p, st) {
   if (!p.mid || st.done.includes(p.mid)) return;
   st.done.push(p.mid); st.done = st.done.slice(-2000); saveState(st);
   try { const S = await swipeTrain(); const n = S ? S.record(p, { log }) : 0; if (!n) log('swipe batch', p.mid, 'nothing new'); } catch (e) { log('swipe record error', e.message); }
+}
+
+// HQ #92: Chris typed a design/phrase idea in the Design Trainer Suggestion Box. Append to suggestions.jsonl for Kelly's
+// next deck. No GitHub issue, no Slack, no AI. Same mid-dedupe as swipes.
+const SUGGEST_F = `${DIR}/design-train/suggestions.jsonl`;
+async function handleSuggest(p, st) {
+  if (!p.mid || st.done.includes(p.mid)) return;
+  st.done.push(p.mid); st.done = st.done.slice(-2000); saveState(st);
+  const text = String(p.text || '').trim().slice(0, 280);
+  if (!text) return log('suggest empty', p.mid);
+  const row = {
+    source: 'chris-suggestion',
+    at: p.ts || new Date().toISOString(),
+    received: new Date().toISOString(),
+    device: p.device?.id || null,
+    mid: p.mid,
+    text,
+    cardId: p.cardId ? String(p.cardId).slice(0, 80) : null,
+    deck: p.deck ? String(p.deck).slice(0, 40) : null,
+    test: p.test || undefined,
+  };
+  try {
+    fs.mkdirSync(`${DIR}/design-train`, { recursive: true, mode: 0o700 });
+    fs.appendFileSync(SUGGEST_F, JSON.stringify(row) + '\n', { mode: 0o600 });
+    log('suggest', p.mid, text.slice(0, 60));
+  } catch (e) { log('suggest write error', e.message); }
 }
 
 // Tap-to-pick (HQ #50): Chris tapped his favorite options on a desk screen (e.g. Kelly's badge cards H-L) and SUBMIT.
@@ -339,6 +366,7 @@ else if (cmd === 'slack-test') { const s = loadSlack(); log('slack webhook:', !!
 else if (cmd === 'once') await once(a);
 else if (cmd === 'pick-test') { const [, , , bt, pid, pk] = process.argv; await handlePick({ type: 'pick', bot: bt, id: pid, mid: 'pktest' + Date.now(), picks: String(pk || '').split(','), ts: new Date().toISOString(), device: { id: 'test' } }, state()); }
 else if (cmd === 'refresh-test') { await handleRefresh({ type: 'refresh', kind: a || 'bank', mid: 'rftest' + Date.now(), ts: new Date().toISOString(), device: { id: 'test' } }, state()); }
+else if (cmd === 'suggest-test') { await handleSuggest({ type: 'suggest', mid: 'sgtest' + Date.now(), text: a || 'FAMILY FIRST test idea', cardId: b || null, ts: new Date().toISOString(), device: { id: 'test' }, test: true }, state()); }
 else if (cmd === 'relay') {
   const body = gh('issue', 'view', a, '--repo', REPO, '--json', 'body', '-q', '.body');
   const c = JSON.parse(gh('api', `repos/${REPO}/issues/comments/${b}`));
@@ -346,4 +374,4 @@ else if (cmd === 'relay') {
 } else if (cmd === 'relay-event') {
   const ev = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   await relayComment(ev.issue.body, { ...ev.comment, issue: ev.issue.number });
-} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | refresh-test [bank|inbox] | pick-test <bot> <id> <H,J> | once [since] | relay <issue> <commentId> | relay-event');
+} else console.log('usage: hq-bridge.mjs watch | webhook-test | slack-test [text] | refresh-test [bank|inbox] | suggest-test [text] [cardId] | pick-test <bot> <id> <H,J> | once [since] | relay <issue> <commentId> | relay-event');

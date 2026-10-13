@@ -7,9 +7,9 @@
 // encrypted per-device feed). Swipe RIGHT = KEEP, LEFT = PASS. Controller (while you aim at the screen): A / RB / D-pad ▶ keep,
 // B / LB / D-pad ◀ pass, X / D-pad ▼ undo, A on the summary = reshuffle. iPad: tap the right half (KEEP) or left half (PASS),
 // UNDO / RESHUFFLE buttons along the bottom. Every swipe is queued on this device and sent through the encrypted HQ relay
-// (type:'swipe'); the box logs it as training data. The "AI SUGGEST" button is a disabled stub (no paid LLM).
+// (type:'swipe'); the box logs it as training data. HQ #92: SUGGEST opens the Suggestion Box (iPad keyboard) → type:'suggest' to Kelly's suggestions.jsonl.
 const CW = 1280, CH = 800, FONT = 'system-ui,-apple-system,Segoe UI,Arial', HEAD = 86, FOOT = 104, ZONE = 112;
-const ST_KEY = 'hq.swipe', DECK_KEY = 'hq.swipeDeck', OUT_KEY = 'hq.swipe.out';
+const ST_KEY = 'hq.swipe', DECK_KEY = 'hq.swipeDeck', OUT_KEY = 'hq.swipe.out', SUG_KEY = 'hq.suggest.recent';
 const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch (e) { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
@@ -24,7 +24,7 @@ function wrap(g, text, maxW, maxLines) {
 }
 function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 
-export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4, sendSwipes, toast = () => {} }) {
+export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4, sendSwipes, toast = () => {}, onSuggest = null }) {
   const cv = document.createElement('canvas'); cv.width = CW; cv.height = CH; const g = cv.getContext('2d');
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   const grp = new THREE.Group(); grp.position.set(x, y, z); grp.rotation.y = ry; parent.add(grp);
@@ -35,7 +35,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
   for (const sx of [-0.35, 0.35]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.05), bezel.material); m.position.set(sx * w, 0, -0.01); grp.add(m); } // wall brackets
 
   let status = '', lastDraw = 0, deck = load(DECK_KEY, null), st = load(ST_KEY, null), out = load(OUT_KEY, []), hover = null, anim = null, dirty = true, sending = false, lastSend = 0;
-  let lastSwipe = 0, armed = 0; // armed = RESET DECK waiting for its confirm press (until this time)
+  let lastSwipe = 0, armed = 0, flashMsg = '', flashUntil = 0; // armed = RESET DECK confirm; flash = 'Sent to Kelly' etc.
   const imgs = new Map();
   function imgsFor(d) { imgs.clear(); for (const c of d?.cards || []) if (c.d) { const im = new Image(); im.onload = () => { dirty = true; }; im.src = c.d; imgs.set(c.id, im); } }
   const byId = id => deck?.cards.find(c => c.id === id);
@@ -194,11 +194,14 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     g.fillStyle = '#121a24'; g.fillRect(0, CH - FOOT, CW, FOOT);
     btn(R.undo, '↶ UNDO · X', !!st?.history.length, hover === 'undo', '#3a4150', 28);
     btn(R.reset, isArmed() ? 'TAP AGAIN = RESET' : '↻ RESET DECK · Y', !!deck, hover === 'reset', isArmed() ? '#b03a3a' : '#5a3a3a', isArmed() ? 24 : 26);
-    btn(R.ai, '✨ AI SUGGEST · soon', false, false, '#3a4150', 20);
+    btn(R.ai, '✉ SUGGEST', true, hover === 'suggest', '#6b4f12', 22);
     const mid = (R.reset.x + R.reset.w + R.ai.x) / 2;
     g.fillStyle = 'rgba(255,255,255,.75)'; g.font = `700 20px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(!deck ? '' : isArmed() ? 'Press RESET again to clear this round' : !cur ? 'X undo · Y Y reset · ▶ new round' : 'Tap right = KEEP · left = PASS', mid, CH - FOOT / 2 - 12);
-    g.font = `500 16px ${FONT}`; g.fillStyle = 'rgba(255,255,255,.45)'; g.fillText('reset clears this round from training · Printful + Tapstitch only', mid, CH - FOOT / 2 + 18); g.textAlign = 'left';
+    const flash = Date.now() < flashUntil ? flashMsg : '';
+    g.fillText(flash || (!deck ? '' : isArmed() ? 'Press RESET again to clear this round' : !cur ? 'X undo · Y Y reset · ▶ new round' : 'Tap right = KEEP · left = PASS'), mid, CH - FOOT / 2 - 12);
+    g.font = `500 16px ${FONT}`; g.fillStyle = flash ? '#9fe0b0' : 'rgba(255,255,255,.45)';
+    let sugN = 0; try { sugN = (JSON.parse(localStorage.getItem(SUG_KEY) || '[]') || []).length; } catch (e) {}
+    g.fillText(flash ? 'Kelly will use it for the next design deck' : (sugN ? `Suggestion Box · ${sugN} idea${sugN === 1 ? '' : 's'} from this iPad · Printful + Tapstitch` : 'SUGGEST = idea for Kelly · reset clears this round from training'), mid, CH - FOOT / 2 + 18); g.textAlign = 'left';
     tex.needsUpdate = true;
   }
 
@@ -211,7 +214,7 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     // uv on the screen -> 'keep' | 'pass' | 'undo' | 'reset' | 'next' | 'idle'
     hit(uv) {
       if (!uv) return 'idle'; const px = uv.x * CW, py = (1 - uv.y) * CH, inR = (r, pad = 10) => px > r.x - pad && px < r.x + r.w + pad && py > r.y - pad && py < r.y + r.h + pad;
-      if (py > CH - FOOT - 4) return inR(R.undo) ? 'undo' : inR(R.reset) ? 'reset' : 'idle';
+      if (py > CH - FOOT - 4) return inR(R.undo) ? 'undo' : inR(R.reset) ? 'reset' : inR(R.ai) ? 'suggest' : 'idle';
       if (!deck || py < HEAD) return 'idle';
       if (!curId()) return inR(BIG.undo, 16) ? 'undo' : inR(BIG.reset, 16) ? 'reset' : inR(BIG.next, 16) ? 'next' : 'idle'; // HQ #89: no more tap-anywhere reshuffle
       return px < CW / 2 ? 'pass' : 'keep';
@@ -219,7 +222,8 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     setHover(k) { if (hover !== k) { hover = k; dirty = true; } },
     // one action: 'keep' | 'pass' | 'undo' | 'reset' | 'next' ('shuffle' = old name for reset). Returns what happened for the toast.
     act(k) {
-      if (!deck) return 'nodeck';
+      if (k === 'suggest') { try { onSuggest?.({ cardId: curId(), cardTitle: byId(curId())?.title || '', deckId: deck?.id || null }); } catch (e) {} return 'suggest'; }
+      if (!deck && k !== 'suggest') return 'nodeck';
       if (k === 'undo') return undo();
       if (k === 'reset' || k === 'shuffle') return resetPress();
       if (k === 'next') return nextRound();
@@ -239,17 +243,20 @@ export function createSwipeWall({ THREE, parent, x, y, z, ry, w = 2.24, h = 1.4,
     },
     hint(k) {
       const end = deck && !curId();
+      if (k === 'suggest') return '✉ Suggestion Box · type a design idea for Kelly';
       if (!deck) return '🃏 Design Trainer · loading the designer’s deck';
       if (k === 'undo') return '↶ Undo last swipe · X / tap';
       if (k === 'reset') return isArmed() ? '↻ Press again to RESET (clears this round)' : '↻ Reset deck · Y twice / tap twice';
       if (k === 'next') return '✓ Save this round + reshuffle · RB / ▶ / tap';
-      if (end) return 'Deck done · X undo · Y Y reset · RB new round';
+      if (end) return 'Deck done · X undo · Y Y reset · RB new round · SUGGEST for ideas';
       return k === 'pass' ? '◀ PASS · B / LB / ◀ / tap left' : '▶ KEEP · A / RB / ▶ / tap right';
     },
     pending: () => out.length,
     stats: () => ({ ...counts(), pending: out.length, deck: deck?.id, source: deck?.source, cur: curId(), round: st?.round || 0, hist: st?.history.length || 0, armed: isArmed(), done: !!deck && !curId() }),
     outbox: () => out.slice(),
-    tick(t, visible) { if (!visible) return; if (dirty || anim || (!deck && t - lastDraw > 450)) { dirty = false; lastDraw = t; try { draw(t); } catch (e) { status = 'draw error: ' + String(e?.message || e).slice(0, 60); console.warn('swipe draw', e); tex.needsUpdate = true; } } },
+    curCard: () => { const id = curId(); const c = id && byId(id); return c ? { id: c.id, title: c.title } : null; },
+    noteSent(text) { flashMsg = '✉ Sent to Kelly'; flashUntil = Date.now() + 2800; dirty = true; setTimeout(() => { dirty = true; }, 2900); toast?.('✉ Sent to Kelly', 1800); },
+    tick(t, visible) { if (!visible) return; if (dirty || anim || Date.now() < flashUntil || (!deck && t - lastDraw > 450)) { dirty = false; lastDraw = t; try { draw(t); } catch (e) { status = 'draw error: ' + String(e?.message || e).slice(0, 60); console.warn('swipe draw', e); tex.needsUpdate = true; } } },
     flush,
   };
 }

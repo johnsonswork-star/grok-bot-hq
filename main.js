@@ -1,4 +1,5 @@
 import { createChat } from './chat.js';
+import { createSuggestBox } from './suggest.js';
 import * as THREE from './vendor/three.module.js';
 import { STATIONS } from './stations.js';
 import { createWorkers } from './workers.js';
@@ -7,7 +8,7 @@ import { createMonitors } from './monitors.js';
 import { createTalk } from './talk.js';
 import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
-import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick, fetchSwipeDeck, swipeStatus, sendSwipes } from './hq-link.js';
+import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick, fetchSwipeDeck, swipeStatus, sendSwipes, sendSuggest } from './hq-link.js';
 import { createSwipeWall } from './swipe.js';
 
 // ---------- device detection ----------
@@ -1197,8 +1198,22 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
 // HQ #85: Design Trainer wall screen. Warehouse east wall between the steel stairs and Darryl's desk (where Chris pointed:
 // standing at x -15.6, z -1.7 facing east). Tinder-style KEEP / PASS on the designer's real Printful + Tapstitch ideas (swipe.js).
 const SWIPE_AT = { x: BASE.x1 - 0.13, z: -1.5, y: 1.8 };
-const swipeWall = createSwipeWall({ THREE, parent: BASEMENT, x: SWIPE_AT.x, y: SWIPE_AT.y, z: SWIPE_AT.z, ry: -Math.PI / 2, w: 2.4, h: 1.5, sendSwipes, toast: (...a) => toast(...a) });
-BASEMENT.add(plate('DESIGN TRAINER', SWIPE_AT.x - 0.01, SWIPE_AT.y + 1.03, SWIPE_AT.z, -Math.PI / 2, { w: 1.1, sub: 'SWIPE ▶ KEEP · ◀ PASS · KELLY KAPOOR' }));
+// HQ #92: Suggestion Box overlay (iPad keyboard) — opened from the wall's SUGGEST button
+const suggestBox = createSuggestBox({
+  toast: (...a) => toast(...a),
+  getContext: () => { const c = swipeWall.curCard?.(); return { cardId: c?.id || null, cardTitle: c?.title || '', deckId: swipeWall.deckId?.() || null }; },
+  onSent: ({ text }) => { try { swipeWall.noteSent?.(text); } catch (e) {} },
+  onOpenChange: open => { if (open) { try { document.exitPointerLock?.(); } catch (e) {} } },
+});
+const swipeWall = createSwipeWall({ THREE, parent: BASEMENT, x: SWIPE_AT.x, y: SWIPE_AT.y, z: SWIPE_AT.z, ry: -Math.PI / 2, w: 2.4, h: 1.5, sendSwipes, toast: (...a) => toast(...a),
+  onSuggest: ctx => suggestBox.show(ctx || {}) });
+BASEMENT.add(plate('DESIGN TRAINER', SWIPE_AT.x - 0.01, SWIPE_AT.y + 1.03, SWIPE_AT.z, -Math.PI / 2, { w: 1.1, sub: 'SWIPE ▶ KEEP · ◀ PASS · ✉ SUGGEST' }));
+// HQ #92: small physical Suggestion Box prop under the wall (south of screen, toward Darryl)
+{ const bx = SWIPE_AT.x - 0.35, bz = SWIPE_AT.z + 1.15;
+  box(0.28, 0.22, 0.22, M.oak || std('#7a5a35', 0.8), bx, 0.11, bz, BASEMENT, false);
+  box(0.3, 0.02, 0.24, std('#3a2a18', 0.85), bx, 0.23, bz, BASEMENT, false); // lid
+  BASEMENT.add(plate('SUGGESTION BOX', bx, 0.55, bz, -Math.PI / 2, { w: 0.55, sub: 'TAP ✉ ON THE WALL' }));
+}
 // hangPlate() with a custom ceiling height (the warehouse ceiling is higher than the office's)
 function hangPlateAt(make, x, y, z, ry, w, ceil) {
   make(x, y, z + Math.cos(ry) * 0.006, ry); make(x, y, z - Math.cos(ry) * 0.006, ry + Math.PI);
@@ -1937,13 +1952,13 @@ renderer.domElement.addEventListener('click', e => {
 });
 document.addEventListener('pointerlockchange', () => {
   // Esc releases the lock: treat that as "pause" unless we released it ourselves
-  if (CAN_LOCK && !document.pointerLockElement && !paused && !chat.isOpen() && lastInput === 'mouse') setPaused(true);
+  if (CAN_LOCK && !document.pointerLockElement && !paused && !chat.isOpen() && !suggestBox.isOpen() && lastInput === 'mouse') setPaused(true);
 });
 let lastInput = 'mouse';
 addEventListener('mousemove', e => { if (document.pointerLockElement) { mouseDX += e.movementX; mouseDY += e.movementY; lastInput = 'mouse'; } });
 addEventListener('keydown', e => {
-  if (chat.isOpen()) { // typing in chat: don't walk / interact
-    if (e.code === 'Escape') { e.preventDefault(); chat.close(); }
+  if (chat.isOpen() || suggestBox.isOpen()) { // typing in chat / suggestion box: don't walk / interact
+    if (e.code === 'Escape') { e.preventDefault(); if (suggestBox.isOpen()) suggestBox.close(); else chat.close(); }
     return;
   }
   if ((e.code === 'Enter' || e.code === 'KeyT') && !paused) { e.preventDefault(); openChat(); return; }
@@ -2243,6 +2258,7 @@ function swipeAct(k) {
   else if (r === 'next') toast('✓ Round saved · new shuffled round', 1800);
   else if (r === 'endhint' || r === 'end') toast('Deck done · X undo · Y twice reset · RB new round', 2200);
   else if (r === 'nodeck') toast('The designer’s deck is still loading', 1800);
+  else if (r === 'suggest') toast('✉ Suggestion Box · type an idea for Kelly', 1400);
   return r;
 }
 function refreshHit() {
@@ -2278,7 +2294,7 @@ function pickFeedback(id, r) {
 }
 let workPoll = null;
 function tapAt(x, y) {
-  if (paused || chat.isOpen()) return false;
+  if (paused || chat.isOpen() || suggestBox.isOpen()) return false;
   const r = canvasEl.getBoundingClientRect();
   ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -2287,7 +2303,7 @@ function tapAt(x, y) {
 }
 function updateHover() {
   let k = null;
-  if (!paused && !chat.isOpen() && !panelOpen) { camera.getWorldDirection(tmpV); raycaster.set(camera.position, tmpV); k = refreshHit(); }
+  if (!paused && !chat.isOpen() && !suggestBox.isOpen() && !panelOpen) { camera.getWorldDirection(tmpV); raycaster.set(camera.position, tmpV); k = refreshHit(); }
   if (k === hoverKind) return;
   hoverKind = k;
   const pk = k && /^b?pick:/.test(k) ? k.split(':') : null, onBoard = pk && pk[0] === 'bpick';
@@ -2426,7 +2442,7 @@ function handleView(gp, now) {
       holdHint.classList.toggle('show', held > 120 && !chat.isOpen());
       holdBar.style.width = Math.min(100, held / VIEW_HOLD_MS * 100) + '%';
     }
-    if (!viewFired && held >= VIEW_HOLD_MS && !paused) { viewFired = true; holdHint.classList.remove('show'); rumble(gp.pad, 80, 0.5); chat.isOpen() ? chat.close() : openChat(); }
+    if (!viewFired && held >= VIEW_HOLD_MS && !paused && !suggestBox.isOpen()) { viewFired = true; holdHint.classList.remove('show'); rumble(gp.pad, 80, 0.5); chat.isOpen() ? chat.close() : openChat(); }
   } else if (viewT0 !== null) {
     // short tap: no chat, just a tiny nudge + reminder
     if (!viewFired && !paused) { rumble(gp.pad, 30, 0.2); holdHint.textContent = 'Hold View to chat'; holdHint.appendChild(holdBar); holdBar.style.width = '0%'; holdHint.classList.add('show'); tapHintT = now + 900; }
@@ -2444,7 +2460,8 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const gp = padState();
   if (gp) handleView(gp, performance.now());
-  if (gp && chat.isOpen()) chat.pad(gp);
+  if (gp && suggestBox.isOpen()) { suggestBox.pad(gp); }
+  else if (gp && chat.isOpen()) chat.pad(gp);
   else if (gp) {
     if (gp.start) { setPaused(!paused); }
     else if (paused && gp.A) setPaused(false);
@@ -2462,7 +2479,7 @@ function tick() {
       else { if (gp.Y || gp.dpad.right) nextStation(1); if (gp.dpad.left) nextStation(-1); }
     }
   }
-  if (!paused && !chat.isOpen()) {
+  if (!paused && !chat.isOpen() && !suggestBox.isOpen()) {
     let mx = 0, mz = 0, lx = 0, ly = 0, sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
     if (keys.has('KeyW') || keys.has('ArrowUp')) mz -= 1;
     if (keys.has('KeyS') || keys.has('ArrowDown')) mz += 1;
@@ -2543,7 +2560,7 @@ startLiveReload({
 });
 tick();
 // debug hook for automated screenshots
-window.__office = { swipeWall, swipeNear, SWIPE_AT, tapAt, BAY, BAYG, dockY, WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
+window.__office = { swipeWall, suggestBox, swipeNear, SWIPE_AT, tapAt, BAY, BAYG, dockY, WHD, WST, WSTAIR, stairY, onStairs, renderer, tryMove, BCOL, ELEV, MST, LDOOR, FLOORS, updateFloors, inCore, inCar, scene, BY, EXT, LOBBY, OUTSIDE, BASEMENT, FRONT_DOOR, updateLevel, talk, IDLE_SPOTS, blocked, freeStand, player, stations, setPaused, nextStation, IS_IOS, CAN_LOCK, chat, openChat, snapshot, workers, monitors, whiteboard, camera, colliders, ROOMS, LAYOUT };
 
 // ---------- PWA: offline-capable once loaded (network-first, so updates show up right away) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
