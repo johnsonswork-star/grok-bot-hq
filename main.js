@@ -1038,6 +1038,23 @@ const BAY = { dh: 3.2, doors: [
 ], truckDoor: null, ramp: { z0: 6.3, z1: 8.3 }, truckZ1: 15.2, told: 0 };
 const BAYG = new THREE.Group(); BAYG.position.y = BY; BAYG.visible = false; scene.add(BAYG);
 const BASEMENT = new THREE.Group(); BASEMENT.position.y = BY; BASEMENT.visible = false; scene.add(BASEMENT);
+// HQ #95: Darryl sits at his foreman desk (chair at x -12.15, z 0.6, facing the east-wall desk) and is animated every frame
+const DARRYL_AT = { x: -12.15, z: 0.6, ry: -Math.PI / 2 }; let DARRYL = null;
+function animateDarryl(t, pl) {
+  const d = DARRYL; if (!d) return;
+  const breath = Math.sin(t * 1.7), cyc = (t / 22) % 1;
+  const u = Math.min(1, Math.max(0, Math.min((cyc - 0.62) / 0.06, (1 - cyc) / 0.06))), typ = 1 - u; // 0 working the keyboard .. 1 sat back, hands folded
+  d.body.position.set(0, -0.27, -0.04);
+  d.legL.rotation.x = d.legR.rotation.x = 1.45; d.kneeL.rotation.x = d.kneeR.rotation.x = -1.4;
+  const k = t * 8, tl = 0.42 + Math.max(0, Math.sin(k)) ** 2 * 0.06, tr = 0.42 + Math.max(0, Math.sin(k + 1.9)) ** 2 * 0.06;
+  const az = 0.16 * typ + 0.3 * u, el = 1.0 * typ + 1.2 * u;
+  d.armL.rotation.set(tl * typ + 0.42 * u, 0, az); d.armR.rotation.set(tr * typ + 0.42 * u, 0, -az); d.elbowL.rotation.x = el; d.elbowR.rotation.x = el;
+  d.spine.rotation.set(-0.06 * typ - 0.02 * u + breath * 0.012, 0, 0); d.torso.scale.set(1 + breath * 0.012, 1, 1 + breath * 0.02);
+  let hx = 0.12 * typ, hy = u * Math.sin(t * 0.9) * 0.6 + typ * Math.sin(t * 0.37) * 0.1;
+  if (pl.level === -1) { const dx = pl.pos.x - DARRYL_AT.x, dz = pl.pos.z - DARRYL_AT.z; // look up at Chris when he walks over
+    if (Math.hypot(dx, dz) < 3.2) { let a = Math.atan2(-dx, -dz) - DARRYL_AT.ry; a = Math.atan2(Math.sin(a), Math.cos(a)); if (Math.abs(a) < 1.6) { hy = hy * 0.2 + a * 0.8; hx *= 0.2; } } }
+  d.headG.rotation.set(-(hx + breath * 0.015), hy, 0);
+}
 const whLight = new THREE.PointLight('#fff1d6', 0, 15, 1.6), whLight2 = new THREE.PointLight('#fff1d6', 0, 15, 1.6);
 whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5.4, 0.4); scene.add(whLight, whLight2);
 {
@@ -1189,8 +1206,9 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
   plate('DOCK 2', (BAY.doors[1].x0 + BAY.doors[1].x1) / 2, 3.95, B.z1 - 0.14, Math.PI, { w: 0.9, sub: 'GROUND LEVEL · TO THE YARD' });
   plate('DUNDER MIFFLIN', -24.0, 3.1, B.z1 - 0.14, Math.PI, { w: 1.8, sub: 'WAREHOUSE · SHIPPING & RECEIVING' });
   // Darryl himself, at his desk (static, no AI: he's set dressing until a warehouse bot exists)
-  const dar = buildCharacter({ id: 'darryl', name: 'Darryl Philbin', color: '#3d5a80' }); dar.root.position.set(-12.75, 0, 1.7); dar.root.rotation.y = -Math.PI / 2 - 0.4;
-  dar.armR.rotation.x = -0.5; dar.elbowR.rotation.x = -0.9; scene.add(dar.root); addCollider(-12.75, 1.7, 0.5, 0.5);
+  // HQ #95: he used to stand frozen beside his empty chair with one arm stuck out. Now he sits in it and works (animateDarryl)
+  const dar = buildCharacter({ id: 'darryl', name: 'Darryl Philbin', color: '#3d5a80' }); dar.root.position.set(DARRYL_AT.x, 0, DARRYL_AT.z); dar.root.rotation.y = DARRYL_AT.ry;
+  scene.add(dar.root); addCollider(DARRYL_AT.x, DARRYL_AT.z, 0.55, 0.55); DARRYL = dar;
   // move everything built above into the basement group, and its colliders into the downstairs set
   const made = scene.children.slice(n0); for (const o of made) BASEMENT.add(o);
   BCOL.push(...colliders.splice(c0));
@@ -2519,6 +2537,7 @@ function tick() {
   camera.position.set(player.pos.x, EYE + player.y, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
   workers.update(dt, clock.elapsedTime, player);
+  if (BASEMENT.visible) animateDarryl(clock.elapsedTime, player); // HQ #95
   talk.update(dt, player);
   if ((needsT += dt) > 2) { needsT = 0; talk.onNeeds(monitors.needs()); }
   if (!hoverKind) setFocus(paused ? null : findFocus()); else if (paused) setFocus(null);
