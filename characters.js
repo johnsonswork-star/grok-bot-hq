@@ -30,13 +30,31 @@ const BY_NAME = Object.fromEntries(Object.values(LOOKS).map(l => [l.who, l]));
 export function lookFor(st) { return LOOKS[st.id] || BY_NAME[st.name] || { who: st.name, skin: '#f1c9a5', hair: ['short', '#3a2a1e'], top: st.color, pants: '#2f3640', mood: 'smile' }; }
 
 // ---------- merged-part builder ----------
-const charMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 });
+// HQ #90: ONE shared PBR material for every merged part; per-vertex `surf` (roughness, metalness, sheen) lets skin, hair,
+// eyes, fabric, leather shoes and metal buckles each read correctly without extra draw calls or materials.
+const charMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
+charMat.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 surf;\nvarying vec3 vSurf;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSurf = surf;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vSurf;')
+    .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vSurf.x;')
+    .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vSurf.y;')
+    .replace('#include <opaque_fragment>', `{ float fres = pow(1.0 - saturate(dot(normalize(vViewPosition), normal)), 3.0);
+      outgoingLight += diffuseColor.rgb * fres * vSurf.z * 0.35; // cloth sheen / skin rim
+      outgoingLight += vec3(0.06, 0.012, 0.0) * diffuseColor.rgb * step(0.5, vSurf.z) * step(vSurf.z, 0.7); } // skin warmth (subsurface fake)
+    #include <opaque_fragment>`);
+};
+charMat.customProgramCacheKey = () => 'char-hq90';
+// surface presets [roughness, metalness, sheen]; sheen 0.6 marks skin for the warmth term
+const SURF = { fabric: [0.88, 0, 0.9], skin: [0.52, 0, 0.6], hair: [0.42, 0, 0.3], eye: [0.08, 0, 0], leather: [0.32, 0, 0.1], metal: [0.28, 0.9, 0], plastic: [0.35, 0, 0] };
+let SURF_BY = {}; // color hex -> preset, set per character in buildCharacter
+const surfFor = hex => SURF_BY[new THREE.Color(hex).getHexString()] || SURF.fabric;
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 class Part {
   constructor() { this.items = []; }
-  add(geo, color, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) { this.items.push({ geo, color, p, r, s }); return this; }
+  add(geo, color, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1], surf) { this.items.push({ geo, color, p, r, s, surf }); return this; }
   mesh(shadow = false) {
-    const pos = [], nor = [], col = [];
+    const pos = [], nor = [], col = [], srf = [];
     const c = new THREE.Color();
     for (const it of this.items) {
       let g = it.geo.index ? it.geo.toNonIndexed() : it.geo.clone();
@@ -45,13 +63,15 @@ class Part {
       c.set(it.color);
       const P = g.attributes.position.array, N = g.attributes.normal.array;
       for (let k = 0; k < P.length; k++) { pos.push(P[k]); nor.push(N[k]); }
-      for (let k = 0; k < P.length / 3; k++) col.push(c.r, c.g, c.b);
+      const sf = it.surf || surfFor(it.color);
+      for (let k = 0; k < P.length / 3; k++) { col.push(c.r, c.g, c.b); srf.push(sf[0], sf[1], sf[2]); }
       g.dispose();
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute('surf', new THREE.Float32BufferAttribute(srf, 3));
     geo.computeBoundingSphere();
     const m = new THREE.Mesh(geo, charMat); m.castShadow = shadow; return m;
   }
@@ -79,6 +99,8 @@ const G = {
   cap: f => SPH(0.129, 28, 14, 0, PI * 2, 0, PI * f), back: (a, b) => SPH(0.128, 24, 10, 0, PI, PI * a, PI * (b - a)),
   beard: SPH(0.124, 22, 10, PI, PI, PI * 0.6, PI * 0.3), stache: CAPX(0.012, 0.055, 2, 8),
   tiny: BOX(0.03, 0.04, 0.012), pager: BOX(0.05, 0.07, 0.025), pen: CYL(0.006, 0.006, 0.06, 6), earring: SPH(0.012, 8, 6), bead: SPH(0.011, 6, 4),
+  finger: CAP(0.0105, 0.042, 2, 6), sole: BOX(0.1, 0.018, 0.2), lace: BOX(0.04, 0.006, 0.05), crease: BOX(0.004, 0.3, 0.004), shirtPocket: BOX(0.05, 0.055, 0.008),
+  lidBlink: SPH(0.0225, 12, 8, 0, PI * 2, 0, PI * 0.62),
   button: CYL(0.009, 0.009, 0.006, 8).rotateX(PI / 2),
 };
 const shade = (hex, k) => { const c = new THREE.Color(hex); c.multiplyScalar(k); return '#' + c.getHexString(); };
@@ -212,6 +234,15 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   const pants = L.pants || L.legs || '#2f3640';
   const xs = 1.06 * wide, zs = 0.74 * wide;
   const prof = torsoProfile(L);
+  const shoeC = (L.skirt || L.dress) ? (L.dress ? '#1a1214' : '#2a1d18') : L.pants === '#c4ab7c' ? '#5a3a22' : '#1e1b19';
+  SURF_BY = {}; const reg = (hex, sf) => { if (hex) SURF_BY[new THREE.Color(hex).getHexString()] = sf; };
+  reg(L.hair[1], SURF.hair); reg(shade(L.hair[1], 0.8), SURF.hair); reg(shade(L.hair[1], 1.15), SURF.hair);
+  reg(L.beard, SURF.hair); reg(L.mustache, SURF.hair); reg(L.stubble, SURF.hair);
+  for (const k of [1, 0.96, 0.92, 0.85, 0.75]) reg(shade(L.skin, k), SURF.skin);
+  reg(L.legs, SURF.skin); reg(L.lips, [0.35, 0, 0.6]); reg('#e88a8a', SURF.skin);
+  reg('#f7f4ef', SURF.eye); reg('#ffffff', SURF.eye); reg(L.eyes || '#2a1d14', SURF.eye); reg('#f5f2ea', SURF.eye);
+  reg(shoeC, SURF.leather); reg('#c8b070', SURF.metal); reg('#e3c25a', SURF.metal); reg('#c9b06b', SURF.metal); reg('#2a221c', SURF.leather);
+  reg(L.glasses, SURF.plastic); reg('#1b1b1b', SURF.plastic); reg('#222', SURF.plastic);
   const front = y => -rAt(prof, y) * zs - 0.004 - (belly > 1.01 && y < 0.36 ? (belly - 1) * 0.11 * Math.max(0, 1 - Math.abs(y - 0.19) / 0.2) : 0);
 
   // ---- torso (spine-local: y=0 is the hip line) ----
@@ -243,6 +274,7 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
     if (L.fem && !L.sweater) for (const y of [0.42, 0.32, 0.22]) T.add(G.button, shade(outer, 0.7), [0.055, y, front(y) - 0.004]);
     if (L.vest) for (const y of [0.4, 0.3, 0.2]) T.add(G.button, shade(outer, 0.6), [0, y, front(y) - 0.006]);
   } else if (!L.dress && !L.skirt && !L.sweater) for (const y of [0.44, 0.34, 0.24]) T.add(G.button, shade(top, 0.82), [0, y, front(y) - 0.003]); // plain shirt placket
+  if (!L.open && !L.dress && !L.skirt && !L.sweater) T.add(G.shirtPocket, shade(top, 0.93), [-0.075, 0.45, front(0.45) - 0.004], [-0.1, 0, 0]); // HQ #90 breast pocket
   if (L.tie) T.add(G.knot, L.tie, [0, 0.548, front(0.545) - 0.008], [0, 0, 0], [0.85, 0.75, 0.5]).add(G.tie, L.tie, [0, 0.4, front(0.4) - 0.01], [-0.08, 0, 0]).add(G.tieTip, L.tie, [0, 0.262, front(0.27) - 0.008 - (belly > 1.2 ? 0.02 : 0)], [-0.08, 0, PI / 4]);
   if (L.skirt || L.dress) {
     const sc = L.dress ? L.top : L.skirt;
@@ -261,6 +293,12 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   const headG = new THREE.Group(); neck.add(headG);
   const H = new Part(); addFace(H, L); addHair(H, L);
   headG.add(H.mesh(true));
+  // HQ #90 blink: lids that drop over the eyes every few seconds (self-animating, no workers.js hook needed)
+  { const B = new Part(), lc = shade(L.skin, 0.9);
+    for (const sx of [-1, 1]) B.add(G.lidBlink, lc, [sx * 0.042, 0.015, -0.110], [-PI / 2 + 0.1, 0, 0], [1.08, 1, 0.62], SURF.skin);
+    const blink = B.mesh(false); blink.visible = false; headG.add(blink);
+    const off = (st.id || '').length * 1.37, per = 3.2 + ((st.id || 'x').charCodeAt(0) % 5) * 0.45;
+    H.items.length = 0; headG.children[0].onBeforeRender = () => { const t = (performance.now() / 1000 + off) % per; blink.visible = t < 0.13 || (per > 4 && t > 0.3 && t < 0.4); }; }
 
   // ---- arms: shoulder group (armL/armR) -> elbow group -> hand ----
   const sx = 0.2 * xs + 0.028 + (belly > 1.2 ? 0.02 : 0);
@@ -276,7 +314,8 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
     const F = new Part();
     if (L.sleeves === 'short') F.add(G.fore, L.skin, [0, -0.12, 0], [0, 0, 0], [0.92, 1, 0.92]);
     else F.add(G.fore, sleeveCol, [0, -0.115, 0]).add(G.cuff, L.open && !L.vest && !L.sweater ? top : shade(sleeveCol, 0.88), [0, -0.235, 0]);
-    F.add(G.hand, L.skin, [0, -0.29, -0.004], [0, 0, 0], [0.78, 1.12, 0.6]).add(G.thumb, L.skin, [-side * 0.022, -0.27, -0.02], [0.4, 0, side * 0.5]);
+    F.add(G.hand, L.skin, [0, -0.28, -0.004], [0, 0, 0], [0.8, 0.85, 0.55]).add(G.thumb, L.skin, [-side * 0.024, -0.275, -0.02], [0.4, 0, side * 0.55]);
+    for (let f = 0; f < 4; f++) F.add(G.finger, L.skin, [(f - 1.5) * 0.0155 * -side, -0.33 + Math.abs(f - 1.3) * 0.004, -0.008 - f * 0.001], [0.18, 0, (f - 1.5) * 0.05 * side], [1, 0.9 + (f === 1 || f === 2 ? 0.15 : 0), 1]); // HQ #90 fingers
     if (L.props?.includes('watch') || (side < 0 && !L.fem && L.sleeves === 'short')) F.add(G.cuff, '#222', [0, -0.235, 0], [0, 0, 0], [0.95, 0.7, 0.95]); // Dwight's watch
     el.add(F.mesh(false));
     spine.add(g); return [g, el];
@@ -289,13 +328,16 @@ export function buildCharacter(st, { cupGeo, phoneGeo, cupMat, phoneMat } = {}) 
   const shoeCol = skirted ? (L.dress ? '#1a1214' : '#2a1d18') : L.pants === '#c4ab7c' ? '#5a3a22' : '#1e1b19';
   const mkLeg = side => {
     const g = new THREE.Group(); g.position.set(side * 0.08 * xs, hip, 0);
-    const Th = new Part(); Th.add(G.thigh, legCol, [0, -0.19, 0], [0, 0, 0], skirted ? [0.82, 1, 0.82] : [1, 1, 1]);
+    const Th = new Part(); Th.add(G.thigh, legCol, [0, -0.19, 0], [0, 0, 0], skirted ? [0.82, 1, 0.82] : [1, 1, 1], skirted ? SURF.skin : undefined);
+    if (!skirted) Th.add(G.crease, shade(pants, 0.82), [0, -0.2, -0.064], [0, 0, 0], [1, 0.9, 1]);
     g.add(Th.mesh(true));
     const kn = new THREE.Group(); kn.position.y = -0.38; g.add(kn);
     const S = new Part();
     S.add(G.shin, legCol, [0, -0.17, 0], [0, 0, 0], skirted ? [0.78, 1, 0.78] : [1, 1, 1]);
     if (!skirted) S.add(CYL(0.058, 0.06, 0.04, 12, true), shade(pants, 0.85), [0, -0.33, 0]); // trouser hem
     S.add(G.shoe, shoeCol, [0, -0.38, -0.035], [0, 0, 0], [1.2, 0.85, 1]);
+    S.add(G.sole, shade(shoeCol, 0.6), [0, -0.415, -0.035], [0, 0, 0], [0.98, 1, 0.92], SURF.plastic);
+    if (!skirted) { S.add(G.lace, shade(shoeCol, 1.6), [0, -0.352, -0.085], [-0.35, 0, 0]); S.add(G.crease, shade(pants, 0.82), [0, -0.15, -0.054]); } // laces + trouser crease
     if (skirted && L.fem && L.dress) S.add(CYL(0.008, 0.008, 0.05, 6), shoeCol, [0, -0.395, 0.03]); // heel
     kn.add(S.mesh(false));
     body.add(g); return [g, kn];
