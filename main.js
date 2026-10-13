@@ -10,6 +10,7 @@ import { createWhiteboard } from './whiteboard.js';
 import { startLiveReload, takeResume } from './live.js';
 import { fetchInboxFeed, fetchBankFeed, fetchWorkFeed, fetchChatFeed, requestRefresh, requestPick, fetchSwipeDeck, swipeStatus, sendSwipes, sendSuggest } from './hq-link.js';
 import { createSwipeWall } from './swipe.js';
+import { createWarehouseWork } from './warehouse-work.js';
 
 // ---------- device detection ----------
 const UA = navigator.userAgent;
@@ -1038,8 +1039,8 @@ const BAY = { dh: 3.2, doors: [
 ], truckDoor: null, ramp: { z0: 6.3, z1: 8.3 }, truckZ1: 15.2, told: 0 };
 const BAYG = new THREE.Group(); BAYG.position.y = BY; BAYG.visible = false; scene.add(BAYG);
 const BASEMENT = new THREE.Group(); BASEMENT.position.y = BY; BASEMENT.visible = false; scene.add(BASEMENT);
-// HQ #95: Darryl sits at his foreman desk (chair at x -12.15, z 0.6, facing the east-wall desk) and is animated every frame
-const DARRYL_AT = { x: -12.15, z: 0.6, ry: -Math.PI / 2 }; let DARRYL = null;
+// HQ #95: Darryl sits at his foreman desk; HQ #96: between desk stretches he drives the forklift / pushes the pallet jack (warehouse-work.js)
+const DARRYL_AT = { x: -12.15, z: 0.6, ry: -Math.PI / 2 }; let DARRYL = null, WH = null;
 function animateDarryl(t, pl) {
   const d = DARRYL; if (!d) return;
   const breath = Math.sin(t * 1.7), cyc = (t / 22) % 1;
@@ -1147,7 +1148,7 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
   // pallet racking. Loads are single textured blocks (cheap on iPad)
   const loadTex = paperTex.clone(); loadTex.wrapS = loadTex.wrapT = THREE.RepeatWrapping; loadTex.repeat.set(3, 2); loadTex.needsUpdate = true;
   const load = std('#ffffff', 0.85, 0, { map: loadTex });
-  function rack(x, z0, z1, depth, levels = [0.15, 1.5, 2.85]) {
+  function rack(x, z0, z1, depth, levels = [0.15, 1.5, 2.85], free = []) { // free: [slot, level] left open for Darryl's forklift (HQ #96)
     const n = Math.round((z1 - z0) / 2.6);
     for (let i = 0; i <= n; i++) { const z = z0 + (z1 - z0) * i / n; for (const dx of [-depth / 2, depth / 2]) box(0.09, 3.95, 0.09, rackOr, x + dx, 1.975, z, scene, false); }
     for (const y of levels.slice(1)) for (const dx of [-depth / 2, depth / 2]) box(0.07, 0.14, z1 - z0, rackBl, x + dx, y - 0.07, (z0 + z1) / 2, scene, false);
@@ -1155,6 +1156,7 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
       const zm = z0 + (z1 - z0) * (i + 0.5) / n, bw = (z1 - z0) / n - 0.25;
       levels.forEach((y, li) => {
         if ((i * 7 + li * 3 + Math.round(x)) % 5 === 4) return; // a few empty slots
+        if (free.some(([a, b]) => a === i && b === li)) return;
         box(depth - 0.1, 0.12, bw, M.pallet, x, y + 0.06, zm, scene, false);
         const hgt = 0.85 + ((i + li) % 3) * 0.12; box(depth - 0.2, hgt, bw - 0.12, load, x, y + 0.12 + hgt / 2, zm, scene, false);
       });
@@ -1162,12 +1164,12 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
     addCollider(x, (z0 + z1) / 2, depth + 0.12, z1 - z0 + 0.12);
   }
   rack(-26.25, -7.3, 5.3, 1.1);       // along the west wall
-  rack(-22.4, -7.2, -1.6, 1.1);       // middle runs, gap in the middle so you can cut across
-  rack(-22.4, 1.6, 5.4, 1.1);
+  rack(-22.4, -7.2, -1.6, 1.1, undefined, [[1, 0], [1, 1]]);       // middle runs, gap in the middle so you can cut across
+  rack(-22.4, 1.6, 5.4, 1.1, undefined, [[0, 0], [0, 1]]);          // HQ #96: east-face slots Darryl loads / unloads
   // a single shrink-wrapped pallet of paper (pallet + one textured load)
   const ptex = paperTex.clone(); ptex.wrapS = ptex.wrapT = THREE.RepeatWrapping; ptex.repeat.set(2, 3); ptex.needsUpdate = true; const pload = std('#ffffff', 0.85, 0, { map: ptex });
   function pallet(x, z, h = 1.1, ry = 0) { box(1.2, 0.14, 1.0, M.pallet, x, 0.07, z, scene, false).rotation.y = ry; box(1.1, h, 0.92, pload, x, 0.14 + h / 2, z, scene, false).rotation.y = ry; addCollider(x, z, 1.25, 1.05, ry); }
-  pallet(-18.6, 4.9, 1.2); pallet(-13.3, 4.9, 0.9); pallet(-11.95, 4.9, 1.3); pallet(-19.0, -6.9, 1.0);
+  pallet(-11.95, 4.9, 1.3); // HQ #96: the other floor pallets are movable now (warehouse-work.js)
   // Darryl's foreman corner: HQ #83 moved it off the NE corner (the stairs live there now) to the east wall, south of the stairs
   box(0.7, 0.05, 1.4, M.oak, -11.55, 0.74, 0.6); box(0.05, 0.7, 1.35, M.steel, -11.22, 0.36, 0.6); addCollider(-11.55, 0.6, 0.7, 1.4);
   chair(scene, -12.15, 0.6, -Math.PI / 2);
@@ -1186,29 +1188,19 @@ whLight.position.set(-22.5, BY + 5.4, -3.5); whLight2.position.set(-15.0, BY + 5
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 10), std('#d35400', 0.7)); ball.position.set(-16.6, 0.12, -5.4); scene.add(ball);
     const key = canvasTex(128, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = '#f2f2ee'; g.lineWidth = 4; g.strokeRect(30, 0, 68, 90); g.beginPath(); g.arc(64, 90, 34, 0, Math.PI); g.stroke(); });
     const km = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: key, transparent: true, depthWrite: false })); km.rotation.x = -Math.PI / 2; km.position.set(hx, 0.014, B.z0 + 1.7); scene.add(km); }
-  // forklift (yellow, mast + forks, overhead guard) parked in the main aisle
-  { const g = new THREE.Group(); g.position.set(-20.4, 0, -4.2); g.rotation.y = 0.1; scene.add(g);
-    const fy = std('#f2b705', 0.5, 0.2), blk = std('#1f1f1f', 0.8);
-    box(1.1, 0.75, 1.7, fy, 0, 0.6, 0.15, g, false); box(1.0, 0.5, 0.5, blk, 0, 0.55, 1.05, g, false);
-    box(0.5, 0.12, 0.5, blk, 0, 1.05, 0.35, g, false); box(0.45, 0.5, 0.08, blk, 0, 1.35, 0.6, g, false);
-    for (const sx of [-0.5, 0.5]) { box(0.06, 1.5, 0.06, blk, sx, 1.7, -0.35, g, false); box(0.06, 1.5, 0.06, blk, sx, 1.7, 0.85, g, false); }
-    box(1.06, 0.06, 1.3, blk, 0, 2.45, 0.25, g, false);
-    for (const sx of [-0.3, 0.3]) box(0.08, 2.4, 0.1, std('#444', 0.5, 0.5), sx, 1.2, -0.72, g, false);
-    for (const sx of [-0.3, 0.3]) box(0.12, 0.05, 1.1, std('#333', 0.5, 0.6), sx, 0.12, -1.3, g, false);
-    const wg = new THREE.CylinderGeometry(0.26, 0.26, 0.2, 12);
-    for (const [wx, wz] of [[-0.58, -0.35], [0.58, -0.35], [-0.58, 0.75], [0.58, 0.75]]) { const w = new THREE.Mesh(wg, blk); w.rotation.z = Math.PI / 2; w.position.set(wx, 0.26, wz); g.add(w); }
-    addCollider(-20.4, -4.45, 1.3, 2.9, 0.1); }
-  // pallet jack by the dock
-  { const g = new THREE.Group(); g.position.set(-15.9, 0, 3.6); g.rotation.y = -0.4; scene.add(g);
-    const red = std('#c62828', 0.5, 0.3); box(0.55, 0.08, 1.2, red, 0, 0.08, 0, g, false); box(0.2, 0.3, 0.2, red, 0, 0.25, 0.65, g, false);
-    const hdl = box(0.04, 1.1, 0.04, std('#222', 0.5, 0.5), 0, 0.8, 0.8, g, false); hdl.rotation.x = 0.3; addCollider(-15.9, 3.6, 0.8, 1.4, -0.4); }
+  // HQ #96: forklift + pallet jack are built (and driven by Darryl) in warehouse-work.js, created below
   plate('LOADING DOCK', (BAY.doors[0].x0 + BAY.doors[0].x1) / 2, 3.95, B.z1 - 0.14, Math.PI, { w: 1.1, sub: 'DOCK 1 · TRUCK LEVEL' });
   plate('DOCK 2', (BAY.doors[1].x0 + BAY.doors[1].x1) / 2, 3.95, B.z1 - 0.14, Math.PI, { w: 0.9, sub: 'GROUND LEVEL · TO THE YARD' });
   plate('DUNDER MIFFLIN', -24.0, 3.1, B.z1 - 0.14, Math.PI, { w: 1.8, sub: 'WAREHOUSE · SHIPPING & RECEIVING' });
   // Darryl himself, at his desk (static, no AI: he's set dressing until a warehouse bot exists)
   // HQ #95: he used to stand frozen beside his empty chair with one arm stuck out. Now he sits in it and works (animateDarryl)
-  const dar = buildCharacter({ id: 'darryl', name: 'Darryl Philbin', color: '#3d5a80' }); dar.root.position.set(DARRYL_AT.x, 0, DARRYL_AT.z); dar.root.rotation.y = DARRYL_AT.ry;
-  scene.add(dar.root); addCollider(DARRYL_AT.x, DARRYL_AT.z, 0.55, 0.55); DARRYL = dar;
+  // HQ #96: and between desk stretches he drives the forklift / pushes the pallet jack, reorganizing the racks + floor
+  // HQ #95/#96: warehouse-work.js owns Darryl (desk sit + forklift + pallet jack). Fallback = desk-only if it throws.
+  try { WH = createWarehouseWork({ THREE, parent: scene, box, std, M, loadMat: pload, colliders, buildCharacter, desk: DARRYL_AT }); DARRYL = WH.rig; }
+  catch (e) { console.warn('HQ #96 warehouse work failed, Darryl stays at his desk', e);
+    const dar = buildCharacter({ id: 'darryl', name: 'Darryl Philbin', color: '#3d5a80' }); scene.add(dar.root); addCollider(DARRYL_AT.x, DARRYL_AT.z, 0.55, 0.55); DARRYL = dar;
+    WH = { update: (t, pl) => animateDarryl(t, pl) }; }
+  DARRYL.root.position.set(DARRYL_AT.x, 0, DARRYL_AT.z); DARRYL.root.rotation.y = DARRYL_AT.ry;
   // move everything built above into the basement group, and its colliders into the downstairs set
   const made = scene.children.slice(n0); for (const o of made) BASEMENT.add(o);
   BCOL.push(...colliders.splice(c0));
@@ -2556,7 +2548,7 @@ function tick() {
   camera.position.set(player.pos.x, EYE + player.y, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
   workers.update(dt, clock.elapsedTime, player);
-  if (BASEMENT.visible) animateDarryl(clock.elapsedTime, player); // HQ #95
+  if (BASEMENT.visible && WH) WH.update(clock.elapsedTime, player, dt); // HQ #95 desk + HQ #96 forklift / pallet jack work
   talk.update(dt, player);
   if ((needsT += dt) > 2) { needsT = 0; talk.onNeeds(monitors.needs()); }
   if (!hoverKind) setFocus(paused ? null : findFocus()); else if (paused) setFocus(null);
