@@ -23,15 +23,23 @@ const CAN_LOCK = !IS_IOS && !IS_MOBILE && 'requestPointerLock' in Element.protot
 document.documentElement.classList.toggle('touch', HAS_TOUCH && !CAN_LOCK);
 document.documentElement.classList.toggle('ios', IS_IOS);
 
+// HQ #102: quality tier early so renderer + textures can go HD on iPad. ?q=low|med|high|hd or localStorage hqQuality.
+const QUALITY_RAW = (new URLSearchParams(location.search).get('q') || localStorage.getItem('hqQuality') || 'high').toLowerCase();
+const QUALITY = QUALITY_RAW === 'hd' ? 'high' : QUALITY_RAW; // hd == high
+window.hqSetQuality = q => { localStorage.setItem('hqQuality', q); location.reload(); };
+const HQ_HD = QUALITY === 'high';
+const HQ_LOW = QUALITY === 'low';
+
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE ? 1.25 : 1.75));
+// HD: use more of the iPad's retina pixels (was capped at 1.25 — looked soft). low keeps 1x.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, HQ_LOW ? 1 : (HQ_HD ? (IS_MOBILE ? 2 : 2.5) : (IS_MOBILE ? 1.5 : 1.75))));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = IS_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; // lighter filtering on iPad
+renderer.shadowMap.type = HQ_LOW || (!HQ_HD && IS_MOBILE) ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -49,7 +57,7 @@ scene.add(new THREE.HemisphereLight('#fff4e4', '#7a6a58', 0.95));
 const sun = new THREE.DirectionalLight('#ffe8c8', 1.35);
 sun.position.set(8, 22, -10);
 sun.castShadow = true;
-sun.shadow.mapSize.set(IS_MOBILE ? 1024 : 2048, IS_MOBILE ? 1024 : 2048);
+sun.shadow.mapSize.set(HQ_LOW ? 512 : (HQ_HD ? (IS_MOBILE ? 2048 : 4096) : (IS_MOBILE ? 1024 : 2048)), HQ_LOW ? 512 : (HQ_HD ? (IS_MOBILE ? 2048 : 4096) : (IS_MOBILE ? 1024 : 2048)));
 Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 14, bottom: -14, near: 1, far: 55 });
 sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias = -0.0004;
@@ -89,7 +97,7 @@ function canvasTex(w, h, draw, repeat) {
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = IS_MOBILE ? 4 : 8;
+  t.anisotropy = HQ_LOW ? 2 : (HQ_HD ? (IS_MOBILE ? 8 : 16) : (IS_MOBILE ? 4 : 8));
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); }
   return t;
 }
@@ -173,10 +181,8 @@ const M = {
 
 
 // ---------- HQ #90: visual upgrade (procedural PBR + cheap env lighting; iPad-safe) ----------
-// Quality: ?q=low|high or localStorage 'hqQuality'. Low = iPad default (no extra maps on big surfaces, smaller env).
-const QUALITY = (new URLSearchParams(location.search).get('q') || localStorage.getItem('hqQuality') || (IS_MOBILE ? 'med' : 'high'));
-window.hqSetQuality = q => { localStorage.setItem('hqQuality', q); location.reload(); };
-if (QUALITY === 'low') { renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1)); renderer.shadowMap.type = THREE.PCFShadowMap; }
+// QUALITY / HQ_HD / HQ_LOW set near top (HQ #102). Low skips extra maps on big surfaces.
+if (HQ_LOW) { renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1)); renderer.shadowMap.type = THREE.PCFShadowMap; }
 
 renderer.toneMappingExposure = 1.08; // HQ #101: slightly brighter so wood + facade textures read
 // image-based light from a tiny procedural "office room" (bright ceiling panels, warm floor, window wall), prefiltered once
@@ -617,7 +623,8 @@ box(0.12, 0.005, 90, new THREE.MeshBasicMaterial({ color: '#e3c11e' }), 22.6, 0.
 {
   // HQ #101: painted billboard trees (face the office) + a few near 3D layered trees for parallax
   // Billboard atlas — 2 tree variants on one texture, alpha-tested (2 draw calls for the grove)
-  const treeAtlas = canvasTex(512, 512, (g, w, h) => {
+  // HQ #102: 1024 atlas on HD so bullpen window trees stop looking like green blobs
+  const treeAtlas = canvasTex(HQ_HD ? 1024 : 512, HQ_HD ? 1024 : 512, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     const paintTree = (ox, kind) => {
       // trunk with bark notches
@@ -690,14 +697,15 @@ box(0.12, 0.005, 90, new THREE.MeshBasicMaterial({ color: '#e3c11e' }), 22.6, 0.
     return geo;
   }
   const geoA = treePlane(0), geoB = treePlane(1);
-  const N = 64;
+  const N = HQ_HD ? 96 : 64;
   const cards = new THREE.InstancedMesh(geoA, treeMat, N);
   const cardsB = new THREE.InstancedMesh(geoB, treeMat, N);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s3 = new THREE.Vector3(), pos = new THREE.Vector3();
   let ia = 0, ib = 0;
   const spots = [];
-  // dense near-window row (what Chris sees from the bullpen)
-  for (let x = -26; x <= 26; x += 5.5) spots.push([x + (Math.random() - .5) * 0.8, -14.2 - Math.random() * 2.0, 0, 1.05 + Math.random() * 0.3]);
+  // dense near-window row (what Chris sees from the bullpen); tighter on HD
+  const nearStep = HQ_HD ? 4.2 : 5.5;
+  for (let x = -26; x <= 26; x += nearStep) spots.push([x + (Math.random() - .5) * 0.8, -14.2 - Math.random() * 2.0, 0, 1.05 + Math.random() * 0.3]);
   for (let x = -40; x <= 40; x += 5.0) spots.push([x + (Math.random() - .5) * 2, -19 - Math.random() * 14, 0, 0.9 + Math.random() * 0.7]);
   for (let z = -30; z <= 30; z += 6.5) spots.push([30 + Math.random() * 10, z + (Math.random() - .5) * 2, 1, 0.8 + Math.random() * 0.7]);
   for (let x = -30; x <= 30; x += 7) spots.push([x + (Math.random() - .5) * 2, 42 + Math.random() * 8, 2, 0.8 + Math.random() * 0.6]);
@@ -748,7 +756,7 @@ for (const o of scene.children.slice(gn0)) GROUNDS.add(o);
 }
 
 // ---------- props ----------
-const potGeo = new THREE.CylinderGeometry(0.22, 0.17, 0.45, 12), leafGeo = new THREE.SphereGeometry(0.26, 7, 5);
+const potGeo = new THREE.CylinderGeometry(0.22, 0.17, 0.45, HQ_HD ? 16 : 12), leafGeo = new THREE.SphereGeometry(0.26, HQ_HD ? 12 : 7, HQ_HD ? 8 : 5);
 function plant(x, z, s = 1) {
   const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(s);
   const pot = new THREE.Mesh(potGeo, M.pot); pot.position.y = 0.225; pot.castShadow = true; g.add(pot);
@@ -2502,7 +2510,7 @@ function stampWhere(g, w, h) {
   g.fillStyle = '#fff'; g.font = `700 ${Math.round(13 * k)}px system-ui,Arial`; g.textAlign = 'center'; g.textBaseline = 'bottom';
   g.fillText(down ? 'N · GROUND FLOOR' : 'N (windows) · 2nd FLOOR', mx + mw / 2, my - 7 * k);
 }
-function snapshot(maxW = 1280, q = 0.7) {
+function snapshot(maxW = HQ_HD ? 1600 : 1280, q = HQ_HD ? 0.85 : 0.7) { // HQ #102: sharper chat screenshots on HD
   try {
     renderer.render(scene, camera);
     const src = renderer.domElement, sc = Math.min(1, maxW / src.width);
