@@ -6,11 +6,6 @@
       "since": "2026-10-11T00:57:22.045Z",
       "until": "2026-10-12T21:29:41.715Z"
     },
-    "cos": {
-      "task": "Trend + sales sweep (all socials) PM",
-      "since": "2026-10-13T19:34:37.271Z",
-      "until": "2026-10-13T21:04:37.272Z"
-    },
     "inbox": {
       "task": "Family inbox watch",
       "since": "2026-10-11T01:48:05.392Z",
@@ -34,11 +29,6 @@
     "review": {
       "task": "HQ #101 QC",
       "since": "2026-10-13T02:10:11.480Z"
-    },
-    "designer": {
-      "task": "Trend + sales sweep (all socials) PM",
-      "since": "2026-10-13T19:34:37.387Z",
-      "until": "2026-10-13T21:04:37.387Z"
     }
   }
 }
