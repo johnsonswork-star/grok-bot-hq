@@ -40,13 +40,13 @@ charMat.onBeforeCompile = sh => {
     .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vSurf.x;')
     .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vSurf.y;')
     .replace('#include <opaque_fragment>', `{ float fres = pow(1.0 - saturate(dot(normalize(vViewPosition), normal)), 3.0);
-      outgoingLight += diffuseColor.rgb * fres * vSurf.z * 0.35; // cloth sheen / skin rim
+      outgoingLight += diffuseColor.rgb * fres * vSurf.z * 0.22; // cloth sheen / skin rim
       outgoingLight += vec3(0.06, 0.012, 0.0) * diffuseColor.rgb * step(0.5, vSurf.z) * step(vSurf.z, 0.7); } // skin warmth (subsurface fake)
     #include <opaque_fragment>`);
 };
 charMat.customProgramCacheKey = () => 'char-hq90';
 // surface presets [roughness, metalness, sheen]; sheen 0.6 marks skin for the warmth term
-const SURF = { fabric: [0.88, 0, 0.9], skin: [0.52, 0, 0.6], hair: [0.42, 0, 0.3], eye: [0.08, 0, 0], leather: [0.32, 0, 0.1], metal: [0.28, 0.9, 0], plastic: [0.35, 0, 0] };
+const SURF = { fabric: [0.86, 0, 0.45], skin: [0.52, 0, 0.6], hair: [0.42, 0, 0.3], eye: [0.08, 0, 0], leather: [0.32, 0, 0.1], metal: [0.28, 0.9, 0], plastic: [0.35, 0, 0] };
 let SURF_BY = {}; // color hex -> preset, set per character in buildCharacter
 const surfFor = hex => SURF_BY[new THREE.Color(hex).getHexString()] || SURF.fabric;
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
