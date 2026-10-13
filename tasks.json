@@ -16,11 +16,6 @@
       "since": "2026-10-11T01:48:05.392Z",
       "until": "2026-10-12T20:41:54.443Z"
     },
-    "builder": {
-      "task": "Visual upgrade: lighting & materials",
-      "since": "2026-10-13T01:17:20.087Z",
-      "until": "2026-10-13T03:18:00.807Z"
-    },
     "designer": {
       "task": "Visual upgrade: character models",
       "since": "2026-10-13T01:19:08.750Z"
