@@ -6,7 +6,8 @@
 import { STATIONS } from '../stations.js';
 import * as link from '../hq-link.js';
 import { triage, OFFICE_TO } from '../office-chat-rules.js';
-import { PROJECTS, NEEDS, DESK_NOTE, LOOKS, PAUSE_NOTE, UPDATED } from './data.js';
+import { PROJECTS, NEEDS, DESK_NOTE, PAUSE_NOTE, UPDATED } from './data.js';
+import { paintCrew, crewLook, CREW_HIT } from './cast.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -15,7 +16,7 @@ const noLig = s => String(s).replace(/f(?=[fil])/g, 'f\u200C');   // Pixelify Sa
 const FONT = '"Pixelify Sans","Courier New",monospace';
 
 // ---------- world ----------
-const GX = 22, GY = 16, HX = 12, HY = 6, ZU = 14, WALL = 3.2;
+const GX = 22, GY = 16, HX = 14, HY = 7, ZU = 16, WALL = 3.2;
 const WH = { x0: 12, x1: GX, y0: 11.5, y1: GY, z: -2 };        // warehouse pit (downstairs)
 const ST = { x0: 9, x1: 12, y0: 12.8, y1: 14.8, n: 6 };        // stairs down to it
 const MGR = { x0: 16, x1: GX, y0: 0, y1: 5.5 };                   // manager office
@@ -25,22 +26,24 @@ const inR = (x, y, r) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
 
 // desk origin (x,y), seat = where the worker sits (behind the desk, facing the viewer)
 const DESKS = {
-  grok:     { x: 17.8, y: 2.2, w: 2.4 },
-  inbox:    { x: 2.4, y: 9.0, w: 1.1, d: 3.2, reception: true, seat: [1.95, 10.6] },
-  // quad A + quad B: back row faces you, front row sits with its back to you
-  cos:      { x: 4.8, y: 6.8 },  assist:  { x: 6.9, y: 6.8 },
-  icons:    { x: 4.8, y: 7.9, away: true }, conn: { x: 6.9, y: 7.9, away: true },
-  onpad:    { x: 9.6, y: 6.8 },  builder: { x: 11.7, y: 6.8 },
-  faith:    { x: 9.6, y: 7.9, away: true }, broker: { x: 11.7, y: 7.9, away: true },
-  review:   { x: 4.4, y: 11.6 }, kids:    { x: 6.5, y: 11.6 },
-  designer: { x: 15.0, y: 8.6 }, profile: { x: 17.1, y: 8.6 },
+  grok:     { x: 17.7, y: 1.85, w: 2.35 },
+  inbox:    { x: 2.0, y: 8.3, w: 1.1, d: 3.05, reception: true, seat: [1.65, 9.65] },
+  // two quads with a center aisle, and a walkway between the facing row and the away row
+  cos:      { x: 3.5, y: 6.4 }, assist:  { x: 6.2, y: 6.4 },
+  icons:    { x: 3.7, y: 9.7, away: true }, conn: { x: 6.4, y: 9.7, away: true },
+  onpad:    { x: 10.15, y: 6.4 }, builder: { x: 12.7, y: 6.4 },
+  faith:    { x: 10.35, y: 9.7, away: true }, broker: { x: 12.9, y: 9.7, away: true },
+  review:   { x: 5.55, y: 12.95 }, kids:  { x: 8.05, y: 14.9 },
+  designer: { x: 15.2, y: 8.85 }, profile: { x: 17.9, y: 8.85 },
 };
 const people = STATIONS.filter(s => DESKS[s.id]).map(s => {
   const d = DESKS[s.id]; d.w = d.w || 2; d.d = d.d || 1.1;
   const seat = d.seat || (d.away ? [d.x + d.w * 0.5, d.y + d.d + 0.32] : [d.x + d.w * 0.6, d.y - 0.05]);
-  return { s, d, seat, look: LOOKS[s.id] || LOOKS.cos, phase: Math.random() * 10, blinkAt: 0 };
+  return { s, d, seat, phase: Math.random() * 10, blinkAt: 0 };
 });
 const SEATZ = 0.15;
+// Seated head is about one monitor wide. The cast is drawn in ~20px-wide heads; 0.56 brings that down to the CRT face.
+const CREW_SC = 0.56;
 const byId = id => people.find(p => p.s.id === id);
 const first = s => s.name.split(' ')[0];
 
@@ -78,14 +81,16 @@ function needsCount() { return NEEDS.length + liveNeeds().length; }
 const cv = $('#c'), ctx = cv.getContext('2d');
 const buf = document.createElement('canvas'), g = buf.getContext('2d');
 let W = 0, H = 0, DPR = 1, PS = 2, fitPS = 2, homePS = 3, BW = 0, BH = 0, ox = 0, oy = 0;
-const FOCUS = [11.7, 6.2];   // home framing: bullpen + conference room + manager office, warehouse peeking at the bottom
+const FOCUS = [11.4, 6.35];  // bullpen, conference room, manager office, and the top of the warehouse
 const cam = { zoom: 1, px: 0, py: 0 };
 const MAP_W = (GX + GY) * HX, MAP_TOP = -WALL * ZU, MAP_BOT = (GX + GY) * HY + 2.6 * ZU;
 function resize() {
   W = innerWidth; H = innerHeight; DPR = Math.min(2, devicePixelRatio || 1);
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   fitPS = Math.max(1.2, Math.min((W - 20) / (MAP_W + 20), (H - 30) / (MAP_BOT - MAP_TOP + 30)));
-  homePS = Math.max(fitPS, Math.min(4.6, W / 300, H / 215));
+  // Original mockup window (300 x 215 at HX=12), scaled with the tile size, then opened slightly so the manager office and reception both stay in frame.
+  const WIN_X = 300 * (HX / 12) * 1.08, WIN_Y = 215 * (HY / 6) * 1.08;
+  homePS = Math.max(fitPS, Math.min(4.6, W / WIN_X, H / WIN_Y));
   layout();
 }
 const clampZ = z => Math.max(fitPS / homePS * 0.95, Math.min(2.2, z));
@@ -206,7 +211,7 @@ const SHADOWS = () => {
   for (const [x, y] of PLANTS) L.push([x, y, 0.5, 0.5, 0.9]);
   return L;
 };
-const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [16.4, 4.6], [0.3, 15.2], [8.5, 10.6], [14.2, 6.8], [21.4, 0.5], [3.7, 5.6]];
+const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [16.4, 4.6], [0.3, 15.2], [8.3, 11.35], [8.2, 7.9], [21.4, 0.5], [2.15, 7.15]];
 const PALLETS = [[13.3, 13.4, 3], [15.3, 13.8, 2], [17.4, 13.3, 3], [19.3, 14.0, 4], [14.6, 14.85, 2]];
 function drawBase() {
   base.width = BW; base.height = BH; const c = bg;
@@ -250,7 +255,7 @@ function drawBase() {
     } else if (inR(cx, cy, KIT)) { // kitchen tile
       poly(c, T(0, 0, 0.5, 0.5), '#e2dccd'); poly(c, T(0.5, 0, 1, 0.5), '#b8ae9c'); poly(c, T(0, 0.5, 0.5, 1), '#b8ae9c'); poly(c, T(0.5, 0.5, 1, 1), '#e2dccd');
     } else { // carpet tiles with a woven pattern
-      const conf = inR(cx, cy, CONF), base0 = conf ? '#a6977f' : '#c9a777', col = shade(base0, 0.96 + n * 0.07);
+      const conf = inR(cx, cy, CONF), base0 = conf ? '#c4ad8c' : '#d4bc96', col = shade(base0, 0.97 + n * 0.05);
       poly(c, T(0, 0, 1, 1), col);
       const a = P(x, y), b = P(x + 1, y), d = P(x, Math.min(y + 1, y1));
       seg(c, a, b, 'rgba(120,85,45,.22)'); seg(c, a, d, 'rgba(255,240,210,.18)');
@@ -259,10 +264,20 @@ function drawBase() {
       for (let k = 0; k < 6; k++) { const p = P(x + hsh(x * 7 + k, y) * 0.95, Math.min(y + hsh(x, y * 7 + k) * 0.95, y1 - 0.02)); c.fillStyle = k % 3 ? 'rgba(110,75,40,.2)' : 'rgba(255,238,205,.28)'; c.fillRect(p[0], p[1], 1, 1); }
     }
   }
-  // conference rug (round)
-  { const p = Pf(10.8, 2.75); c.fillStyle = '#5e4d3c'; c.beginPath(); c.ellipse(p[0], p[1], 48, 24, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = '#7d6a54'; c.beginPath(); c.ellipse(p[0], p[1], 45, 22, 0, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = '#a58c6c'; c.beginPath(); c.ellipse(p[0], p[1], 40, 19.5, 0, 0, Math.PI * 2); c.stroke(); }
+  // conference rug (round, rings in world units so it scales with the tile size)
+  { const oval = (x, y, r, fill, stroke) => {
+      const p = Pf(x, y), rx = r * HX * Math.SQRT2, ry = r * HY * Math.SQRT2;
+      c.beginPath(); c.ellipse(p[0], p[1], rx, ry, 0, 0, Math.PI * 2);
+      if (fill) { c.fillStyle = fill; c.fill(); }
+      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
+    };
+    oval(10.8, 2.75, 2.55, '#5c4636');
+    oval(10.8, 2.75, 2.32, '#8d7356');
+    oval(10.8, 2.75, 2.05, '#c4a37c');
+    oval(10.8, 2.75, 1.55, null, '#6a4e38');
+    oval(10.8, 2.75, 1.15, '#a68460');
+    oval(10.8, 2.75, 0.42, '#6e533c');
+  }
   // reception rug
   poly(c, [P(3.65, 9.1), P(4.25, 9.1), P(4.25, 12.1), P(3.65, 12.1)], '#7a3a2e'); poly(c, [P(3.72, 9.2), P(4.18, 9.2), P(4.18, 12.0), P(3.72, 12.0)], '#94493a');
   // window light on the floor
@@ -293,15 +308,17 @@ function drawBase() {
   box(c, 0, 5.0, 0.86, 0.12, 3.0, 0.06, '#6f757b', { ol: false });
   for (const [y, col] of [[5.4, '#d33'], [5.7, '#33c'], [6.0, '#2a2']]) box(c, 0.03, y, 0.92, 0.06, 0.2, 0.04, col, { ol: false });
   // HQ status board (back wall)
-  boardY(c, 3.0, 7.2, 0.95, 2.7, '#1f2a24');
+  boardY(c, 3.0, 7.2, 0.95, 2.7, '#14110e');
   // Team Board (conference back wall)
-  boardY(c, 8.0, 13.6, 0.75, 2.85, '#22303a');
+  boardY(c, 7.62, 13.9, 0.75, 2.85, '#22303a');
   // manager wall: landscape + diploma; left wall picture near reception
   frameY(c, 16.7, 18.3, 1.5, 2.45, ['#5f8f6a', '#9cc7df']); frameY(c, 18.6, 19.3, 1.6, 2.35, ['#f3ead2', '#f3ead2']);
   frameX(c, 12.4, 14.0, 1.5, 2.4, ['#4a6a8a', '#d9b46a']);
   // ---- lighting layer (warm ceiling light pools, screen-blended each frame)
   lite.width = BW; lite.height = BH; lg.clearRect(0, 0, BW, BH);
-  for (const [x, y, r, a] of [[6.5, 8, 70, 0.22], [11, 8, 70, 0.22], [6.5, 12.5, 60, 0.18], [10.8, 2.8, 60, 0.18], [19, 2.8, 55, 0.2], [17, 9.5, 55, 0.18], [2.5, 10.5, 55, 0.18], [17, 14, 80, 0.14]]) {
+  const LS = HX / 12;
+  for (const [x, y, r0, a] of [[5.4, 8.3, 70, 0.22], [11.6, 8.3, 70, 0.22], [4.0, 13.1, 60, 0.18], [10.8, 2.8, 60, 0.2], [19, 2.6, 62, 0.26], [16.8, 9.6, 55, 0.18], [2.2, 10.0, 55, 0.18], [17, 14, 80, 0.14]]) {
+    const r = r0 * LS;
     const p = Pf(x, y, y > 12.5 && x > 15 ? WH.z : 0); const gr = lg.createRadialGradient(p[0], p[1], 2, p[0], p[1], r);
     gr.addColorStop(0, `rgba(255,214,150,${a})`); gr.addColorStop(1, 'rgba(255,214,150,0)'); lg.fillStyle = gr; lg.fillRect(p[0] - r, p[1] - r, r * 2, r * 2);
   }
@@ -344,8 +361,10 @@ function pallet(c, x, y, layers = 3) {
   for (const f of [0.2, 0.6]) poly(c, quadX(x + 1.4 + 0.002, y + f, y + f + 0.25, WH.z, WH.z + 0.1), '#3a2a18');
   for (let i = 0; i < layers; i++) {
     const z = WH.z + 0.16 + i * 0.28;
-    ream(c, x + 0.06, y + 0.06, z, 0.62, 0.48, '#5b8fd6'); ream(c, x + 0.72, y + 0.06, z, 0.62, 0.48, '#5b8fd6');
-    ream(c, x + 0.06, y + 0.56, z, 0.62, 0.48, '#5b8fd6'); ream(c, x + 0.72, y + 0.56, z, 0.62, 0.48, '#5b8fd6');
+    ream(c, x + 0.06, y + 0.06, z, 0.62, 0.48, '#3d7ec4'); ream(c, x + 0.72, y + 0.06, z, 0.62, 0.48, '#3d7ec4');
+    ream(c, x + 0.06, y + 0.56, z, 0.62, 0.48, '#3d7ec4'); ream(c, x + 0.72, y + 0.56, z, 0.62, 0.48, '#3d7ec4');
+    // plastic wrap sheen
+    poly(c, [P(x + 0.12, y + 0.12, z + 0.27), P(x + 0.4, y + 0.12, z + 0.27), P(x + 0.28, y + 0.32, z + 0.27)], 'rgba(255,255,255,.55)');
   }
   const zt = WH.z + 0.16 + layers * 0.28; poly(c, [P(x + 0.1, y + 0.1, zt), P(x + 0.7, y + 0.1, zt), P(x + 0.5, y + 0.35, zt)], 'rgba(255,255,255,.5)');
 }
@@ -371,24 +390,47 @@ function paperStack(c, x, y, z, n) {
   for (let i = 1; i < n; i++) { seg(c, P(x, y + 0.28, z + i * 0.05), P(x + 0.36, y + 0.28, z + i * 0.05), 'rgba(120,110,90,.35)'); }
   seg(c, P(x + 0.06, y + 0.08, z + h), P(x + 0.28, y + 0.08, z + h), 'rgba(90,90,110,.35)'); seg(c, P(x + 0.06, y + 0.15, z + h), P(x + 0.22, y + 0.15, z + h), 'rgba(90,90,110,.35)');
 }
-function monitor(c, x, y, z, busy, t, k) {
-  box(c, x + 0.08, y + 0.12, z, 0.3, 0.2, 0.04, '#2c2c30', { ol: false });
-  box(c, x + 0.18, y + 0.18, z, 0.08, 0.08, 0.16, '#333', { ol: false });
-  box(c, x, y, z + 0.14, 0.18, 0.62, 0.56, '#34373e', { t: '#2a2c31', r: '#26282d' });
-  // screen faces the front-right (+x): visible glow
-  const s = quadX(x + 0.181, y + 0.05, y + 0.57, z + 0.19, z + 0.65);
-  poly(c, s, busy ? '#5fc8ff' : '#2b4f6e');
-  if (busy) { for (let i = 0; i < 4; i++) { const zz = z + 0.58 - i * 0.09, len = 0.12 + hsh(k + i, (t * 2 | 0)) * 0.28; poly(c, quadX(x + 0.182, y + 0.57 - 0.06 - len, y + 0.57 - 0.06, zz - 0.03, zz), 'rgba(15,60,100,.75)'); }
-    poly(c, quadX(x + 0.183, y + 0.05, y + 0.57, z + 0.6, z + 0.65), 'rgba(255,255,255,.35)'); }
-  else { poly(c, quadX(x + 0.182, y + 0.08, y + 0.3, z + 0.5, z + 0.62), 'rgba(140,200,240,.22)'); }
+// Chunky beige CRT. The glass faces the camera (+y) so the glow reads in the isometric view.
+function crt(c, x, y, z, busy, t, k) {
+  const w = 0.78, d = 0.32, h = 0.58;
+  box(c, x + 0.22, y + d * 0.2, z, 0.34, 0.16, 0.05, '#c4b49a', { ol: false });
+  box(c, x + 0.32, y + d * 0.35, z + 0.04, 0.1, 0.1, 0.12, '#8a7b66', { ol: false });
+  box(c, x, y, z + 0.14, w, d, h, '#e4d8c0', { l: '#cbbda4', r: '#b09a7e', t: '#f3e8d4' });
+  // inner bezel
+  poly(c, quadY(y + d + 0.002, x + 0.05, x + w - 0.05, z + 0.2, z + 0.14 + h - 0.04), '#2a261e');
+  const glass = busy ? '#86f06a' : '#1e3328';
+  poly(c, quadY(y + d + 0.004, x + 0.09, x + w - 0.09, z + 0.26, z + 0.14 + h - 0.08), glass);
+  if (busy) {
+    for (let i = 0; i < 4; i++) {
+      const zz = z + 0.14 + h - 0.16 - i * 0.09;
+      const len = 0.18 + hsh(k + i, (t * 3 | 0)) * 0.32;
+      poly(c, quadY(y + d + 0.006, x + 0.14, x + 0.14 + len, zz, zz + 0.03), 'rgba(12,50,16,.55)');
+    }
+    poly(c, quadY(y + d + 0.006, x + 0.1, x + w - 0.12, z + 0.14 + h - 0.14, z + 0.14 + h - 0.1), 'rgba(255,255,255,.28)');
+    const q = P(x + w * 0.5, y + d, z + 0.14 + h * 0.55);
+    const gr = c.createRadialGradient(q[0], q[1], 1, q[0], q[1], 18);
+    gr.addColorStop(0, 'rgba(130,255,110,.4)'); gr.addColorStop(1, 'rgba(130,255,110,0)');
+    c.fillStyle = gr; c.fillRect(q[0] - 18, q[1] - 14, 36, 28);
+  } else {
+    poly(c, quadY(y + d + 0.006, x + 0.14, x + 0.42, z + 0.46, z + 0.58), 'rgba(170,210,180,.22)');
+    poly(c, quadY(y + d + 0.006, x + 0.16, x + 0.36, z + 0.34, z + 0.4), 'rgba(170,210,180,.16)');
+  }
+  // power lamp + curved glass highlight
+  poly(c, quadY(y + d + 0.006, x + w - 0.16, x + w - 0.09, z + 0.18, z + 0.23), busy ? '#9dff78' : '#a05040');
+  poly(c, quadY(y + d + 0.005, x + 0.08, x + 0.2, z + 0.48, z + 0.64), 'rgba(255,255,255,.18)');
 }
-function monitorY(c, x, y, z, busy, t, k) { // screen faces +y (toward a worker who sits with their back to you)
-  box(c, x + 0.16, y + 0.06, z, 0.3, 0.16, 0.04, '#2c2c30', { ol: false });
-  box(c, x + 0.27, y + 0.08, z, 0.08, 0.08, 0.16, '#333', { ol: false });
-  box(c, x, y, z + 0.14, 0.62, 0.18, 0.56, '#34373e', { t: '#2a2c31', l: '#26282d' });
-  poly(c, quadY(y + 0.181, x + 0.05, x + 0.57, z + 0.19, z + 0.65), busy ? '#5fc8ff' : '#2b4f6e');
-  if (busy) for (let i = 0; i < 4; i++) { const zz = z + 0.58 - i * 0.09, len = 0.12 + hsh(k + i, (t * 2 | 0)) * 0.28; poly(c, quadY(y + 0.182, x + 0.1, x + 0.1 + len, zz - 0.03, zz), 'rgba(15,60,100,.75)'); }
-  else poly(c, quadY(y + 0.182, x + 0.35, x + 0.52, z + 0.5, z + 0.62), 'rgba(140,200,240,.22)');
+function keys(c, x, y, z) {
+  box(c, x, y, z, 0.58, 0.2, 0.04, '#2e3034', { t: '#3c3e44', ol: false });
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++) {
+    const q = P(x + 0.06 + i * 0.1, y + 0.05 + j * 0.08, z + 0.045);
+    c.fillStyle = j ? '#c8c4bc' : '#e4e0d8'; c.fillRect(q[0], q[1], 2, 1);
+  }
+}
+function mug(c, x, y, z, col, mark) {
+  box(c, x, y, z, 0.16, 0.16, 0.18, col, { t: '#f7f4ee', l: shade(col, 0.85), r: shade(col, 0.7) });
+  const q = P(x + 0.16, y + 0.06, z + 0.08);
+  c.strokeStyle = shade(col, 0.65); c.strokeRect(q[0], q[1], 2, 3);
+  if (mark) { const m = P(x + 0.05, y + 0.16, z + 0.1); c.fillStyle = mark; c.fillRect(m[0], m[1], 2, 3); }
 }
 function deskDraw(c, p, t) {
   const d = p.d, busy = stateOf(p.s.id) === 'active', k = (d.x * 13 + d.y * 7) | 0;
@@ -397,9 +439,11 @@ function deskDraw(c, p, t) {
     for (let y = d.y + 0.25; y < d.y + d.d - 0.2; y += 0.8) { poly(c, quadX(d.x + d.w + 0.003, y, y + 0.65, 0.12, 0.66), '#4f2f19'); poly(c, quadX(d.x + d.w + 0.005, y + 0.04, y + 0.61, 0.16, 0.62), '#6e4426'); }
     box(c, d.x - 0.12, d.y - 0.12, 0.8, d.w + 0.24, d.d + 0.24, 0.09, '#b07c4e');
     poly(c, quadX(d.x + d.w + 0.01, d.y + 0.65, d.y + d.d - 0.65, 0.2, 0.62), '#2f1d10');
-    monitor(c, d.x + 0.12, d.y + 0.2, 0.89, true, t, k);
-    paperStack(c, d.x + 0.4, d.y + 2.3, 0.89, 3);
-    box(c, d.x + 0.45, d.y + 1.7, 0.89, 0.3, 0.22, 0.08, '#222', { ol: false });   // phone
+    crt(c, d.x + 0.08, d.y + 0.35, 0.89, true, t, k);
+    keys(c, d.x + 0.1, d.y + 1.15, 0.89);
+    paperStack(c, d.x + 0.15, d.y + 2.35, 0.89, 4);
+    box(c, d.x + 0.2, d.y + 1.85, 0.89, 0.28, 0.18, 0.07, '#2a241c', { ol: false });
+    mug(c, d.x + 0.55, d.y + 2.5, 0.89, '#f4efe6', '#c45438');
     hands(c, p, t, 0.89);
     return;
   }
@@ -416,112 +460,53 @@ function deskDraw(c, p, t) {
   }
   poly(c, quadX(d.x + d.w + 0.003, d.y + 0.08, d.y + d.d - 0.08, 0.08, 0.52), shade(top, 0.5));
   // desk stuff
-  if (d.away) { monitorY(c, d.x + d.w * 0.5 - 0.31, d.y + 0.08, 0.62, busy, t, k); box(c, d.x + d.w * 0.32, d.y + d.d - 0.3, 0.62, 0.6, 0.18, 0.03, '#3a3c42', { ol: false, t: '#45474e' }); paperStack(c, d.x + 0.08, d.y + 0.12, 0.62, 2 + (k % 3)); return; }
-  monitor(c, d.x + 0.12, d.y + 0.1, 0.62, busy, t, k);
-  box(c, d.x + d.w * 0.4, d.y + 0.08, 0.62, 0.55, 0.18, 0.03, '#3a3c42', { ol: false, t: '#45474e' });
-  for (let i = 0; i < 6; i++) { const q = P(d.x + d.w * 0.4 + 0.06 + i * 0.08, d.y + 0.16, 0.65); c.fillStyle = 'rgba(220,220,220,.5)'; c.fillRect(q[0], q[1], 1, 1); }
-  paperStack(c, d.x + 0.08, d.y + 0.76, 0.62, 2 + (k % 4));
-  if (k % 3 === 0) box(c, d.x + d.w - 0.3, d.y + 0.3, 0.62, 0.12, 0.12, 0.14, '#e9e2d0', { t: '#4a2a18' });
-  if (k % 3 === 1) { box(c, d.x + d.w - 0.3, d.y + 0.3, 0.62, 0.1, 0.1, 0.16, '#3a6ea5', { ol: false }); const q = P(d.x + d.w - 0.25, d.y + 0.35, 0.8); c.fillStyle = '#d33'; c.fillRect(q[0], q[1] - 2, 1, 3); c.fillStyle = '#222'; c.fillRect(q[0] + 1, q[1] - 1, 1, 2); }
-  if (k % 4 === 2) box(c, d.x + 1.3, d.y + 0.15, 0.62, 0.3, 0.2, 0.06, '#222', { ol: false });
-  if (p.s.id === 'assist') box(c, d.x + 1.45, d.y + 0.65, 0.62, 0.18, 0.18, 0.18, '#d8b23a');   // bobblehead box
-  if (p.s.hero) { // green banker's lamp, nameplate, mug
-    box(c, d.x + d.w - 0.35, d.y + 0.15, 0.62, 0.06, 0.06, 0.35, '#c9a24a', { ol: false });
-    box(c, d.x + d.w - 0.52, d.y + 0.04, 0.95, 0.4, 0.22, 0.11, '#2f8a4a', { t: '#3fa85a' });
-    const q = P(d.x + d.w - 0.32, d.y + 0.15, 0.92); c.fillStyle = 'rgba(255,240,170,.9)'; c.fillRect(q[0] - 3, q[1], 6, 1);
-    box(c, d.x + 0.9, d.y + d.d - 0.25, 0.62, 0.6, 0.12, 0.12, '#c9a24a');
+  const id = p.s.id;
+  if (d.away) {
+    crt(c, d.x + 0.15, d.y + 0.02, 0.62, busy, t, k);
+    keys(c, d.x + d.w * 0.28, d.y + d.d - 0.28, 0.62);
+    paperStack(c, d.x + 0.08, d.y + 0.08, 0.62, 2 + (k % 3));
+    return;
+  }
+  crt(c, d.x + 0.12, d.y + 0.02, 0.62, busy, t, k);
+  keys(c, d.x + 0.18, d.y + 0.4, 0.62);
+  paperStack(c, d.x + d.w - 0.5, d.y + d.d - 0.38, 0.62, 2 + (k % 4));
+  if (id === 'assist') box(c, d.x + d.w - 0.42, d.y + 0.42, 0.62, 0.16, 0.16, 0.2, '#e0b83a'); // bobblehead
+  if (id === 'builder') paperStack(c, d.x + d.w - 0.55, d.y + 0.42, 0.62, 1); // crossword
+  if (id === 'cos') mug(c, d.x + d.w - 0.36, d.y + d.d - 0.4, 0.62, '#f4f1ea');
+  if (id === 'designer') mug(c, d.x + d.w - 0.36, d.y + d.d - 0.4, 0.62, '#e4548c');
+  if (id === 'faith') box(c, d.x + d.w - 0.32, d.y + 0.4, 0.62, 0.14, 0.12, 0.1, '#e8a04a', { ol: false });
+  if (p.s.hero) {
+    // green banker's lamp, brass stem, nameplate, world's-best-boss mug
+    box(c, d.x + d.w - 0.42, d.y + 0.12, 0.62, 0.08, 0.08, 0.42, '#c9a24a', { ol: false });
+    box(c, d.x + d.w - 0.62, d.y + 0.02, 1.0, 0.48, 0.26, 0.12, '#1f6b38', { t: '#3fa85a', l: '#2f8a4a' });
+    const q = P(d.x + d.w - 0.38, d.y + 0.16, 0.98);
+    const gr = c.createRadialGradient(q[0], q[1], 1, q[0], q[1], 22);
+    gr.addColorStop(0, 'rgba(255,236,170,.55)'); gr.addColorStop(1, 'rgba(255,236,170,0)');
+    c.fillStyle = gr; c.fillRect(q[0] - 22, q[1] - 10, 44, 28);
+    box(c, d.x + 0.95, d.y + d.d - 0.22, 0.62, 0.55, 0.1, 0.08, '#c9a24a');
+    mug(c, d.x + d.w - 0.34, d.y + d.d - 0.42, 0.62, '#f7f4ee', '#b42334');
   }
   hands(c, p, t, 0.62);
 }
-function hands(c, p, t, z) { // forearms resting on the desk, typing when busy
-  const busy = stateOf(p.s.id) === 'active', L = p.look, sl = L.vest ? L.shirt : (L.jacket || L.cardigan || L.shirt);
-  const [sx, sy] = P(p.seat[0], p.d.y + 0.16, z), hk = busy ? ((t * 10 + p.phase) | 0) % 2 : 0;
-  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(sx + x, sy + y, w, h); };
-  R(-8, -3, 5, 3, '#21140a'); R(3, -3, 5, 3, '#21140a');
-  R(-7, -3, 3, 2, sl); R(4, -3, 3, 2, shade(sl, 0.85));
-  R(-5, -3 - hk, 3, 2, L.skin); R(2, -3 - (busy ? 1 - hk : 0), 3, 2, L.skin);
+function hands(c, p, t, z) { // forearms on the desktop, typing when actually busy
+  const busy = stateOf(p.s.id) === 'active', L = crewLook(p.s.id);
+  const sl = L.vest ? L.shirt : (L.jacket || L.cardigan || L.shirt);
+  const [sx, sy] = P(p.seat[0], p.d.y + 0.16, z), hk = busy ? ((t * 8 + p.phase) | 0) % 2 : 0;
+  const S = CREW_SC;
+  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(sx + x * S, sy + y * S, Math.max(1, Math.round(w * S)), Math.max(1, Math.round(h * S))); };
+  R(-11, -4, 7, 4, '#21140a'); R(4, -4, 7, 4, '#21140a');
+  R(-10, -4, 5, 3, sl); R(5, -4, 5, 3, shade(sl, 0.82));
+  R(-7, -4 - hk, 4, 3, L.skin); R(3, -4 - (busy ? 1 - hk : 0), 4, 3, shade(L.skin, 0.9));
+  R(-7, -2 - hk, 1, 1, shade(L.skin, 0.75)); R(6, -2 - (busy ? 1 - hk : 0), 1, 1, shade(L.skin, 0.7));
 }
 
-// ---------- chibi workers (pixel art) ----------
-function chibi(c, sx, sy, L, t, busy, blink, ph) {
-  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(sx + x, sy + y, w, h); };
-  const OL = '#21140a', sk = L.skin, skD = shade(sk, 0.82), skH = shade(sk, 1.08), hr = L.hair, hrH = shade(hr, 1.45), hrD = shade(hr, 0.7);
-  // chair back
-  R(-10, -24, 20, 20, OL); R(-9, -23, 18, 18, '#2d3546'); R(-8, -22, 16, 2, '#4a5670'); R(-9, -8, 18, 3, '#222938'); R(7, -23, 2, 18, '#252c3b');
-  sy += busy && Math.sin(t * 6 + ph) > 0.6 ? -1 : 0;
-  const bw = L.big ? 14 : 12, bx = -bw / 2, outer = L.jacket || L.cardigan || L.vest, armC = L.vest ? L.shirt : (outer || L.shirt);
-  // arms + torso
-  R(bx - 3, -12, bw + 6, 12, OL); R(bx - 1, -13, bw + 2, 1, OL);
-  R(bx - 2, -11, 2, 9, shade(armC, 0.9)); R(bx + bw, -11, 2, 9, shade(armC, 0.7));
-  R(bx, -12, bw, 12, L.shirt);
-  if (outer) { const h = bw / 2 - 1; R(bx, -12, h, 12, outer); R(1, -12, h, 12, shade(outer, 0.86)); if (L.jacket) { R(-2, -12, 1, 4, shade(outer, 1.25)); R(1, -12, 1, 4, shade(outer, 0.7)); } }
-  R(bx, -12, bw, 1, 'rgba(255,255,255,.22)'); R(bx + bw - 2, -11, 2, 11, 'rgba(0,0,0,.16)');
-  if (L.tie) { R(-2, -12, 1, 2, '#f4f4f4'); R(1, -12, 1, 2, '#f4f4f4'); R(-1, -11, 2, 2, shade(L.tie, 1.25)); R(-1, -9, 2, 7, L.tie); R(0, -9, 1, 7, shade(L.tie, 0.75)); }
-  else { R(-2, -12, 4, 1, skD); R(-1, -11, 2, 1, skD); }
-  // neck + head
-  R(-2, -14, 4, 2, skD);
-  R(-7, -27, 14, 1, OL); R(-8, -26, 16, 11, OL); R(-7, -15, 14, 1, OL); R(-9, -22, 1, 4, OL); R(8, -22, 1, 4, OL);
-  R(-7, -26, 14, 11, sk); R(-6, -27, 12, 1, sk); R(-6, -15, 12, 1, sk);
-  R(5, -25, 2, 10, skD); R(-6, -16, 12, 1, skD);
-  R(-8, -21, 1, 3, sk); R(7, -21, 1, 3, skD);
-  // hair
-  const cap = () => { R(-7, -29, 14, 1, OL); R(-8, -28, 16, 1, OL); R(-7, -28, 14, 3, hr); R(-8, -27, 16, 3, hr); };
-  switch (L.style) {
-    case 'slick': cap(); R(-8, -24, 2, 4, hr); R(6, -24, 2, 3, hr); R(-6, -25, 8, 1, hr); R(-3, -28, 1, 3, hrH); R(-6, -27, 3, 1, hrH); break;
-    case 'messy': cap(); R(-8, -24, 2, 4, hr); R(6, -24, 2, 4, hr); R(-6, -25, 9, 2, hr); R(-6, -30, 2, 2, hr); R(-2, -31, 2, 3, hr); R(2, -30, 3, 2, hr); R(-1, -30, 1, 1, hrH); R(-5, -27, 4, 1, hrH); break;
-    case 'part': cap(); R(-8, -24, 2, 3, hr); R(6, -24, 2, 3, hr); R(-7, -25, 6, 2, hr); R(1, -25, 6, 2, hr); R(-1, -28, 2, 4, skH); R(-6, -27, 3, 1, hrH); break;
-    case 'short': cap(); R(-8, -24, 2, 3, hr); R(6, -24, 2, 2, hr); R(-6, -25, 7, 1, hr); R(-5, -27, 4, 1, hrH); break;
-    case 'long': cap(); R(-10, -26, 4, 17, OL); R(6, -26, 4, 17, OL); R(-9, -26, 3, 16, hr); R(6, -26, 3, 16, hrD); R(-6, -25, 12, 2, hr); R(-5, -27, 4, 1, hrH); R(-9, -20, 1, 8, hrH); R(-8, -17, 1, 1, '#ffd23a'); R(7, -17, 1, 1, '#ffd23a'); break;
-    case 'pony': cap(); R(-8, -24, 2, 5, hr); R(6, -24, 2, 3, hr); R(-6, -25, 8, 1, hr); R(7, -27, 4, 4, OL); R(8, -24, 4, 10, OL); R(7, -26, 3, 3, hr); R(8, -23, 3, 9, hrD); R(8, -23, 1, 6, hr); R(-5, -27, 4, 1, hrH); break;
-    case 'bun': R(-4, -33, 8, 6, OL); R(-3, -32, 6, 4, hr); R(-2, -32, 2, 1, hrH); cap(); R(-8, -24, 1, 4, hr); R(7, -24, 1, 4, hr); R(-6, -25, 12, 1, hr); R(-5, -27, 5, 1, hrH); break;
-    case 'curly': R(-10, -30, 20, 6, OL); R(-11, -26, 5, 11, OL); R(6, -26, 5, 11, OL); R(-9, -29, 18, 5, hr); R(-10, -25, 4, 9, hr); R(6, -25, 4, 9, hrD); for (let i = 0; i < 6; i++) R(-8 + i * 3, -28 + (i % 2), 1, 1, hrD); R(-6, -29, 5, 1, hrH); break;
-    case 'bald': R(-9, -23, 3, 5, OL); R(6, -23, 3, 5, OL); R(-8, -22, 2, 4, hr); R(6, -22, 2, 4, hr); R(-4, -26, 3, 1, skH); R(-3, -25, 1, 1, '#fff6'); break;
-    case 'balding': R(-9, -26, 4, 9, OL); R(5, -26, 4, 9, OL); R(-8, -25, 3, 7, hr); R(5, -25, 3, 7, hrD); R(-3, -27, 6, 1, hr); R(-1, -26, 2, 1, skH); break;
-  }
-  // 1px rim light (top-left)
-  R(-7, -26, 1, 4, 'rgba(255,248,230,.45)'); R(bx - 2, -11, 1, 3, 'rgba(255,248,230,.35)'); R(bx, -12, 3, 1, 'rgba(255,248,230,.45)');
-  // face
-  const ey = -21;
-  R(-5, ey - 2, 3, 1, hrD); R(2, ey - 2, 3, 1, hrD);
-  if (blink) { R(-5, ey + 1, 3, 1, '#1b1b1b'); R(2, ey + 1, 3, 1, '#1b1b1b'); }
-  else { R(-5, ey, 2, 3, '#1b1b1b'); R(3, ey, 2, 3, '#1b1b1b'); R(-5, ey, 1, 1, '#fff'); R(3, ey, 1, 1, '#fff'); }
-  if (L.glasses) { const G = '#151515'; R(-6, ey - 1, 5, 1, G); R(1, ey - 1, 5, 1, G); R(-6, ey + 3, 5, 1, G); R(1, ey + 3, 5, 1, G); R(-6, ey - 1, 1, 5, G); R(-2, ey - 1, 1, 5, G); R(1, ey - 1, 1, 5, G); R(5, ey - 1, 1, 5, G); R(-1, ey, 2, 1, G); }
-  R(0, -18, 1, 1, skD);
-  R(-6, -18, 2, 1, 'rgba(235,110,90,.45)'); R(4, -18, 2, 1, 'rgba(235,110,90,.45)');
-  if (L.stache) R(-3, -17, 6, 1, '#1d120a');
-  if (L.stubble) for (let i = -5; i <= 4; i += 2) { R(i, -16, 1, 1, 'rgba(40,30,20,.35)'); R(i + 1, -15, 1, 1, 'rgba(40,30,20,.3)'); }
-  R(-1, -16, 3, 1, '#8e3b2a'); R(-2, -17, 1, 1, '#8e3b2a88'); R(2, -17, 1, 1, '#8e3b2a88');
-}
-function chibiBack(c, sx, sy, L, t, busy, ph) {
-  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(sx + x, sy + y, w, h); };
-  const OL = '#21140a', sk = L.skin, skD = shade(sk, 0.82), hr = L.hair, hrH = shade(hr, 1.45), hrD = shade(hr, 0.72);
-  sy += busy && Math.sin(t * 6 + ph) > 0.6 ? -1 : 0;
-  const bw = L.big ? 14 : 12, bx = -bw / 2, top = L.jacket || L.cardigan || L.vest || L.shirt;
-  R(bx - 3, -12, bw + 6, 12, OL); R(bx - 1, -13, bw + 2, 1, OL);
-  R(bx - 2, -11, 2, 9, shade(L.vest ? L.shirt : top, 0.9)); R(bx + bw, -11, 2, 9, shade(L.vest ? L.shirt : top, 0.7));
-  R(bx, -12, bw, 12, top); R(bx + bw / 2 - 1, -11, 1, 10, shade(top, 0.82)); R(bx + bw - 2, -11, 2, 11, 'rgba(0,0,0,.16)'); R(bx, -12, bw, 1, 'rgba(255,255,255,.25)');
-  R(-2, -14, 4, 2, skD);
-  const bald = L.style === 'bald' || L.style === 'balding';
-  R(-7, -27, 14, 1, OL); R(-8, -26, 16, 11, OL); R(-7, -15, 14, 1, OL); R(-9, -22, 1, 4, OL); R(8, -22, 1, 4, OL);
-  R(-7, -26, 14, 11, bald ? sk : hr); R(-6, -27, 12, 1, bald ? sk : hr);
-  R(-8, -21, 1, 3, sk); R(7, -21, 1, 3, skD);
-  if (bald) { R(-7, -21, 14, 5, hr); R(-3, -26, 3, 1, shade(sk, 1.12)); R(4, -25, 2, 9, skD); }
-  else { R(4, -25, 3, 10, hrD); R(-6, -27, 5, 1, hrH); R(-7, -26, 1, 5, hrH); for (let i = 0; i < 3; i++) R(-4 + i * 3, -20 + (i % 2), 1, 3, hrD); }
-  if (L.style === 'pony') { R(-2, -16, 5, 9, OL); R(-1, -16, 3, 8, hrD); R(-1, -16, 1, 5, hr); }
-  if (L.style === 'bun') { R(-4, -31, 8, 6, OL); R(-3, -30, 6, 4, hr); R(-2, -30, 2, 1, hrH); }
-  if (L.style === 'long') { R(-9, -24, 18, 15, OL); R(-8, -24, 16, 14, hr); R(3, -24, 5, 14, hrD); R(-7, -24, 1, 10, hrH); }
-  if (L.style === 'curly') { R(-10, -28, 20, 13, OL); R(-9, -27, 18, 11, hr); for (let i = 0; i < 6; i++) R(-8 + i * 3, -25 + (i % 2) * 4, 1, 1, hrD); R(4, -26, 4, 10, hrD); }
-  // chair back in front of the body
-  R(-10, -10, 20, 13, OL); R(-9, -9, 18, 11, '#2d3546'); R(-8, -9, 16, 2, '#4a5670'); R(7, -9, 2, 11, '#252c3b'); R(-9, 0, 18, 2, '#222938');
-}
-// small head avatar for chat (data URL per station)
 const avatarCache = {};
 function avatar(id) {
   if (avatarCache[id]) return avatarCache[id];
   const k = document.createElement('canvas'); k.width = 22; k.height = 22; const c = k.getContext('2d');
   c.fillStyle = id === 'chris' ? '#3d8d2f' : (STATIONS.find(s => s.id === id)?.color || '#555'); c.fillRect(0, 0, 22, 22);
   if (id === 'chris') { c.fillStyle = '#fff'; c.font = 'bold 13px sans-serif'; c.textAlign = 'center'; c.fillText('C', 11, 16); }
-  else if (LOOKS[id]) { c.fillStyle = 'rgba(0,0,0,0)'; chibi(c, 11, 33, LOOKS[id], 0, false, false, 0); }
+  else if (crewLook(id)) { c.save(); c.translate(11, 20); c.scale(0.42, 0.42); paintCrew(c, id, 0, 46, {}); c.restore(); }
   return (avatarCache[id] = k.toDataURL());
 }
 
@@ -573,7 +558,7 @@ function sceneItems(t) {
   add(20.3 + 0.3, c => { box(c, 19.6, 0.05, 0, 1.6, 0.45, 1.9, '#5a3820', { t: '#6e4628' }); poly(c, quadY(0.501, 19.68, 21.12, 0.08, 1.82), '#2e1c0e'); for (let z = 0.12; z < 1.8; z += 0.43) { box(c, 19.62, 0.06, z - 0.05, 1.56, 0.44, 0.05, '#6e4628', { ol: false }); for (let k = 0; k < 7; k++) { const hh = 0.26 + hsh(k, z * 10 | 0) * 0.1; box(c, 19.7 + k * 0.205, 0.2, z, 0.17, 0.26, hh, ['#a33', '#36a', '#3a6', '#c93', '#639', '#933', '#2a6a6a'][(k + (z * 10 | 0)) % 7], { ol: false }); } } });
   add(21.3 + 4.4, c => { box(c, 20.9, 4.0, 0, 0.9, 0.7, 0.6, '#6a3e22'); paperStack(c, 21.1, 4.2, 0.6, 3); });
   // plants + cabinets
-  for (const [x, y] of PLANTS) add(x + y + 0.45, c => plant(c, x, y));
+  for (const [x, y] of PLANTS) add(x + y + 0.45, c => plant(c, x, y, 1.2));
   for (const y of [13.3, 13.95]) add(0.35 + y + 0.3, c => cabinet(c, 0.05, y));
   // design wall (free-standing cork board on legs, faces the bullpen)
   add(14.2 + 6.4, c => {
@@ -631,21 +616,25 @@ function sceneItems(t) {
 let sel = null;          // selected station id
 function drawWorker(c, p, t) {
   const [sx, sy] = P(p.seat[0], p.seat[1], SEATZ), st = stateOf(p.s.id), busy = st === 'active';
+  const S = CREW_SC, top = sy + CREW_HIT.y * S;
   if (busy) {
-    const gr = c.createRadialGradient(sx, sy - 12, 2, sx, sy - 12, 20);
-    gr.addColorStop(0, `rgba(120,255,110,${0.55 + 0.15 * Math.sin(t * 2.5)})`); gr.addColorStop(1, 'rgba(120,255,110,0)');
-    c.fillStyle = gr; c.fillRect(sx - 22, sy - 34, 44, 44);
+    const gr = c.createRadialGradient(sx, sy - 14, 1, sx, sy - 14, 16);
+    gr.addColorStop(0, `rgba(110,230,90,${0.42 + 0.12 * Math.sin(t * 2.5)})`); gr.addColorStop(1, 'rgba(110,230,90,0)');
+    c.fillStyle = gr; c.fillRect(sx - 16, top, 32, sy - top + 6);
   }
-  if (t > p.blinkAt) p.blinkAt = t + 2 + Math.random() * 4;
-  if (p.d.away) chibiBack(c, sx, sy, p.look, t, busy, p.phase); else chibi(c, sx, sy, p.look, t, busy, p.blinkAt - t < 0.12, p.phase);
-  if (st === 'blocked') { c.fillStyle = '#21140a'; c.fillRect(sx + 7, sy - 34, 5, 8); c.fillStyle = '#e8432f'; c.fillRect(sx + 8, sy - 33, 3, 4); c.fillRect(sx + 8, sy - 28, 3, 1); }
+  if (t > p.blinkAt) p.blinkAt = t + 2.4 + Math.random() * 4;
+  const bob = busy && Math.sin(t * 6 + p.phase) > 0.65 ? 1 : 0;
+  c.save(); c.translate(sx, sy); c.scale(S, S);
+  paintCrew(c, p.s.id, 0, 0, { back: !!p.d.away, blink: p.blinkAt - t < 0.12, bob });
+  c.restore();
+  if (st === 'blocked') { c.fillStyle = '#21140a'; c.fillRect(sx + 5, top + 6, 4, 6); c.fillStyle = '#e8432f'; c.fillRect(sx + 6, top + 7, 2, 3); c.fillRect(sx + 6, top + 11, 2, 1); }
   else if (st !== 'active') { // sleepy "z z" = paused
-    const f = (t * 0.8 + p.phase) % 2, a = f < 1 ? f : 2 - f, zx = sx + 8, zy = sy - 30 - Math.round(f * 3);
-    c.globalAlpha = 0.45 + 0.5 * a; c.fillStyle = '#f6efe0'; c.fillRect(zx, zy, 4, 1); c.fillRect(zx + 2, zy + 1, 1, 1); c.fillRect(zx + 1, zy + 2, 1, 1); c.fillRect(zx, zy + 3, 4, 1);
-    c.fillRect(zx + 5, zy - 4, 3, 1); c.fillRect(zx + 6, zy - 3, 1, 1); c.fillRect(zx + 5, zy - 2, 3, 1); c.globalAlpha = 1;
+    const f = (t * 0.8 + p.phase) % 2, a = f < 1 ? f : 2 - f, zx = sx + 8, zy = top - 5 - Math.round(f * 3);
+    c.globalAlpha = 0.45 + 0.5 * a; c.fillStyle = '#f6efe0'; c.fillRect(zx, zy, 3, 1); c.fillRect(zx + 1, zy + 1, 1, 1); c.fillRect(zx, zy + 2, 3, 1);
+    c.fillRect(zx + 4, zy - 3, 2, 1); c.fillRect(zx + 4, zy - 1, 2, 1); c.globalAlpha = 1;
   }
-  if (sel === p.s.id) { const y = sy - 40 + Math.round(Math.sin(t * 5) * 2); c.fillStyle = '#ffd23a'; c.fillRect(sx - 3, y, 7, 2); c.fillRect(sx - 2, y + 2, 5, 2); c.fillRect(sx - 1, y + 4, 3, 2); c.fillStyle = '#24170d'; c.fillRect(sx - 4, y - 1, 9, 1); }
-  hits.push({ kind: 'worker', id: p.s.id, r: [sx - 9, sy - 32, 18, 34] });
+  if (sel === p.s.id) { const y = top - 5 + Math.round(Math.sin(t * 5)); c.fillStyle = '#ffd23a'; c.fillRect(sx - 3, y, 6, 2); c.fillRect(sx - 2, y + 2, 4, 2); c.fillRect(sx - 1, y + 4, 2, 2); c.fillStyle = '#24170d'; c.fillRect(sx - 4, y - 1, 8, 1); }
+  hits.push({ kind: 'worker', id: p.s.id, r: [sx + CREW_HIT.x * S, sy + CREW_HIT.y * S, CREW_HIT.w * S, CREW_HIT.h * S] });
   { const d = p.d; hits.push({ kind: 'worker', id: p.s.id, poly: [P(d.x, d.y, 0.6), P(d.x + d.w, d.y, 0.6), P(d.x + d.w, d.y + d.d, 0), P(d.x, d.y + d.d, 0)] }); }
 }
 
@@ -658,37 +647,57 @@ function ctTime(d = new Date()) {
   return { tm, dt, h: h % 24, m };
 }
 function fitText(c, s, w) { s = noLig(noDash(s)); if (c.measureText(s).width <= w) return s; while (s.length > 1 && c.measureText(s + '..').width > w) s = s.slice(0, -1); return s + '..'; }
+// Shrink the font until the whole string fits. Headers stay complete words, never "IN PROGRE..".
+function fontFit(c, s, w, maxPx, minPx) {
+  s = noLig(noDash(s));
+  let px = maxPx;
+  c.font = `700 ${px}px ${FONT}`;
+  while (px > minPx && c.measureText(s).width > w) { px = Math.round((px - 0.5) * 10) / 10; c.font = `700 ${px}px ${FONT}`; }
+  return s;
+}
 function textPass(t) {
   const S = DPR * PS, c = ctx;
-  // Team Board (conference back wall): LIVE | PAUSED | NEEDS YOU, 3 short cards each
-  inPlane(c, S, PLANE_Y(8.12, 0.02, 2.75), 40, cc => {
-    const Wd = 5.36 * 40, colW = (Wd - 12) / 3; cc.textBaseline = 'middle';
-    const cols = [['LIVE', '#6fd35b', PROJECTS.filter(p => p.status === 'active' || p.status === 'done').map(p => p.short || p.title)],
-      ['PAUSED', '#f2b33d', PROJECTS.filter(p => !['active', 'done'].includes(p.status)).map(p => p.short || p.title)],
+  // Team Board (conference back wall). Face is inset 0.12 from the frame, so text starts at 7.74 and runs 6.04 units.
+  inPlane(c, S, PLANE_Y(7.74, 0.02, 2.75), 40, cc => {
+    const Wd = 6.04 * 40, colW = (Wd - 16) / 3; cc.textBaseline = 'middle';
+    const cols = [['IN PROGRESS', '#6fd35b', PROJECTS.filter(p => p.status === 'active' || p.status === 'done').map(p => p.short || p.title)],
+      ['TEAM BOARD', '#f2b33d', PROJECTS.filter(p => !['active', 'done'].includes(p.status)).map(p => p.short || p.title)],
       ['NEEDS YOU', '#ff6a55', [...NEEDS, ...liveNeeds()].map(n => n.short || n.title)]];
     cols.forEach(([h, col, items], i) => {
-      const x = 3 + i * (colW + 3);
-      cc.fillStyle = col; cc.fillRect(x, 3, colW, 15); cc.fillStyle = '#16120e'; cc.font = `700 10.5px ${FONT}`; cc.fillText(fitText(cc, `${h} ${items.length}`, colW - 6), x + 4, 11);
+      const x = 4 + i * (colW + 4);
+      cc.fillStyle = col; cc.fillRect(x, 3, colW, 16);
+      cc.fillStyle = '#16120e';
+      const count = String(items.length);
+      cc.font = `700 8px ${FONT}`;
+      const countW = cc.measureText(count).width + 4;
+      const label = fontFit(cc, h, colW - countW - 8, 8, 6.5);
+      cc.fillText(label, x + 3, 11);
+      cc.textAlign = 'right'; cc.fillText(count, x + colW - 3, 11); cc.textAlign = 'left';
       const show = items.length > 3 ? items.slice(0, 2) : items;
-      show.forEach((t, k) => { const y = 22 + k * 17; cc.fillStyle = '#f3ead2'; cc.fillRect(x, y, colW, 14); cc.fillStyle = col; cc.fillRect(x, y, 3, 14); cc.fillStyle = '#1d1a16'; cc.font = `700 9.5px ${FONT}`; cc.fillText(fitText(cc, t, colW - 9), x + 6, y + 7.5); });
-      if (items.length > 3) { cc.fillStyle = '#d8d2c2'; cc.font = `700 9px ${FONT}`; cc.fillText(`+${items.length - 2} more`, x + 4, 22 + 2 * 17 + 7); }
+      show.forEach((t, k) => {
+        const y = 23 + k * 17; cc.fillStyle = '#f3ead2'; cc.fillRect(x, y, colW, 14); cc.fillStyle = col; cc.fillRect(x, y, 3, 14); cc.fillStyle = '#1d1a16';
+        const card = fontFit(cc, t, colW - 10, 8.5, 7);
+        cc.fillText(cc.measureText(card).width <= colW - 10 ? card : fitText(cc, card, colW - 10), x + 6, y + 7.5);
+      });
+      if (items.length > 3) { cc.fillStyle = '#d8d2c2'; const more = fontFit(cc, `+${items.length - 2} more`, colW - 8, 8, 7); cc.fillText(more, x + 4, 23 + 2 * 17 + 7); }
     });
   });
   // HQ status board (back wall, real counts)
   inPlane(c, S, PLANE_Y(3.12, 0.02, 2.6), 40, cc => {
-    cc.textBaseline = 'middle'; cc.fillStyle = '#ffd27a'; cc.font = `700 12px ${FONT}`; cc.fillText('HQ STATUS', 6, 9);
-    const n = s => PROJECTS.filter(p => p.status === s).length;
-    const rows = [['Projects', PROJECTS.length, '#e9e2cf'], ['Live', n('active') + n('done'), '#6fd35b'], ['Paused', n('paused') + n('waiting') + n('blocked'), '#f2b33d'], ['Needs you', needsCount(), '#ff6a55']];
+    cc.textBaseline = 'middle'; cc.fillStyle = '#f0c14a'; cc.font = `700 11px ${FONT}`; cc.fillText('PAPER TICKER', 6, 9);
+    const shortSt = p => p.status === 'done' ? 'LIVE' : p.status === 'waiting' ? 'REVIEW' : p.status === 'active' ? 'LIVE' : p.status === 'blocked' ? 'STUCK' : 'HOLD';
+    const rows = PROJECTS.slice(0, 3).map(p => [p.short || p.title, shortSt(p), p.status === 'done' || p.status === 'active' ? '#7dff78' : p.status === 'waiting' ? '#f0c14a' : '#e7d7b0']);
+    rows.push(['Needs you', String(needsCount()), '#ff8a72']);
     cc.font = `700 10px ${FONT}`;
-    rows.forEach(([k, v, col], i) => { const y = 23 + i * 11; cc.fillStyle = '#cfd8cc'; cc.fillText(k, 7, y); cc.fillStyle = col; cc.textAlign = 'right'; cc.fillText(String(v), 150, y); cc.textAlign = 'left'; });
+    rows.forEach(([k, v, col], i) => { const y = 22 + i * 11; cc.fillStyle = '#d9cbb0'; cc.fillText(fitText(cc, k, 100), 6, y); cc.fillStyle = col; cc.textAlign = 'right'; cc.fillText(v, 158, y); cc.textAlign = 'left'; });
   });
   // whiteboard (left wall, text runs toward the back corner): 3 short lines
   inPlane(c, S, PLANE_X(0.03, 8.28, 2.45), 40, cc => {
-    cc.textBaseline = 'middle'; cc.fillStyle = '#1d3f8f'; cc.font = `700 13px ${FONT}`; cc.fillText('TODAY', 8, 9);
+    cc.textBaseline = 'middle'; cc.fillStyle = '#1d3f8f'; cc.font = `700 12px ${FONT}`; cc.fillText(fitText(cc, "Today's priorities", 130), 6, 9);
     cc.font = `700 10px ${FONT}`;
     const etsy = PROJECTS.find(p => p.id === 'etsy'), att = PROJECTS.find(p => p.id === 'att');
     const lines = [['All projects paused', '#222'], [etsy?.status === 'waiting' ? 'Etsy ID in review' : 'Etsy shop paused', '#a8601c'], [att?.due ? `AT&T due ${att.due}` : 'AT&T paused', '#a52a1c']];
-    lines.forEach(([t, col], i) => { cc.fillStyle = col; cc.fillText('\u2022 ' + noLig(t), 8, 23 + i * 11); });
+    lines.forEach(([t, col], i) => { cc.fillStyle = col; cc.fillText('\u2022 ' + noLig(t), 6, 24 + i * 11); });
   });
   // wall clock (real CT time) above the whiteboard
   inPlane(c, S, PLANE_X(0.03, 10.0, 2.95), 22, cc => {
@@ -700,7 +709,7 @@ function textPass(t) {
   // warehouse sign
   inPlane(c, S, PLANE_Y(9.36, 12.62, 2.1), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#fff'; cc.font = `700 11px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', 9, 5); });
   // reception sign (front of the desk)
-  inPlane(c, S, PLANE_X(3.51, 11.85, 0.62), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
+  inPlane(c, S, PLANE_X(3.11, 11.15, 0.58), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
   // design wall header
   inPlane(c, S, PLANE_Y(15.4, 6.4, 2.62), 40, cc => { cc.fillStyle = '#2a1c10'; cc.fillRect(4, 0, 76, 11); cc.textBaseline = 'top'; cc.fillStyle = '#ffd27a'; cc.font = `700 8px ${FONT}`; cc.fillText('DESIGN WALL', 8, 2); });
 
@@ -708,16 +717,23 @@ function textPass(t) {
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   for (const b of bubbles) {
     const p = byId(b.id); if (!p) continue;
-    const [sx, sy] = Pf(p.seat[0], p.seat[1], SEATZ); const X = sx * PS, Y = (sy - 34) * PS;
-    const fs = Math.max(13, Math.min(18, 4.6 * PS)); c.font = `700 ${fs}px ${FONT}`;
-    const txt = fitText(c, b.text, 340), w = c.measureText(txt).width + 20, h = fs + 14;
+    const [sx, sy] = Pf(p.seat[0], p.seat[1], SEATZ); const X = sx * PS, Y = (sy + CREW_HIT.y * CREW_SC - 3) * PS;
+    const fs = Math.max(12, Math.min(16, 4.2 * PS)); c.font = `700 ${fs}px ${FONT}`;
+    const txt = fitText(c, b.text, 220); if (!txt.trim()) continue;
+    const w = c.measureText(txt).width + 16, h = fs + 12;
     const a = Math.min(1, (b.until - t) * 2, (t - b.at) * 4); if (a <= 0) continue;
-    c.globalAlpha = a; c.fillStyle = '#fffdf6'; c.strokeStyle = '#24170d'; c.lineWidth = 3;
-    const bx = Math.round(Math.max(8, Math.min(W - w - 8, X - w / 2))), by = Math.round(Math.max(8, Y - h));
-    c.beginPath(); c.roundRect ? c.roundRect(bx, by, w, h, 5) : c.rect(bx, by, w, h); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(X - 5, by + h - 1); c.lineTo(X, by + h + 6); c.lineTo(X + 4, by + h - 1); c.fill();
-    c.beginPath(); c.moveTo(X - 5, by + h); c.lineTo(X, by + h + 6); c.lineTo(X + 4, by + h); c.stroke();
-    c.fillStyle = '#24170d'; c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillText(txt, X, by + h / 2 + 1); c.textAlign = 'left';
+    let bx = Math.round(X - w / 2), by = Math.round(Y - h);
+    const overlaps = (r) => r && r.width > 0 && bx < r.right + 4 && bx + w > r.left - 4 && by < r.bottom + 4 && by + h > r.top - 4;
+    const tl = $('#tl')?.getBoundingClientRect(), tr = $('#tr')?.getBoundingClientRect(), chat = $('#chat')?.getBoundingClientRect();
+    if (overlaps(tl)) by = Math.round(tl.bottom + 6);
+    if (overlaps(tr)) by = Math.max(by, Math.round(tr.bottom + 6));
+    if (overlaps(chat)) bx = Math.round(chat.left - w - 8);
+    bx = Math.max(8, Math.min(W - w - 8, bx)); by = Math.max(8, Math.min(H - h - 8, by));
+    c.globalAlpha = a; c.fillStyle = '#fffdf6'; c.strokeStyle = '#24170d'; c.lineWidth = 2;
+    c.beginPath(); c.roundRect ? c.roundRect(bx, by, w, h, 4) : c.rect(bx, by, w, h); c.fill(); c.stroke();
+    const tail = Math.max(bx + 10, Math.min(bx + w - 10, X));
+    c.beginPath(); c.moveTo(tail - 4, by + h - 1); c.lineTo(tail, by + h + 5); c.lineTo(tail + 4, by + h - 1); c.fill();
+    c.fillStyle = '#24170d'; c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillText(txt, bx + w / 2, by + h / 2 + 1); c.textAlign = 'left';
     c.globalAlpha = 1;
   }
   if (sel) {
@@ -733,20 +749,26 @@ function textPass(t) {
 const bubbles = []; let nextBubble = 1.2;
 function tickBubbles(t) {
   for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].until < t) bubbles.splice(i, 1);
-  if (t > nextBubble && bubbles.length < 2) {
+  if (t > nextBubble && bubbles.length < 3) {
     const pool = people.filter(p => !bubbles.some(b => b.id === p.s.id));
     const act = pool.filter(p => stateOf(p.s.id) === 'active');
     const p = (act.length && Math.random() < 0.45 ? act : pool)[Math.floor(Math.random() * (Math.random() < 0.45 && act.length ? act.length : pool.length))] || pool[0];
-    if (p) bubbles.push({ id: p.s.id, text: lineOf(p.s.id), at: t, until: t + 4.5 });
-    nextBubble = t + 2.6 + Math.random() * 2;
+    if (p) bubbles.push({ id: p.s.id, text: bubbleLine(p.s.id), at: t, until: t + 4.8 });
+    nextBubble = t + 2.2 + Math.random() * 1.8;
   }
+}
+function bubbleLine(id) {
+  const st = stateOf(id), real = lineOf(id);
+  if (st === 'active') return Math.random() < 0.6 ? 'On it!' : real;
+  if (projectsOf(id).some(p => p.status === 'waiting')) return Math.random() < 0.55 ? 'Under review.' : real;
+  return Math.random() < 0.4 ? 'Paused.' : real;
 }
 function say(id, text, secs = 5) { const t = now(); const i = bubbles.findIndex(b => b.id === id); if (i >= 0) bubbles.splice(i, 1); bubbles.push({ id, text, at: t, until: t + secs }); }
 
 // ---------- hotspots ----------
 let hits = [];
 function staticHits() {
-  hits.push({ kind: 'board', poly: quadY(0, 8.0, 13.6, 0.75, 2.85) });
+  hits.push({ kind: 'board', poly: quadY(0, 7.62, 13.9, 0.75, 2.85) });
   hits.push({ kind: 'status', poly: quadY(0, 3.0, 7.2, 0.95, 2.7) });
   hits.push({ kind: 'whiteboard', poly: quadX(0, 4.6, 8.4, 0.95, 3.2) });
   hits.push({ kind: 'design', poly: quadY(6.6, 15.3, 20.2, 0, 2.6) });
@@ -773,12 +795,12 @@ function frame() {
   hits = []; staticHits();
   for (const it of sceneItems(t)) it.fn(g);
   // warm grade + ceiling light pools
-  g.globalCompositeOperation = 'multiply'; g.fillStyle = '#fff0d8'; g.fillRect(0, 0, BW, BH);
+  g.globalCompositeOperation = 'multiply'; g.fillStyle = '#fff6e6'; g.fillRect(0, 0, BW, BH);
   g.globalCompositeOperation = 'screen'; g.drawImage(lite, 0, 0); g.globalCompositeOperation = 'source-over';
   tickBubbles(t);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
   ctx.drawImage(buf, 0, 0, BW * PS * DPR, BH * PS * DPR);
-  if (!vig || vig.w !== cv.width || vig.h !== cv.height) { const gr = ctx.createRadialGradient(cv.width / 2, cv.height * 0.48, Math.min(cv.width, cv.height) * 0.35, cv.width / 2, cv.height * 0.48, Math.max(cv.width, cv.height) * 0.75); gr.addColorStop(0, 'rgba(20,10,2,0)'); gr.addColorStop(1, 'rgba(20,10,2,.55)'); vig = { gr, w: cv.width, h: cv.height }; }
+  if (!vig || vig.w !== cv.width || vig.h !== cv.height) { const gr = ctx.createRadialGradient(cv.width / 2, cv.height * 0.48, Math.min(cv.width, cv.height) * 0.35, cv.width / 2, cv.height * 0.48, Math.max(cv.width, cv.height) * 0.75); gr.addColorStop(0, 'rgba(20,10,2,0)'); gr.addColorStop(1, 'rgba(20,10,2,.32)'); vig = { gr, w: cv.width, h: cv.height }; }
   ctx.fillStyle = vig.gr; ctx.fillRect(0, 0, cv.width, cv.height);
   textPass(t);
 }
