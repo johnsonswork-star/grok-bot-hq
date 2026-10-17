@@ -713,7 +713,7 @@ function textPass(t) {
     const txt = fitText(c, b.text, 340), w = c.measureText(txt).width + 20, h = fs + 14;
     const a = Math.min(1, (b.until - t) * 2, (t - b.at) * 4); if (a <= 0) continue;
     c.globalAlpha = a; c.fillStyle = '#fffdf6'; c.strokeStyle = '#24170d'; c.lineWidth = 3;
-    const bx = Math.round(X - w / 2), by = Math.round(Y - h);
+    const bx = Math.round(Math.max(8, Math.min(W - w - 8, X - w / 2))), by = Math.round(Math.max(8, Y - h));
     c.beginPath(); c.roundRect ? c.roundRect(bx, by, w, h, 5) : c.rect(bx, by, w, h); c.fill(); c.stroke();
     c.beginPath(); c.moveTo(X - 5, by + h - 1); c.lineTo(X, by + h + 6); c.lineTo(X + 4, by + h - 1); c.fill();
     c.beginPath(); c.moveTo(X - 5, by + h); c.lineTo(X, by + h + 6); c.lineTo(X + 4, by + h); c.stroke();
