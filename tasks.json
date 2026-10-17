@@ -2,33 +2,39 @@
   "_how": "Which bots are on a task right now. Busy bots walk to their desk and type; everyone else roams the floor. Key = station id from stations.js. Value = task text, or {\"task\": \"...\", \"until\": \"2026-10-10T22:00:00-05:00\"} to auto-clear. Delete the key to set a bot idle. Update with tools/set-busy.sh.",
   "busy": {
     "grok": {
-      "task": "HQ chat on duty",
-      "since": "2026-10-11T00:57:22.045Z",
-      "until": "2026-10-12T21:29:41.715Z"
+      "task": "Building the 2.5D office",
+      "since": "2026-10-17T22:15:22.793Z",
+      "until": "2026-10-18T03:15:22.793Z"
     },
     "inbox": {
-      "task": "Family inbox watch",
-      "since": "2026-10-11T01:48:05.392Z",
-      "until": "2026-10-12T20:41:54.443Z"
+      "task": "Family inbox + Needs you watch",
+      "since": "2026-10-13T21:01:15.754Z",
+      "until": "2026-10-13T23:01:15.754Z"
     },
     "assist": {
       "task": "Job apps / resume watch",
       "since": "2026-10-12T13:29:35.956Z",
-      "until": "2026-10-12T20:41:54.907Z"
+      "until": "2026-10-13T23:01:16.246Z"
     },
     "conn": {
       "task": "AT&T RV lot internet watch",
       "since": "2026-10-12T13:29:40.218Z",
-      "until": "2026-10-12T20:41:54.773Z"
-    },
-    "icons": {
-      "task": "Visual upgrade: signs, posters & desk props",
-      "since": "2026-10-13T01:17:57.758Z",
-      "until": "2026-10-13T02:50:26.420Z"
+      "until": "2026-10-13T23:01:15.946Z"
     },
     "review": {
-      "task": "HQ #101 QC",
-      "since": "2026-10-13T02:10:11.480Z"
+      "task": "QC Design Trainer cards before wall",
+      "since": "2026-10-13T21:01:15.540Z",
+      "until": "2026-10-13T22:31:15.540Z"
+    },
+    "designer": {
+      "task": "PM trend ideas → Design Trainer cards (13 briefs)",
+      "since": "2026-10-13T21:01:15.424Z",
+      "until": "2026-10-13T22:31:15.424Z"
+    },
+    "cos": {
+      "task": "Market research: Q4 faith apparel signals",
+      "since": "2026-10-13T21:01:15.650Z",
+      "until": "2026-10-13T22:31:15.650Z"
     }
   }
 }

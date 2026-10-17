@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DM 2.5D">
+<meta name="theme-color" content="#1a1410">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<title>Dunder Mifflin HQ 2.5D</title>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="tl" class="hud">
+  <div id="logo"><div class="l1">DUNDER</div><div class="l1">MIFFLIN</div><div class="l2">BOT HQ</div></div>
+  <div id="projects" class="panel">
+    <div class="ph"><span>PROJECTS</span><button id="projToggle" class="mini">all</button></div>
+    <ol id="projList"></ol>
+  </div>
+</div>
+
+<div id="tr" class="hud">
+  <div class="trrow">
+    <a id="to3d" class="pillbtn" href="../">3D office</a>
+    <button id="needsBtn" class="needs">! Needs you (<span id="needsN">0</span>)</button>
+  </div>
+  <div id="clock" class="panel"><span class="ci">&#9719;</span><div><div id="clkT">--:--</div><div id="clkD">---</div></div></div>
+</div>
+
+<div id="chat" class="panel hud">
+  <div class="tabs">
+    <button data-tab="chat" class="on">TEAM CHAT</button>
+    <button data-tab="assign">ASSIGNMENTS</button>
+    <button data-tab="needs">NEEDS YOU</button>
+    <button id="chatMin" class="mini" title="hide">_</button>
+  </div>
+  <div id="chatBody"></div>
+  <form id="chatForm" autocomplete="off">
+    <select id="chatTo" aria-label="send to"><option value="Grok Bot">Michael (Grok Bot)</option><option value="Office">Whole office</option></select>
+    <input id="chatIn" placeholder="Type a message..." maxlength="2000" enterkeyhint="send">
+    <button id="chatSend" type="submit">&#10148;</button>
+  </form>
+</div>
+<button id="chatOpen" class="pillbtn hud hidden">Chat</button>
+
+<div id="modal" class="hidden"><div id="card" class="panel"><button id="cardX" class="mini">X</button><div id="cardBody"></div></div></div>
+<div id="toast" class="hidden"></div>
+<div id="padHint" class="hidden">Controller: D-pad pick a desk, A open, B close, Y Needs you, X chat</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>

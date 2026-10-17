@@ -220,7 +220,7 @@ export async function fetchSwipeDeck(force = false) {
   // HQ #87 fallback: the same deck, still encrypted to THIS device's key, hosted on Pages (swipe/<sha256(topic)>.json)
   try {
     const h = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(d.topic)))).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
-    const r = await withTimeout(`./swipe/${h}.json?t=${Date.now()}`, 30000);
+    const r = await withTimeout(new URL(`./swipe/${h}.json?t=${Date.now()}`, import.meta.url).href, 30000);
     if (!r.ok) throw new Error('pages ' + r.status);
     const w = await r.json(); const p = await open(w.env || w, d.priv);
     if (p.type !== 'swipe-deck' || !Array.isArray(p.cards)) throw new Error('pages bad deck');
