@@ -19,7 +19,7 @@ button{font-family:var(--px);cursor:pointer}
 #logo .l2{font-size:10px;letter-spacing:2px;margin-top:3px;border-top:2px solid #111;padding-top:2px}
 #projects{padding:8px 12px 9px;min-width:260px;max-width:310px}
 .ph{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:17px;letter-spacing:1px;margin-bottom:4px;color:#3b2412;border-bottom:2px solid #b98e57;padding-bottom:3px}
-#projList{list-style:none;margin:0;padding:0;max-height:160px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#projList{list-style:none;margin:0;padding:0;max-height:76px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 #projects.all #projList{max-height:min(60vh,420px)}
 #projList li{display:flex;align-items:center;gap:6px;font-size:14px;color:#2a1a0c;padding:3px 2px;border-bottom:1px dashed rgba(62,39,22,.25);cursor:pointer}
 #projList li:last-child{border-bottom:0}
@@ -37,7 +37,7 @@ button{font-family:var(--px);cursor:pointer}
 #clock{display:flex;align-items:center;gap:8px;padding:4px 10px;background:#2b2118;color:#fbe9c6;border-color:#000;box-shadow:0 0 0 2px #6b5236 inset,3px 3px 0 rgba(0,0,0,.4)}
 #clock .ci{font-size:22px}#clkT{font-size:17px;font-weight:700}#clkD{font-size:12px;opacity:.85}
 
-#chat{background:linear-gradient(180deg,#2c2016,#1f160e)!important;right:calc(10px + env(safe-area-inset-right));bottom:calc(10px + env(safe-area-inset-bottom));width:min(380px,40vw);height:min(280px,34vh);
+#chat{background:linear-gradient(180deg,#2c2016,#1f160e)!important;right:calc(10px + env(safe-area-inset-right));bottom:calc(10px + env(safe-area-inset-bottom));width:min(380px,40vw);height:min(230px,28vh);
   display:flex;flex-direction:column;background:#241a12;border-color:#000;box-shadow:0 0 0 2px #6b5236 inset,4px 4px 0 rgba(0,0,0,.45);color:#f3e6c4}
 .tabs{display:flex;gap:2px;padding:4px 4px 0;border-bottom:2px solid #6b5236}
 .tabs button{flex:1;background:#3a2a1c;color:#d9c49e;border:2px solid #000;border-bottom:0;border-radius:4px 4px 0 0;font-size:12px;padding:5px 2px;letter-spacing:.5px}
