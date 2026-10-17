@@ -47,6 +47,7 @@ let busyFile = {};
 let workFeed = null;          // encrypted per-device work feed { bots, needs } (may be empty while routines are paused)
 let deck = null;              // encrypted Design Trainer deck { cards:[{id,title,d}] }
 const deckImgs = [];
+const STLBL = { blocked: 'stuck', waiting: 'under review', done: 'live', paused: 'paused', active: 'in progress' };
 function projectsOf(id) { return PROJECTS.filter(p => p.owners.includes(id)); }
 function busyOf(id) {
   const v = busyFile[id]; if (!v) return null;
@@ -65,7 +66,7 @@ function lineOf(id) {
   const b = busyOf(id); if (b) return b;
   const ps = projectsOf(id);
   const a = ps.find(p => p.status === 'active'); if (a) return a.title;
-  if (ps.length) { const p = ps[(Math.floor(Date.now() / 9000) + id.length) % ps.length]; return `${p.title}: ${p.status === 'blocked' ? 'stuck' : 'paused'}`; }
+  if (ps.length) { const p = ps[(Math.floor(Date.now() / 9000) + id.length) % ps.length]; return `${p.title}: ${STLBL[p.status] || 'paused'}`; }
   return DESK_NOTE[id] || 'Paused';
 }
 function liveNeeds() { return Array.isArray(workFeed?.needs) ? workFeed.needs.filter(n => n && n.title && !n.done) : []; }
@@ -441,8 +442,8 @@ function textPass(t) {
   inPlane(c, S, PLANE_Y(9.72, 0.02, 2.65), 40, cc => {
     const Wd = 5.76 * 40, Hd = 1.7 * 40;
     cc.fillStyle = '#ffd27a'; cc.font = `700 9px ${FONT}`; cc.textBaseline = 'top'; cc.fillText('TEAM BOARD', 6, 3);
-    const colW = (Wd - 16) / 3, heads = [['IN PROGRESS', '#6fd35b', PROJECTS.filter(p => p.status === 'active').map(p => p.title)],
-      ['PAUSED', '#f2b33d', PROJECTS.filter(p => p.status !== 'active').map(p => p.title)],
+    const colW = (Wd - 16) / 3, heads = [['IN PROGRESS / LIVE', '#6fd35b', [...PROJECTS.filter(p => p.status === 'active').map(p => p.title), ...PROJECTS.filter(p => p.status === 'done').map(p => 'Live: ' + p.title)]],
+      ['PAUSED', '#f2b33d', PROJECTS.filter(p => !['active', 'done'].includes(p.status)).map(p => p.status === 'waiting' ? `${p.title}: review` : p.title)],
       ['NEEDS YOU', '#ff6a55', [...NEEDS, ...liveNeeds()].map(n => n.title)]];
     heads.forEach(([h, col, items], i) => {
       const x = 4 + i * (colW + 4);
@@ -456,15 +457,15 @@ function textPass(t) {
   inPlane(c, S, PLANE_Y(3.62, 0.02, 2.5), 40, cc => {
     cc.textBaseline = 'top'; cc.fillStyle = '#ffd27a'; cc.font = `700 9px ${FONT}`; cc.fillText('HQ STATUS', 7, 4);
     const n = s => PROJECTS.filter(p => p.status === s).length;
-    const rows = [['Projects', PROJECTS.length, '#e9e2cf'], ['In progress', n('active'), '#6fd35b'], ['Paused', n('paused'), '#f2b33d'], ['Stuck', n('blocked'), '#ff6a55'], ['Needs you', needsCount(), '#ff6a55']];
+    const rows = [['Projects', PROJECTS.length, '#e9e2cf'], ['In progress', n('active'), '#6fd35b'], ['Done', n('done'), '#7fc4ff'], ['Paused', n('paused') + n('waiting'), '#f2b33d'], ['Stuck', n('blocked'), '#ff6a55'], ['Needs you', needsCount(), '#ff6a55']];
     cc.font = `7px ${FONT}`;
-    rows.forEach(([k, v, col], i) => { cc.fillStyle = '#cfd8cc'; cc.fillText(k, 8, 17 + i * 9); cc.fillStyle = col; cc.textAlign = 'right'; cc.fillText(String(v), 170, 17 + i * 9); cc.textAlign = 'left'; });
+    rows.forEach(([k, v, col], i) => { cc.fillStyle = '#cfd8cc'; cc.fillText(k, 8, 16 + i * 8); cc.fillStyle = col; cc.textAlign = 'right'; cc.fillText(String(v), 170, 16 + i * 8); cc.textAlign = 'left'; });
   });
   // whiteboard (left wall, text runs toward the back corner)
   inPlane(c, S, PLANE_X(0.03, 12.52, 2.48), 40, cc => {
     cc.textBaseline = 'top'; cc.fillStyle = '#1d3f8f'; cc.font = `700 10px ${FONT}`; cc.fillText("Today's board", 8, 4);
     cc.font = `7.5px ${FONT}`; cc.fillStyle = '#222';
-    const lines = ['All projects paused (Oct 17)', 'Building the 2.5D office', 'Etsy: Persona ID check', 'AT&T deadline: Oct 21'];
+    const lines = ['All projects paused (Oct 17)', '2.5D office is live', 'Etsy ID: under review', 'AT&T deadline: Oct 21'];
     lines.forEach((s, i) => { cc.fillStyle = i === 1 ? '#1f7a3a' : i > 1 ? '#a52a1c' : '#222'; cc.fillText('\u2022 ' + s, 9, 19 + i * 10); });
   });
   // wall clock (real CT time) above the whiteboard
@@ -600,7 +601,7 @@ cardBody.addEventListener('click', e => {
   else if (a === 'worker') { sel = b.dataset.id; openWorker(b.dataset.id); }
   else if (a === 'ask') { closeCard(); openChat(); chatTo.value = 'Grok Bot'; chatIn.value = b.dataset.text || ''; chatIn.focus(); }
 });
-const stTag = s => `<span class="st ${s}">${s === 'active' ? 'IN PROGRESS' : s === 'blocked' ? 'STUCK' : 'PAUSED'}</span>`;
+const stTag = s => `<span class="st ${s}">${{ active: 'IN PROGRESS', blocked: 'STUCK', done: 'DONE, LIVE', waiting: 'UNDER REVIEW' }[s] || 'PAUSED'}</span>`;
 function fmtAgo(ms) { const m = Math.round((Date.now() - ms) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; }
 function openWorker(id) {
   const p = byId(id); if (!p) return; const s = p.s, st = stateOf(id), ps = projectsOf(id), b = busyOf(id), live = workFeed?.bots?.[id];
@@ -616,7 +617,7 @@ function openWorker(id) {
 function openProjects() {
   const grp = s => PROJECTS.filter(p => p.status === s);
   const sec = (h, list) => list.length ? `<h3>${h} (${list.length})</h3>` + list.map(p => `<div class="item"><b>${esc(p.title)} ${stTag(p.status)}${p.due ? `<span class="due">due ${esc(p.due)}</span>` : ''}</b><small>${esc(p.note)}<br>Desk: ${p.owners.map(o => byId(o)?.s.name || o).map(esc).join(', ')}</small></div>`).join('') : '';
-  openCard(`<h2>Team Board</h2><div class="sub">Updated ${esc(UPDATED)}. ${esc(PAUSE_NOTE)}</div>${sec('IN PROGRESS', grp('active'))}${sec('STUCK', grp('blocked'))}${sec('PAUSED', grp('paused'))}<div class="btns"><button data-act="needs">Needs you (${needsCount()})</button></div>`);
+  openCard(`<h2>Team Board</h2><div class="sub">Updated ${esc(UPDATED)}. ${esc(PAUSE_NOTE)}</div>${sec('IN PROGRESS', grp('active'))}${sec('DONE', grp('done'))}${sec('STUCK', grp('blocked'))}${sec('UNDER REVIEW', grp('waiting'))}${sec('PAUSED', grp('paused'))}<div class="btns"><button data-act="needs">Needs you (${needsCount()})</button></div>`);
 }
 function needsHtml() {
   const L = liveNeeds();

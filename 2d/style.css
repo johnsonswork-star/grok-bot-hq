@@ -25,9 +25,9 @@ button{font-family:var(--px);cursor:pointer}
 #projList li:last-child{border-bottom:0}
 #projList .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pip{width:11px;height:11px;border:2px solid #2a1c10;flex:none;border-radius:2px}
-.pip.active{background:var(--green)}.pip.paused{background:var(--amber)}.pip.blocked{background:var(--red)}
+.pip.active{background:var(--green)}.pip.paused{background:var(--amber)}.pip.blocked{background:var(--red)}.pip.waiting{background:var(--amber)}.pip.done{background:#5aa9e6}
 .st{font-size:11px;padding:0 4px;border-radius:3px;color:#fff;flex:none}
-.st.active{background:#3d8d2f}.st.paused{background:#a87416}.st.blocked{background:#a52a1c}
+.st.active{background:#3d8d2f}.st.paused{background:#a87416}.st.blocked{background:#a52a1c}.st.waiting{background:#a87416}.st.done{background:#2f6fa8}
 
 #tr{right:calc(10px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));display:flex;flex-direction:column;align-items:flex-end;gap:7px}
 .trrow{display:flex;gap:8px;align-items:center}

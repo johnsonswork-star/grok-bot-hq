@@ -1,15 +1,15 @@
 // 2.5D office: real project + "Needs you" list (Oct 17, 2026). Public repo, so nothing private here:
 // no account numbers, no dollar amounts, no contact names. Private items (family inbox, bills) only arrive
 // through the encrypted work feed (../hq-link.js fetchWorkFeed -> needs) on Chris's own device.
-// status: active | paused | blocked. owners = station ids from ../stations.js
+// status: active | done | waiting | paused | blocked. owners = station ids from ../stations.js
 export const UPDATED = 'Oct 17, 2026';
 export const PAUSE_NOTE = 'Chris stopped all projects on Oct 17. Nothing restarts until he says go.';
 
 export const PROJECTS = [
-  { id: 'office2d', title: '2.5D office (this page)', status: 'active', owners: ['grok'],
-    note: 'Being built now. The 3D office still works at the old link.' },
-  { id: 'etsy', title: 'Atom Family Etsy shop', status: 'blocked', owners: ['designer', 'cos'],
-    note: 'Paused. Stuck at Etsy Persona ID verification, which needs you or Alissa with a phone camera.' },
+  { id: 'office2d', title: '2.5D office (this page)', status: 'done', owners: ['grok'],
+    note: 'Done and live (Oct 17). The 3D office still works at the old link.' },
+  { id: 'etsy', title: 'Atom Family Etsy shop', status: 'waiting', label: 'ID submitted, under review (1-3 days)', owners: ['designer', 'cos'],
+    note: 'ID submitted, under review (1-3 days). Chris finished the Etsy Persona ID check at about 5:14 PM CT Oct 17. Etsy says the review takes 1 to 3 days.' },
   { id: 'pod', title: 'Printful + Tapstitch onboarding', status: 'paused', owners: ['designer'],
     note: 'Paused. Printful is the main supplier, Tapstitch is being added as a second option.' },
   { id: 'cards', title: 'Kelly design cards + mockups', status: 'paused', owners: ['designer', 'review'],
@@ -33,8 +33,6 @@ export const PROJECTS = [
 export const NEEDS = [
   { id: 'restart', title: 'Which projects should restart?', who: 'Michael',
     do: 'Everything is paused. Tell Michael in chat which ones to start again, or leave them off.' },
-  { id: 'persona', title: 'Etsy Persona ID verification', who: 'Kelly',
-    do: 'You or Alissa finish the Persona ID check with a phone camera. The Etsy shop cannot open until then.' },
   { id: 'att', title: 'AT&T follow-up: go or hold?', who: 'Kevin', due: 'Oct 21',
     do: 'The follow-up deadline is Oct 21. Say go or hold.' },
   { id: 'bridge', title: 'Keep the HQ chat bridge on?', who: 'Michael',
