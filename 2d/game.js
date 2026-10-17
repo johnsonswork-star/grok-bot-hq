@@ -26,15 +26,15 @@ const inR = (x, y, r) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
 
 // desk origin (x,y), seat = where the worker sits (behind the desk, facing the viewer)
 const DESKS = {
-  grok:     { x: 17.5, y: 1.9, w: 2.55 },
-  inbox:    { x: 2.15, y: 8.5, w: 1.2, d: 3.35, reception: true, seat: [1.65, 10.3] },
-  // quad A + quad B: back row faces you, front row sits with its back to you
-  cos:      { x: 4.15, y: 6.45 }, assist:  { x: 6.85, y: 6.45 },
-  icons:    { x: 4.15, y: 7.9, away: true }, conn: { x: 6.85, y: 7.9, away: true },
-  onpad:    { x: 9.55, y: 6.45 }, builder: { x: 12.25, y: 6.45 },
-  faith:    { x: 9.55, y: 7.9, away: true }, broker: { x: 12.25, y: 7.9, away: true },
-  review:   { x: 3.9, y: 11.15 }, kids:    { x: 6.6, y: 11.15 },
-  designer: { x: 14.7, y: 8.45 }, profile: { x: 17.4, y: 8.45 },
+  grok:     { x: 17.7, y: 1.85, w: 2.35 },
+  inbox:    { x: 2.0, y: 8.3, w: 1.1, d: 3.05, reception: true, seat: [1.65, 9.65] },
+  // two quads with a center aisle, and a walkway between the facing row and the away row
+  cos:      { x: 3.5, y: 6.4 }, assist:  { x: 6.2, y: 6.4 },
+  icons:    { x: 3.7, y: 9.7, away: true }, conn: { x: 6.4, y: 9.7, away: true },
+  onpad:    { x: 10.15, y: 6.4 }, builder: { x: 12.7, y: 6.4 },
+  faith:    { x: 10.35, y: 9.7, away: true }, broker: { x: 12.9, y: 9.7, away: true },
+  review:   { x: 5.55, y: 12.95 }, kids:  { x: 8.05, y: 14.9 },
+  designer: { x: 15.2, y: 8.85 }, profile: { x: 17.9, y: 8.85 },
 };
 const people = STATIONS.filter(s => DESKS[s.id]).map(s => {
   const d = DESKS[s.id]; d.w = d.w || 2; d.d = d.d || 1.1;
@@ -42,6 +42,8 @@ const people = STATIONS.filter(s => DESKS[s.id]).map(s => {
   return { s, d, seat, phase: Math.random() * 10, blinkAt: 0 };
 });
 const SEATZ = 0.15;
+// Seated head is about one monitor wide. The cast is drawn in ~20px-wide heads; 0.56 brings that down to the CRT face.
+const CREW_SC = 0.56;
 const byId = id => people.find(p => p.s.id === id);
 const first = s => s.name.split(' ')[0];
 
@@ -79,15 +81,15 @@ function needsCount() { return NEEDS.length + liveNeeds().length; }
 const cv = $('#c'), ctx = cv.getContext('2d');
 const buf = document.createElement('canvas'), g = buf.getContext('2d');
 let W = 0, H = 0, DPR = 1, PS = 2, fitPS = 2, homePS = 3, BW = 0, BH = 0, ox = 0, oy = 0;
-const FOCUS = [11.2, 6.9];   // bullpen and front of the floor, warehouse peeking in, heads under the HUD line
+const FOCUS = [11.4, 6.35];  // bullpen, conference room, manager office, and the top of the warehouse
 const cam = { zoom: 1, px: 0, py: 0 };
 const MAP_W = (GX + GY) * HX, MAP_TOP = -WALL * ZU, MAP_BOT = (GX + GY) * HY + 2.6 * ZU;
 function resize() {
   W = innerWidth; H = innerHeight; DPR = Math.min(2, devicePixelRatio || 1);
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   fitPS = Math.max(1.2, Math.min((W - 20) / (MAP_W + 20), (H - 30) / (MAP_BOT - MAP_TOP + 30)));
-  // Same world window as the HX=12 framing (300 x 215 buffer px), scaled up with the tile size, then tightened a little so desks read larger.
-  const WIN_X = 300 * (HX / 12) * 0.84, WIN_Y = 215 * (HY / 6) * 0.84;
+  // Original mockup window (300 x 215 at HX=12), scaled with the tile size, then opened slightly so the manager office and reception both stay in frame.
+  const WIN_X = 300 * (HX / 12) * 1.08, WIN_Y = 215 * (HY / 6) * 1.08;
   homePS = Math.max(fitPS, Math.min(4.6, W / WIN_X, H / WIN_Y));
   layout();
 }
@@ -209,7 +211,7 @@ const SHADOWS = () => {
   for (const [x, y] of PLANTS) L.push([x, y, 0.5, 0.5, 0.9]);
   return L;
 };
-const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [16.4, 4.6], [0.3, 15.2], [8.5, 10.6], [14.2, 6.8], [21.4, 0.5], [3.7, 5.6]];
+const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [16.4, 4.6], [0.3, 15.2], [8.3, 11.35], [8.2, 7.9], [21.4, 0.5], [2.15, 7.15]];
 const PALLETS = [[13.3, 13.4, 3], [15.3, 13.8, 2], [17.4, 13.3, 3], [19.3, 14.0, 4], [14.6, 14.85, 2]];
 function drawBase() {
   base.width = BW; base.height = BH; const c = bg;
@@ -308,14 +310,14 @@ function drawBase() {
   // HQ status board (back wall)
   boardY(c, 3.0, 7.2, 0.95, 2.7, '#14110e');
   // Team Board (conference back wall)
-  boardY(c, 8.0, 13.6, 0.75, 2.85, '#22303a');
+  boardY(c, 7.62, 13.9, 0.75, 2.85, '#22303a');
   // manager wall: landscape + diploma; left wall picture near reception
   frameY(c, 16.7, 18.3, 1.5, 2.45, ['#5f8f6a', '#9cc7df']); frameY(c, 18.6, 19.3, 1.6, 2.35, ['#f3ead2', '#f3ead2']);
   frameX(c, 12.4, 14.0, 1.5, 2.4, ['#4a6a8a', '#d9b46a']);
   // ---- lighting layer (warm ceiling light pools, screen-blended each frame)
   lite.width = BW; lite.height = BH; lg.clearRect(0, 0, BW, BH);
   const LS = HX / 12;
-  for (const [x, y, r0, a] of [[6.5, 8, 70, 0.22], [11, 8, 70, 0.22], [6.5, 12.5, 60, 0.18], [10.8, 2.8, 60, 0.2], [19, 2.6, 62, 0.26], [17, 9.5, 55, 0.18], [2.5, 10.2, 55, 0.18], [17, 14, 80, 0.14]]) {
+  for (const [x, y, r0, a] of [[5.4, 8.3, 70, 0.22], [11.6, 8.3, 70, 0.22], [4.0, 13.1, 60, 0.18], [10.8, 2.8, 60, 0.2], [19, 2.6, 62, 0.26], [16.8, 9.6, 55, 0.18], [2.2, 10.0, 55, 0.18], [17, 14, 80, 0.14]]) {
     const r = r0 * LS;
     const p = Pf(x, y, y > 12.5 && x > 15 ? WH.z : 0); const gr = lg.createRadialGradient(p[0], p[1], 2, p[0], p[1], r);
     gr.addColorStop(0, `rgba(255,214,150,${a})`); gr.addColorStop(1, 'rgba(255,214,150,0)'); lg.fillStyle = gr; lg.fillRect(p[0] - r, p[1] - r, r * 2, r * 2);
@@ -490,7 +492,8 @@ function hands(c, p, t, z) { // forearms on the desktop, typing when actually bu
   const busy = stateOf(p.s.id) === 'active', L = crewLook(p.s.id);
   const sl = L.vest ? L.shirt : (L.jacket || L.cardigan || L.shirt);
   const [sx, sy] = P(p.seat[0], p.d.y + 0.16, z), hk = busy ? ((t * 8 + p.phase) | 0) % 2 : 0;
-  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(sx + x, sy + y, w, h); };
+  const S = CREW_SC;
+  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(sx + x * S, sy + y * S, Math.max(1, Math.round(w * S)), Math.max(1, Math.round(h * S))); };
   R(-11, -4, 7, 4, '#21140a'); R(4, -4, 7, 4, '#21140a');
   R(-10, -4, 5, 3, sl); R(5, -4, 5, 3, shade(sl, 0.82));
   R(-7, -4 - hk, 4, 3, L.skin); R(3, -4 - (busy ? 1 - hk : 0), 4, 3, shade(L.skin, 0.9));
@@ -613,25 +616,25 @@ function sceneItems(t) {
 let sel = null;          // selected station id
 function drawWorker(c, p, t) {
   const [sx, sy] = P(p.seat[0], p.seat[1], SEATZ), st = stateOf(p.s.id), busy = st === 'active';
+  const S = CREW_SC, top = sy + CREW_HIT.y * S;
   if (busy) {
-    const gr = c.createRadialGradient(sx, sy - 24, 2, sx, sy - 24, 30);
+    const gr = c.createRadialGradient(sx, sy - 14, 1, sx, sy - 14, 16);
     gr.addColorStop(0, `rgba(110,230,90,${0.42 + 0.12 * Math.sin(t * 2.5)})`); gr.addColorStop(1, 'rgba(110,230,90,0)');
-    c.fillStyle = gr; c.fillRect(sx - 32, sy - 52, 64, 58);
+    c.fillStyle = gr; c.fillRect(sx - 16, top, 32, sy - top + 6);
   }
   if (t > p.blinkAt) p.blinkAt = t + 2.4 + Math.random() * 4;
   const bob = busy && Math.sin(t * 6 + p.phase) > 0.65 ? 1 : 0;
-  const SC = 1.32;
-  c.save(); c.translate(sx, sy); c.scale(SC, SC);
+  c.save(); c.translate(sx, sy); c.scale(S, S);
   paintCrew(c, p.s.id, 0, 0, { back: !!p.d.away, blink: p.blinkAt - t < 0.12, bob });
   c.restore();
-  if (st === 'blocked') { c.fillStyle = '#21140a'; c.fillRect(sx + 7, sy - 34, 5, 8); c.fillStyle = '#e8432f'; c.fillRect(sx + 8, sy - 33, 3, 4); c.fillRect(sx + 8, sy - 28, 3, 1); }
+  if (st === 'blocked') { c.fillStyle = '#21140a'; c.fillRect(sx + 5, top + 6, 4, 6); c.fillStyle = '#e8432f'; c.fillRect(sx + 6, top + 7, 2, 3); c.fillRect(sx + 6, top + 11, 2, 1); }
   else if (st !== 'active') { // sleepy "z z" = paused
-    const f = (t * 0.8 + p.phase) % 2, a = f < 1 ? f : 2 - f, zx = sx + 18, zy = sy - 66 - Math.round(f * 5);
-    c.globalAlpha = 0.45 + 0.5 * a; c.fillStyle = '#f6efe0'; c.fillRect(zx, zy, 4, 1); c.fillRect(zx + 2, zy + 1, 1, 1); c.fillRect(zx + 1, zy + 2, 1, 1); c.fillRect(zx, zy + 3, 4, 1);
-    c.fillRect(zx + 5, zy - 4, 3, 1); c.fillRect(zx + 6, zy - 3, 1, 1); c.fillRect(zx + 5, zy - 2, 3, 1); c.globalAlpha = 1;
+    const f = (t * 0.8 + p.phase) % 2, a = f < 1 ? f : 2 - f, zx = sx + 8, zy = top - 5 - Math.round(f * 3);
+    c.globalAlpha = 0.45 + 0.5 * a; c.fillStyle = '#f6efe0'; c.fillRect(zx, zy, 3, 1); c.fillRect(zx + 1, zy + 1, 1, 1); c.fillRect(zx, zy + 2, 3, 1);
+    c.fillRect(zx + 4, zy - 3, 2, 1); c.fillRect(zx + 4, zy - 1, 2, 1); c.globalAlpha = 1;
   }
-  if (sel === p.s.id) { const y = sy - 52 + Math.round(Math.sin(t * 5) * 2); c.fillStyle = '#ffd23a'; c.fillRect(sx - 4, y, 8, 2); c.fillRect(sx - 3, y + 2, 6, 2); c.fillRect(sx - 2, y + 4, 4, 2); c.fillStyle = '#24170d'; c.fillRect(sx - 5, y - 1, 10, 1); }
-  hits.push({ kind: 'worker', id: p.s.id, r: [sx + CREW_HIT.x * SC, sy + CREW_HIT.y * SC, CREW_HIT.w * SC, CREW_HIT.h * SC] });
+  if (sel === p.s.id) { const y = top - 5 + Math.round(Math.sin(t * 5)); c.fillStyle = '#ffd23a'; c.fillRect(sx - 3, y, 6, 2); c.fillRect(sx - 2, y + 2, 4, 2); c.fillRect(sx - 1, y + 4, 2, 2); c.fillStyle = '#24170d'; c.fillRect(sx - 4, y - 1, 8, 1); }
+  hits.push({ kind: 'worker', id: p.s.id, r: [sx + CREW_HIT.x * S, sy + CREW_HIT.y * S, CREW_HIT.w * S, CREW_HIT.h * S] });
   { const d = p.d; hits.push({ kind: 'worker', id: p.s.id, poly: [P(d.x, d.y, 0.6), P(d.x + d.w, d.y, 0.6), P(d.x + d.w, d.y + d.d, 0), P(d.x, d.y + d.d, 0)] }); }
 }
 
@@ -644,20 +647,39 @@ function ctTime(d = new Date()) {
   return { tm, dt, h: h % 24, m };
 }
 function fitText(c, s, w) { s = noLig(noDash(s)); if (c.measureText(s).width <= w) return s; while (s.length > 1 && c.measureText(s + '..').width > w) s = s.slice(0, -1); return s + '..'; }
+// Shrink the font until the whole string fits. Headers stay complete words, never "IN PROGRE..".
+function fontFit(c, s, w, maxPx, minPx) {
+  s = noLig(noDash(s));
+  let px = maxPx;
+  c.font = `700 ${px}px ${FONT}`;
+  while (px > minPx && c.measureText(s).width > w) { px = Math.round((px - 0.5) * 10) / 10; c.font = `700 ${px}px ${FONT}`; }
+  return s;
+}
 function textPass(t) {
   const S = DPR * PS, c = ctx;
-  // Team Board (conference back wall): LIVE | PAUSED | NEEDS YOU, 3 short cards each
-  inPlane(c, S, PLANE_Y(8.12, 0.02, 2.75), 40, cc => {
-    const Wd = 5.36 * 40, colW = (Wd - 12) / 3; cc.textBaseline = 'middle';
+  // Team Board (conference back wall). Face is inset 0.12 from the frame, so text starts at 7.74 and runs 6.04 units.
+  inPlane(c, S, PLANE_Y(7.74, 0.02, 2.75), 40, cc => {
+    const Wd = 6.04 * 40, colW = (Wd - 16) / 3; cc.textBaseline = 'middle';
     const cols = [['IN PROGRESS', '#6fd35b', PROJECTS.filter(p => p.status === 'active' || p.status === 'done').map(p => p.short || p.title)],
       ['TEAM BOARD', '#f2b33d', PROJECTS.filter(p => !['active', 'done'].includes(p.status)).map(p => p.short || p.title)],
       ['NEEDS YOU', '#ff6a55', [...NEEDS, ...liveNeeds()].map(n => n.short || n.title)]];
     cols.forEach(([h, col, items], i) => {
-      const x = 3 + i * (colW + 3);
-      cc.fillStyle = col; cc.fillRect(x, 3, colW, 15); cc.fillStyle = '#16120e'; cc.font = `700 10.5px ${FONT}`; cc.fillText(fitText(cc, `${h} ${items.length}`, colW - 6), x + 4, 11);
+      const x = 4 + i * (colW + 4);
+      cc.fillStyle = col; cc.fillRect(x, 3, colW, 16);
+      cc.fillStyle = '#16120e';
+      const count = String(items.length);
+      cc.font = `700 8px ${FONT}`;
+      const countW = cc.measureText(count).width + 4;
+      const label = fontFit(cc, h, colW - countW - 8, 8, 6.5);
+      cc.fillText(label, x + 3, 11);
+      cc.textAlign = 'right'; cc.fillText(count, x + colW - 3, 11); cc.textAlign = 'left';
       const show = items.length > 3 ? items.slice(0, 2) : items;
-      show.forEach((t, k) => { const y = 22 + k * 17; cc.fillStyle = '#f3ead2'; cc.fillRect(x, y, colW, 14); cc.fillStyle = col; cc.fillRect(x, y, 3, 14); cc.fillStyle = '#1d1a16'; cc.font = `700 9.5px ${FONT}`; cc.fillText(fitText(cc, t, colW - 9), x + 6, y + 7.5); });
-      if (items.length > 3) { cc.fillStyle = '#d8d2c2'; cc.font = `700 9px ${FONT}`; cc.fillText(`+${items.length - 2} more`, x + 4, 22 + 2 * 17 + 7); }
+      show.forEach((t, k) => {
+        const y = 23 + k * 17; cc.fillStyle = '#f3ead2'; cc.fillRect(x, y, colW, 14); cc.fillStyle = col; cc.fillRect(x, y, 3, 14); cc.fillStyle = '#1d1a16';
+        const card = fontFit(cc, t, colW - 10, 8.5, 7);
+        cc.fillText(cc.measureText(card).width <= colW - 10 ? card : fitText(cc, card, colW - 10), x + 6, y + 7.5);
+      });
+      if (items.length > 3) { cc.fillStyle = '#d8d2c2'; const more = fontFit(cc, `+${items.length - 2} more`, colW - 8, 8, 7); cc.fillText(more, x + 4, 23 + 2 * 17 + 7); }
     });
   });
   // HQ status board (back wall, real counts)
@@ -687,7 +709,7 @@ function textPass(t) {
   // warehouse sign
   inPlane(c, S, PLANE_Y(9.36, 12.62, 2.1), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#fff'; cc.font = `700 11px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', 9, 5); });
   // reception sign (front of the desk)
-  inPlane(c, S, PLANE_X(3.36, 11.7, 0.62), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
+  inPlane(c, S, PLANE_X(3.11, 11.15, 0.58), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
   // design wall header
   inPlane(c, S, PLANE_Y(15.4, 6.4, 2.62), 40, cc => { cc.fillStyle = '#2a1c10'; cc.fillRect(4, 0, 76, 11); cc.textBaseline = 'top'; cc.fillStyle = '#ffd27a'; cc.font = `700 8px ${FONT}`; cc.fillText('DESIGN WALL', 8, 2); });
 
@@ -695,16 +717,23 @@ function textPass(t) {
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   for (const b of bubbles) {
     const p = byId(b.id); if (!p) continue;
-    const [sx, sy] = Pf(p.seat[0], p.seat[1], SEATZ); const X = sx * PS, Y = (sy - 34) * PS;
-    const fs = Math.max(13, Math.min(18, 4.6 * PS)); c.font = `700 ${fs}px ${FONT}`;
-    const txt = fitText(c, b.text, 340), w = c.measureText(txt).width + 20, h = fs + 14;
+    const [sx, sy] = Pf(p.seat[0], p.seat[1], SEATZ); const X = sx * PS, Y = (sy + CREW_HIT.y * CREW_SC - 3) * PS;
+    const fs = Math.max(12, Math.min(16, 4.2 * PS)); c.font = `700 ${fs}px ${FONT}`;
+    const txt = fitText(c, b.text, 220); if (!txt.trim()) continue;
+    const w = c.measureText(txt).width + 16, h = fs + 12;
     const a = Math.min(1, (b.until - t) * 2, (t - b.at) * 4); if (a <= 0) continue;
-    c.globalAlpha = a; c.fillStyle = '#fffdf6'; c.strokeStyle = '#24170d'; c.lineWidth = 3;
-    const bx = Math.round(Math.max(8, Math.min(W - w - 8, X - w / 2))), by = Math.round(Math.max(8, Y - h));
-    c.beginPath(); c.roundRect ? c.roundRect(bx, by, w, h, 5) : c.rect(bx, by, w, h); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(X - 5, by + h - 1); c.lineTo(X, by + h + 6); c.lineTo(X + 4, by + h - 1); c.fill();
-    c.beginPath(); c.moveTo(X - 5, by + h); c.lineTo(X, by + h + 6); c.lineTo(X + 4, by + h); c.stroke();
-    c.fillStyle = '#24170d'; c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillText(txt, X, by + h / 2 + 1); c.textAlign = 'left';
+    let bx = Math.round(X - w / 2), by = Math.round(Y - h);
+    const overlaps = (r) => r && r.width > 0 && bx < r.right + 4 && bx + w > r.left - 4 && by < r.bottom + 4 && by + h > r.top - 4;
+    const tl = $('#tl')?.getBoundingClientRect(), tr = $('#tr')?.getBoundingClientRect(), chat = $('#chat')?.getBoundingClientRect();
+    if (overlaps(tl)) by = Math.round(tl.bottom + 6);
+    if (overlaps(tr)) by = Math.max(by, Math.round(tr.bottom + 6));
+    if (overlaps(chat)) bx = Math.round(chat.left - w - 8);
+    bx = Math.max(8, Math.min(W - w - 8, bx)); by = Math.max(8, Math.min(H - h - 8, by));
+    c.globalAlpha = a; c.fillStyle = '#fffdf6'; c.strokeStyle = '#24170d'; c.lineWidth = 2;
+    c.beginPath(); c.roundRect ? c.roundRect(bx, by, w, h, 4) : c.rect(bx, by, w, h); c.fill(); c.stroke();
+    const tail = Math.max(bx + 10, Math.min(bx + w - 10, X));
+    c.beginPath(); c.moveTo(tail - 4, by + h - 1); c.lineTo(tail, by + h + 5); c.lineTo(tail + 4, by + h - 1); c.fill();
+    c.fillStyle = '#24170d'; c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillText(txt, bx + w / 2, by + h / 2 + 1); c.textAlign = 'left';
     c.globalAlpha = 1;
   }
   if (sel) {
@@ -739,7 +768,7 @@ function say(id, text, secs = 5) { const t = now(); const i = bubbles.findIndex(
 // ---------- hotspots ----------
 let hits = [];
 function staticHits() {
-  hits.push({ kind: 'board', poly: quadY(0, 8.0, 13.6, 0.75, 2.85) });
+  hits.push({ kind: 'board', poly: quadY(0, 7.62, 13.9, 0.75, 2.85) });
   hits.push({ kind: 'status', poly: quadY(0, 3.0, 7.2, 0.95, 2.7) });
   hits.push({ kind: 'whiteboard', poly: quadX(0, 4.6, 8.4, 0.95, 3.2) });
   hits.push({ kind: 'design', poly: quadY(6.6, 15.3, 20.2, 0, 2.6) });

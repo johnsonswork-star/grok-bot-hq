@@ -1,6 +1,6 @@
 // Network-first service worker: always tries the live site (so redeploys show up immediately),
 // falls back to the last cached copy when offline / signal drops.
-const CACHE = 'bot-office-v1792279377';
+const CACHE = 'bot-office-v1792280391';
 const CORE = ['./', './index.html', './main.js', './stations.js', './workers.js', './characters.js', './monitors.js', './talk.js', './voices.js', './tone.js', './whiteboard.js', './swipe.js', './warehouse-work.js', './suggest.js', './live.js', './chat.js', './office-chat-rules.js', './hq-link.js', './hq-crypto.js', './vendor/three.module.js', './vendor/jsm/GLTFLoader.js', './vendor/jsm/SkeletonUtils.js', './vendor/jsm/BufferGeometryUtils.js', './vendor/jsm/meshopt_decoder.module.js', './manifest.webmanifest', './icons/icon-192.png'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {})); });
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
