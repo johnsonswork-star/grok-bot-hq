@@ -56,6 +56,7 @@ button{font-family:var(--px);cursor:pointer}
 .msg.me .n{color:#9fe08f}
 .msg .x{word-wrap:break-word;overflow-wrap:anywhere}
 .empty{opacity:.7;font-size:13px;padding:6px 2px}
+.mst{font-size:11px;opacity:.8}
 .row{display:flex;gap:7px;align-items:flex-start;padding:5px 2px;border-bottom:1px dashed rgba(243,230,196,.18);cursor:pointer}
 .row b{color:#ffd27a}.row small{display:block;opacity:.8;font-size:12px}
 .row .sdot{width:10px;height:10px;border-radius:50%;margin-top:4px;flex:none;border:1px solid #000}
@@ -96,6 +97,7 @@ button{font-family:var(--px);cursor:pointer}
   .msg .n{font-size:17px}.msg .n i{font-size:15px}
   .msg .x{font-size:18px}
   .empty{font-size:17px}
+  .mst{font-size:15px}
   .row{padding:12px 4px;gap:10px}
   .row b{font-size:17px}.row small{font-size:16px}
   #chatForm{gap:8px;padding:10px;align-items:stretch}

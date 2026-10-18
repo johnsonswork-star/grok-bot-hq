@@ -4,7 +4,7 @@ const root = __dirname, port = Number(process.env.PORT) || 8080;
 const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css', '.png':'image/png', '.jpg':'image/jpeg', '.json':'application/json', '.svg':'image/svg+xml', '.webmanifest':'application/manifest+json' };
 http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
-  if (p === '/') p = '/index.html';
+  if (p.endsWith('/')) p += 'index.html';
   const file = path.normalize(path.join(root, p));
   if (!file.startsWith(root) || file.includes('node_modules')) { res.writeHead(403); return res.end('forbidden'); }
   fs.readFile(file, (err, data) => {
