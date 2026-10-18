@@ -8,6 +8,7 @@ import * as link from '../hq-link.js';
 import { triage, OFFICE_TO } from '../office-chat-rules.js';
 import { PROJECTS, NEEDS, DESK_NOTE, PAUSE_NOTE, UPDATED } from './data.js';
 import { paintCrew, crewLook, CREW_HIT } from './cast.js';
+import { createTrainer } from './trainer.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -34,7 +35,8 @@ const DESKS = {
   onpad:    { x: 10.15, y: 6.4 }, builder: { x: 12.7, y: 6.4 },
   faith:    { x: 10.35, y: 9.7, away: true }, broker: { x: 12.9, y: 9.7, away: true },
   review:   { x: 5.55, y: 12.95 }, kids:  { x: 8.05, y: 14.9 },
-  designer: { x: 15.2, y: 8.85 }, profile: { x: 17.9, y: 8.85 },
+  // South of the design trainer so Kelly and Toby do not cover the shirts.
+  designer: { x: 15.15, y: 10.05 }, profile: { x: 18.05, y: 10.05 },
 };
 const people = STATIONS.filter(s => DESKS[s.id]).map(s => {
   const d = DESKS[s.id]; d.w = d.w || 2; d.d = d.d || 1.1;
@@ -292,7 +294,7 @@ const SHADOWS = () => {
   for (const [x, y] of PLANTS) L.push([x, y, 0.5, 0.5, 0.9]);
   return L;
 };
-const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [16.4, 4.6], [0.3, 15.2], [8.3, 11.35], [8.2, 7.9], [21.4, 0.5], [2.15, 7.15]];
+const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [20.9, 2.55], [0.3, 15.2], [8.3, 11.35], [8.2, 7.9], [21.4, 0.5], [2.15, 7.15]];
 const PALLETS = [[13.3, 13.4, 3], [15.3, 13.8, 2], [17.4, 13.3, 3], [19.3, 14.0, 4], [14.6, 14.85, 2]];
 function drawBase() {
   const s = homePS * DPR, legW = MAX_X - MIN_X, legH = MAX_Y - MIN_Y;
@@ -395,8 +397,11 @@ function drawBase() {
   for (const [y, col] of [[5.4, '#d33'], [5.7, '#33c'], [6.0, '#2a2']]) box(c, 0.03, y, 0.92, 0.06, 0.2, 0.04, col, { ol: false });
   // HQ status board (back wall)
   boardY(c, 3.0, 7.2, 0.95, 2.7, '#14110e');
-  // Team Board (conference back wall)
-  boardY(c, 7.62, 13.9, 0.75, 2.85, '#22303a');
+  // Team Board (conference back wall): one list, tall enough for every business
+  boardY(c, 7.55, 13.95, 0.38, 3.08, '#22303a');
+  // open aisle in front of the design trainer (Kelly and Toby sit south of this)
+  poly(c, [P(15.1, 6.9), P(20.4, 6.9), P(20.4, 9.85), P(15.1, 9.85)], '#c4ad8c');
+  poly(c, [P(15.28, 7.08), P(20.22, 7.08), P(20.22, 9.68), P(15.28, 9.68)], '#d8c4a4');
   // manager wall: landscape + diploma; left wall picture near reception
   frameY(c, 16.7, 18.3, 1.5, 2.45, ['#5f8f6a', '#9cc7df']); frameY(c, 18.6, 19.3, 1.6, 2.35, ['#f3ead2', '#f3ead2']);
   frameX(c, 12.4, 14.0, 1.5, 2.4, ['#4a6a8a', '#d9b46a']);
@@ -668,7 +673,8 @@ function sceneItems(t) {
   // manager office: side glass (door gap) + low front wall
   for (const [a, b] of [[0, 1.4], [1.4, 2.8], [2.8, 3.6]]) glassX(MGR.x0, a, b);
   glassX(MGR.x0, 4.8, 5.5);
-  for (let x = MGR.x0; x < GX; x += 1) add(x + 0.5 + MGR.y1 + 0.02, c => box(c, x, MGR.y1 - 0.08, 0, 1, 0.16, 0.55, '#6b4a2e', { t: '#8a6440' }));
+  // Knee wall is behind the trainer. Keep its sort key low so it cannot paint over the shirts.
+  for (let x = MGR.x0; x < GX; x += 1) add(18.4, c => box(c, x, MGR.y1 - 0.08, 0, 1, 0.16, 0.55, '#6b4a2e', { t: '#8a6440' }));
   // conference table + chairs
   add(10.8 + 2.75, c => {
     box(c, 9.1, 2.1, 0, 0.12, 0.12, 0.55, '#3a2416'); box(c, 12.4, 3.3, 0, 0.12, 0.12, 0.55, '#3a2416');
@@ -690,20 +696,20 @@ function sceneItems(t) {
   // plants + cabinets
   for (const [x, y] of PLANTS) add(x + y + 0.45, c => plant(c, x, y, 1.2));
   for (const y of [13.3, 13.95]) add(0.35 + y + 0.3, c => cabinet(c, 0.05, y));
-  // design wall (free-standing cork board on legs, faces the bullpen)
-  add(14.2 + 6.4, c => {
-    box(c, 15.4, 6.55, 0, 0.12, 0.12, 2.45, '#5a3820'); box(c, 20.0, 6.55, 0, 0.12, 0.12, 2.45, '#5a3820');
+  // design trainer (free-standing cork board). Raised so the shirts clear the knee wall, sorted in front of it.
+  add(23.4, c => {
+    box(c, 15.4, 6.55, 0, 0.12, 0.12, 2.62, '#5a3820'); box(c, 20.0, 6.55, 0, 0.12, 0.12, 2.62, '#5a3820');
     box(c, 15.8, 6.65, 0, 3.9, 0.45, 0.62, '#6a4226');
-    box(c, 15.3, 6.4, 0.8, 4.9, 0.18, 1.7, '#4a2e1a', { l: '#5c3a20' });
-    poly(c, quadY(6.581, 15.4, 20.1, 0.88, 2.42), '#c8a071');
-    for (let k = 0; k < 40; k++) { const p = P(15.5 + hsh(k, 1) * 4.5, 6.58, 0.95 + hsh(1, k) * 1.4); c.fillStyle = 'rgba(120,80,40,.35)'; c.fillRect(p[0], p[1], 1, 1); }
+    box(c, 15.3, 6.4, 1.08, 4.9, 0.18, 1.52, '#4a2e1a', { l: '#5c3a20' });
+    poly(c, quadY(6.581, 15.4, 20.1, 1.18, 2.52), '#c8a071');
+    for (let k = 0; k < 40; k++) { const p = P(15.5 + hsh(k, 1) * 4.5, 6.58, 1.26 + hsh(1, k) * 1.15); c.fillStyle = 'rgba(120,80,40,.35)'; c.fillRect(p[0], p[1], 1, 1); }
     const cols = ['#efe3c8', '#24324f', '#efe3c8'];
     for (let i = 0; i < 3; i++) {
       const x0 = 15.6 + i * 1.5;
-      poly(c, quadY(6.582, x0, x0 + 1.3, 0.95, 2.1), '#fbf6ea');
+      poly(c, quadY(6.582, x0, x0 + 1.3, 1.28, 2.38), '#fbf6ea');
       const img = deckImgs[i];
-      if (img && img.complete && img.naturalWidth) inPlane(c, 1, PLANE_Y(x0 + 0.08, 6.583, 2.04), 100, cc => cc.drawImage(img, 0, 0, 114, 100));
-      else inPlane(c, 1, PLANE_Y(x0 + 0.08, 6.583, 2.04), 10, cc => { // pixel tee
+      if (img && img.complete && img.naturalWidth) inPlane(c, 1, PLANE_Y(x0 + 0.08, 6.583, 2.32), 100, cc => cc.drawImage(img, 0, 0, 114, 100));
+      else inPlane(c, 1, PLANE_Y(x0 + 0.08, 6.583, 2.32), 10, cc => { // pixel tee
         const tee = () => { cc.beginPath(); cc.moveTo(3.6, 0.4); cc.lineTo(8, 0.4); cc.lineTo(11.4, 2.6); cc.lineTo(10, 4.6); cc.lineTo(8.8, 3.8); cc.lineTo(8.8, 10.4); cc.lineTo(2.8, 10.4); cc.lineTo(2.8, 3.8); cc.lineTo(1.6, 4.6); cc.lineTo(0.2, 2.6); cc.closePath(); };
         cc.fillStyle = 'rgba(40,20,5,.35)'; cc.save(); cc.translate(0.5, 0.4); tee(); cc.fill(); cc.restore();
         cc.fillStyle = cols[i]; tee(); cc.fill(); cc.strokeStyle = '#2a1c10'; cc.lineWidth = 0.5; cc.stroke();
@@ -713,7 +719,7 @@ function sceneItems(t) {
         cc.fillStyle = i === 1 ? '#24324f' : '#efe3c8'; cc.fillRect(5.5, 4.4, 0.6, 1.6); cc.fillRect(5.0, 4.9, 1.6, 0.5);
         cc.fillStyle = ink; cc.fillRect(4.0, 7.2, 3.6, 0.5); cc.fillRect(4.5, 8.0, 2.6, 0.4);
       });
-      { const p = P(x0 + 0.65, 6.583, 2.12); c.fillStyle = '#d33'; c.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
+      { const p = P(x0 + 0.65, 6.583, 2.4); c.fillStyle = '#d33'; c.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
     }
   });
   // reception extras
@@ -825,29 +831,27 @@ function fontFit(c, s, w, maxPx, minPx) {
 }
 function textPass(t) {
   const S = 1, c = ctx;
-  // Team Board (conference back wall). Face is inset 0.12 from the frame, so text starts at 7.74 and runs 6.04 units.
-  inPlane(c, S, PLANE_Y(7.74, 0.02, 2.75), 40, cc => {
-    const Wd = 6.04 * 40, colW = (Wd - 16) / 3; cc.textBaseline = 'middle';
-    const cols = [['IN PROGRESS', '#6fd35b', PROJECTS.filter(p => p.status === 'active' || p.status === 'done').map(p => p.short || p.title)],
-      ['TEAM BOARD', '#f2b33d', PROJECTS.filter(p => !['active', 'done'].includes(p.status)).map(p => p.short || p.title)],
-      ['NEEDS YOU', '#ff6a55', [...NEEDS, ...liveNeeds()].map(n => n.short || n.title)]];
-    cols.forEach(([h, col, items], i) => {
-      const x = 4 + i * (colW + 4);
-      cc.fillStyle = col; cc.fillRect(x, 3, colW, 16);
-      cc.fillStyle = '#16120e';
-      const count = String(items.length);
-      cc.font = `700 8px ${FONT}`;
-      const countW = cc.measureText(count).width + 4;
-      const label = fontFit(cc, h, colW - countW - 8, 8, 6.5);
-      cc.fillText(label, x + 3, 11);
-      cc.textAlign = 'right'; cc.fillText(count, x + colW - 3, 11); cc.textAlign = 'left';
-      const show = items.length > 3 ? items.slice(0, 2) : items;
-      show.forEach((t, k) => {
-        const y = 23 + k * 17; cc.fillStyle = '#f3ead2'; cc.fillRect(x, y, colW, 14); cc.fillStyle = col; cc.fillRect(x, y, 3, 14); cc.fillStyle = '#1d1a16';
-        const card = fontFit(cc, t, colW - 10, 8.5, 7);
-        cc.fillText(cc.measureText(card).width <= colW - 10 ? card : fitText(cc, card, colW - 10), x + 6, y + 7.5);
-      });
-      if (items.length > 3) { cc.fillStyle = '#d8d2c2'; const more = fontFit(cc, `+${items.length - 2} more`, colW - 8, 8, 7); cc.fillText(more, x + 4, 23 + 2 * 17 + 7); }
+  // Team Board: every business, two columns. Needs you stays in the chat tab and in each business panel.
+  inPlane(c, S, PLANE_Y(7.7, 0.02, 2.96), 36, cc => {
+    const Wd = 6.1 * 36;
+    cc.textBaseline = 'middle';
+    cc.fillStyle = '#f2b33d'; cc.fillRect(2, 1, Wd - 4, 12);
+    cc.fillStyle = '#16120e'; cc.font = `700 8px ${FONT}`;
+    cc.fillText('TEAM BOARD', 6, 7);
+    cc.textAlign = 'right'; cc.fillText(String(PROJECTS.length), Wd - 8, 7); cc.textAlign = 'left';
+    const rows = Math.ceil(PROJECTS.length / 2), colW = (Wd - 10) / 2, rowH = 12;
+    const pill = p => p.status === 'done' || p.status === 'active' ? 'LIVE' : p.status === 'waiting' ? 'REVIEW' : p.status === 'blocked' ? 'STUCK' : 'HOLD';
+    const colr = p => p.status === 'done' || p.status === 'active' ? '#7dff78' : p.status === 'waiting' ? '#f0c14a' : p.status === 'blocked' ? '#ff8a72' : '#e7d7b0';
+    PROJECTS.forEach((p, i) => {
+      const col = i < rows ? 0 : 1, row = col ? i - rows : i;
+      const x = 3 + col * (colW + 4), y = 16 + row * rowH;
+      cc.fillStyle = '#f3ead2'; cc.fillRect(x, y, colW, rowH - 2);
+      cc.fillStyle = colr(p); cc.fillRect(x, y, 3, rowH - 2);
+      cc.fillStyle = '#1d1a16'; cc.font = `700 7px ${FONT}`;
+      const tag = pill(p);
+      const tagW = cc.measureText(tag).width + 4;
+      cc.fillText(fitText(cc, p.title, colW - tagW - 10), x + 6, y + (rowH - 2) / 2);
+      cc.fillStyle = '#5b3a22'; cc.textAlign = 'right'; cc.fillText(tag, x + colW - 3, y + (rowH - 2) / 2); cc.textAlign = 'left';
     });
   });
   // HQ status board (back wall, real counts)
@@ -878,8 +882,12 @@ function textPass(t) {
   inPlane(c, S, PLANE_Y(9.36, 12.62, 2.1), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#fff'; cc.font = `700 11px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', 9, 5); });
   // reception sign (front of the desk)
   inPlane(c, S, PLANE_X(3.11, 11.15, 0.58), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
-  // design wall header
-  inPlane(c, S, PLANE_Y(15.4, 6.4, 2.62), 40, cc => { cc.fillStyle = '#2a1c10'; cc.fillRect(4, 0, 76, 11); cc.textBaseline = 'top'; cc.fillStyle = '#ffd27a'; cc.font = `700 8px ${FONT}`; cc.fillText('DESIGN WALL', 8, 2); });
+  // design trainer sign, above the shirts
+  inPlane(c, S, PLANE_Y(15.35, 6.4, 2.74), 40, cc => {
+    cc.fillStyle = '#2a1c10'; cc.fillRect(0, 0, 168, 22);
+    cc.textBaseline = 'top'; cc.fillStyle = '#ffd27a'; cc.font = `700 11px ${FONT}`; cc.fillText('DESIGN TRAINER', 6, 1);
+    cc.fillStyle = '#f3e6c4'; cc.font = `700 8px ${FONT}`; cc.fillText('TAP TO TRAIN', 6, 12);
+  });
 
   // speech bubbles + selected name tag (screen aligned)
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -943,12 +951,12 @@ function say(id, text, secs = 5) { const t = now(); const i = bubbles.findIndex(
 let hits = [];
 function staticHits() {
   // Polygons are the same quads the painter uses, in P() space, so a rotated camera stays aligned.
-  hits.push({ kind: 'board', poly: quadY(0, 7.62, 13.9, 0.75, 2.85) });       // boardY frame
+  hits.push({ kind: 'board', poly: quadY(0, 7.55, 13.95, 0.38, 3.08) });      // boardY frame
   hits.push({ kind: 'status', poly: quadY(0, 3.0, 7.2, 0.95, 2.7) });          // boardY frame
   hits.push({ kind: 'whiteboard', poly: quadX(0, 4.6, 8.4, 0.95, 2.55) });    // painted frame, not the wall above it
-  // design wall: cork face, the DESIGN WALL bar (drawn on the plane just above it), and the shelf
-  hits.push({ kind: 'design', poly: quadY(6.582, 15.3, 20.2, 0.8, 2.5) });
-  hits.push({ kind: 'design', poly: quadY(6.4, 15.5, 17.4, 2.345, 2.62) });
+  // design trainer: cork face, the sign above it, and the shelf. Same quads the painter uses.
+  hits.push({ kind: 'design', poly: quadY(6.582, 15.3, 20.2, 1.15, 2.55) });
+  hits.push({ kind: 'design', poly: quadY(6.4, 15.35, 19.55, 2.19, 2.76) });
   hits.push({ kind: 'design', poly: [P(15.8, 6.65, 0.62), P(19.7, 6.65, 0.62), P(19.7, 7.1, 0.62), P(15.8, 7.1, 0.62)] });
   hits.push({ kind: 'design', poly: quadY(7.1, 15.8, 19.7, 0, 0.62) });
   // warehouse pit: sunken floor, the opening, the painted walls, the cutaway edges, and the sign
@@ -1056,13 +1064,13 @@ function openHit(h) {
   if (h.kind === 'worker') { sel = h.id; openWorker(h.id); }
   else if (h.kind === 'board' || h.kind === 'status' || h.kind === 'whiteboard') openProjects();
   else if (h.kind === 'design') openDesign();
-  else if (h.kind === 'warehouse') openCard(`<h2>Warehouse</h2><div class="sub">Downstairs</div><p>Paper, pallets and the bay doors. In the 3D office this is also where the Design Trainer wall lives. Nothing is running here right now. ${esc(PAUSE_NOTE)}</p><div class="btns"><button data-act="design">Design cards</button></div>`);
+  else if (h.kind === 'warehouse') openCard(`<h2>Warehouse</h2><div class="sub">Downstairs</div><p>Paper, pallets and the bay doors. The Design Trainer is the clothes board by Kelly's desk. Tap it to keep or skip designs. ${esc(PAUSE_NOTE)}</p><div class="btns"><button data-act="design">Design Trainer</button></div>`);
 }
 
 // ---------- modal cards ----------
 const modal = $('#modal'), cardBody = $('#cardBody');
 let openedAt = 0;
-function openCard(html) { cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); openedAt = performance.now(); }
+function openCard(html, wide) { $('#card').classList.toggle('wide', !!wide); cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); openedAt = performance.now(); }
 function closeCard() { modal.classList.add('hidden'); }
 $('#cardX').onclick = closeCard;
 // A tap opens the card on pointerup. The same gesture then delivers a click, which lands on
@@ -1074,6 +1082,7 @@ cardBody.addEventListener('click', e => {
   if (a === 'design') openDesign();
   else if (a === 'needs') openNeeds();
   else if (a === 'projects') openProjects();
+  else if (a === 'biz') openBusiness(b.dataset.id);
   else if (a === 'worker') { sel = b.dataset.id; openWorker(b.dataset.id); }
   else if (a === 'ask') { closeCard(); openChat(); chatTo.value = 'Grok Bot'; chatIn.value = b.dataset.text || ''; chatIn.focus(); }
 });
@@ -1085,15 +1094,67 @@ function openWorker(id) {
   openCard(`<h2>${esc(s.name)}</h2><div class="sub">${esc(s.bot)} \u00b7 ${esc(s.job || '')} ${stTag(st)}</div>
     <p>${esc(s.role || '')}</p>
     ${b ? `<h3>ON IT NOW</h3><div class="item"><b>${esc(b)}</b></div>` : ''}
-    <h3>PROJECTS</h3>${ps.length ? ps.map(pr => `<div class="item"><b>${esc(pr.title)} ${stTag(pr.status)}${pr.due ? `<span class="due">due ${esc(pr.due)}</span>` : ''}</b><small>${esc(pr.note)}</small></div>`).join('') : `<div class="item"><small>${esc(DESK_NOTE[id] || 'No project of its own right now.')}</small></div>`}
+    <h3>PROJECTS</h3>${ps.length ? ps.map(pr => `<div class="item" data-act="biz" data-id="${esc(pr.id)}"><b>${esc(pr.title)} ${stTag(pr.status)}${pr.due ? `<span class="due">due ${esc(pr.due)}</span>` : ''}</b><small>${esc(pr.note)}</small></div>`).join('') : `<div class="item"><small>${esc(DESK_NOTE[id] || 'No project of its own right now.')}</small></div>`}
     ${live && (live.step || live.task) ? `<h3>LAST DESK UPDATE</h3><div class="item"><b>${esc(live.task || '')}</b><small>${esc(live.step || '')}${live.at ? ` \u00b7 ${fmtAgo(live.at)}` : ''}</small></div>` : ''}
     <div class="note">${esc(PAUSE_NOTE)}</div>
     <div class="btns"><button data-act="ask" data-text="About ${esc(first(s))} (${esc(s.bot)}): ">Ask Michael about this</button></div>`);
 }
 function openProjects() {
-  const grp = s => PROJECTS.filter(p => p.status === s);
-  const sec = (h, list) => list.length ? `<h3>${h} (${list.length})</h3>` + list.map(p => `<div class="item"><b>${esc(p.title)} ${stTag(p.status)}${p.due ? `<span class="due">due ${esc(p.due)}</span>` : ''}</b><small>${esc(p.note)}<br>Desk: ${p.owners.map(o => byId(o)?.s.name || o).map(esc).join(', ')}</small></div>`).join('') : '';
-  openCard(`<h2>Team Board</h2><div class="sub">Updated ${esc(UPDATED)}. ${esc(PAUSE_NOTE)}</div>${sec('IN PROGRESS', grp('active'))}${sec('DONE', grp('done'))}${sec('STUCK', grp('blocked'))}${sec('UNDER REVIEW', grp('waiting'))}${sec('PAUSED', grp('paused'))}<div class="btns"><button data-act="needs">Needs you (${needsCount()})</button></div>`);
+  const rows = PROJECTS.map(p => `<button type="button" class="biz" data-act="biz" data-id="${esc(p.id)}"><span class="ico">${p.icon || ''}</span><span class="t">${esc(p.title)}</span>${stTag(p.status)}</button>`).join('');
+  openCard(`<h2>Team Board</h2><div class="sub">${PROJECTS.length} businesses. Updated ${esc(UPDATED)}.</div>${rows}<div class="btns"><button type="button" data-act="needs">Needs you (${needsCount()})</button></div>`, true);
+}
+function needsFor(p) {
+  const ids = new Set([p.id, ...(p.needIds || [])]);
+  const owners = new Set(p.owners || []);
+  const keys = [p.short, p.title].map(s => String(s || '').toLowerCase()).filter(s => s.length > 3);
+  return [...NEEDS, ...liveNeeds()].filter(n => {
+    if (n.id && ids.has(n.id)) return true;
+    if (n.bot && owners.has(n.bot)) return true;
+    const blob = `${n.title || ''} ${n.short || ''} ${n.do || ''}`.toLowerCase();
+    return keys.some(k => blob.includes(k));
+  });
+}
+function taskLines(p) {
+  const out = [], seen = new Set();
+  const add = (title, sub) => {
+    title = noDash(String(title || '').trim());
+    if (!title || seen.has(title)) return;
+    seen.add(title); out.push({ title, sub: noDash(sub || '') });
+  };
+  for (const id of p.owners) {
+    const who = byId(id)?.s.name || id;
+    const b = busyOf(id); if (b) add(b, who);
+    const live = workFeed?.bots?.[id]; if (!live) continue;
+    const when = live.at ? fmtAgo(live.at) : '';
+    if (live.task) add(live.task, [who, live.step, when].filter(Boolean).join(', '));
+    else if (live.step) add(live.step, [who, when].filter(Boolean).join(', '));
+    for (const st of live.steps || []) if (st && (st.s === 'now' || st.s === 'doing') && st.t) add(st.t, who + ', now');
+  }
+  return out;
+}
+function openBusiness(id) {
+  const p = PROJECTS.find(x => x.id === id); if (!p) return;
+  const tasks = taskLines(p);
+  const needs = needsFor(p);
+  const links = (p.links || []).filter(l => l && l.href && l.label);
+  const desks = p.owners.map(o => byId(o)).filter(Boolean);
+  const taskHtml = tasks.length
+    ? tasks.map(t => `<div class="item"><b>${esc(t.title)}</b>${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</div>`).join('')
+    : `<div class="item"><small>No current task. Nobody is on this one right now.</small></div>`;
+  const linkHtml = [
+    ...links.map(l => `<a class="item" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)}</a>`),
+    ...desks.map(w => `<div class="item" data-act="worker" data-id="${w.s.id}"><b>${esc(w.s.name)}</b><small>${esc(w.s.bot)} desk</small></div>`),
+  ].join('') || `<div class="item"><small>No link on file.</small></div>`;
+  const needHtml = needs.length
+    ? needs.map(n => `<div class="item"><b>${esc(n.title)}${n.due ? `<span class="due">by ${esc(n.due)}</span>` : ''}</b><small>${esc(n.do || '')}${n.who ? ` (${esc(n.who)})` : ''}</small></div>`).join('')
+    : `<div class="item"><small>Nothing waiting on you for this business.</small></div>`;
+  openCard(`<h2>${esc(p.title)}</h2><div class="sub">${stTag(p.status)}${p.due ? `<span class="due">due ${esc(p.due)}</span>` : ''}</div>
+    <h3>STATUS</h3><div class="item"><b>${esc(p.label || STLBL[p.status] || p.status)}</b><small>${esc(p.note || '')}</small></div>
+    <h3>CURRENT TASKS</h3>${taskHtml}
+    <h3>LINKS</h3>${linkHtml}
+    <h3>NEEDS YOU</h3>${needHtml}
+    <div class="note">${esc(PAUSE_NOTE)}</div>
+    <div class="btns"><button type="button" data-act="ask" data-text="About ${esc(p.title)}: ">Ask Michael</button><button type="button" data-act="needs">All needs you</button><button type="button" data-act="projects">Team Board</button></div>`, true);
 }
 function needsHtml() {
   const L = liveNeeds();
@@ -1103,13 +1164,8 @@ function needsHtml() {
 function openNeeds() {
   openCard(`<h2>Needs you (${needsCount()})</h2><div class="sub">Things waiting on you. Answer in chat and Michael picks it up.</div>${needsHtml()}<div class="btns"><button data-act="ask" data-text="">Answer in chat</button><button data-act="projects">Team Board</button></div>`);
 }
-function openDesign() {
-  const cards = (deck?.cards || []).filter(c => c && c.title);
-  openCard(`<h2>Design Wall</h2><div class="sub">Kelly's Design Trainer deck. ${esc(PROJECTS.find(p => p.id === 'cards')?.note || '')}</div>
-    ${cards.length ? `<div class="grid">${cards.slice(0, 40).map(c => `<figure>${c.d ? `<img src="${c.d}" alt="">` : ''}${esc(c.title)}</figure>`).join('')}</div>`
-      : `<div class="item"><small>The deck is encrypted to your iPad, so it only loads on your device. ${link.swipeStatus ? `(status: ${esc(link.swipeStatus)})` : 'Loading...'} Swiping still lives in the 3D office warehouse.</small></div>`}`);
-  if (!cards.length) loadDeck(true).then(ok => { if (ok && !modal.classList.contains('hidden')) openDesign(); });
-}
+const trainer = createTrainer({ esc, noDash, sendSwipes: items => link.sendSwipes(items), toast: s => toast(s) });
+function openDesign() { closeCard(); trainer.open(); if (!(deck?.cards || []).length) loadDeck(true); }
 
 // ---------- HUD ----------
 const projList = $('#projList');
@@ -1117,8 +1173,7 @@ function renderProjects() {
   projList.innerHTML = noDash(PROJECTS.map(p => `<li data-id="${p.id}"><span class="ico">${p.icon || ''}</span><span class="pip ${p.status}"></span><span class="t">${esc(p.title)}</span>${p.due ? `<span class="st blocked">${esc(p.due)}</span>` : ''}</li>`).join(''));
   const n = needsCount(); $('#needsN').textContent = n; $('#needsBtn').classList.toggle('zero', !n);
 }
-projList.addEventListener('click', e => { const li = e.target.closest('li'); if (!li) return; const p = PROJECTS.find(x => x.id === li.dataset.id);
-  if (p) openCard(`<h2>${esc(p.title)}</h2><div class="sub">${stTag(p.status)}${p.due ? `<span class="due">due ${esc(p.due)}</span>` : ''}</div><p>${esc(p.note)}</p><h3>DESK</h3>${p.owners.map(o => byId(o)).filter(Boolean).map(w => `<div class="item" data-act="worker" data-id="${w.s.id}"><b>${esc(w.s.name)}</b><small>${esc(w.s.bot)}</small></div>`).join('')}<div class="note">${esc(PAUSE_NOTE)}</div><div class="btns"><button data-act="ask" data-text="About ${esc(p.title)}: ">Ask Michael</button></div>`); });
+projList.addEventListener('click', e => { const li = e.target.closest('li'); if (li) openBusiness(li.dataset.id); });
 $('#projToggle').onclick = () => { const on = $('#projects').classList.toggle('all'); $('#projToggle').textContent = on ? 'less' : 'all'; };
 $('#needsBtn').onclick = openNeeds;
 function tickClock() { const { tm, dt, h } = ctTime(); $('#clkT').textContent = tm + ' CT'; $('#clkD').textContent = dt; $('#clock .ci').textContent = h >= 7 && h < 19 ? '\u2600' : '\u263E'; }
@@ -1286,6 +1341,7 @@ async function sayHello() {
 let chatEs = null, esWait = 0;
 async function openReplyStream() {
   clearTimeout(esWait);
+  if (link.ntfyBlocked()) return;
   if (chatEs) { try { chatEs.close(); } catch (e) {} chatEs = null; }
   let topic = ''; try { topic = await link.deviceTopic(); } catch (e) {}
   if (!topic) { esWait = setTimeout(openReplyStream, 4000); return; }
@@ -1309,13 +1365,22 @@ openReplyStream();
 async function loadTasks() { try { const r = await fetch('../tasks.json?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) { busyFile = (await r.json()).busy || {}; renderChat(); } } catch (e) {} }
 async function loadWork() { try { const r = await link.fetchWorkFeed(); if (r?.feed) { workFeed = r.feed; renderProjects(); if (tab !== 'chat') renderChat(); } } catch (e) {} }
 async function loadDeck(force) {
-  try { const r = await link.fetchSwipeDeck(force); if (r?.feed?.cards) { deck = r.feed; deckImgs.length = 0; for (const c of deck.cards.filter(c => c.d).slice(0, 3)) { const im = new Image(); im.src = c.d; deckImgs.push(im); } return true; } } catch (e) {}
+  try {
+    const r = await link.fetchSwipeDeck(force);
+    if (r?.feed?.cards) {
+      deck = r.feed; deckImgs.length = 0;
+      for (const c of deck.cards.filter(c => c.d).slice(0, 3)) { const im = new Image(); im.src = c.d; deckImgs.push(im); }
+      trainer.setDeck(deck);
+      return true;
+    }
+  } catch (e) {}
+  trainer.setDeck(null);
   return false;
 }
 let build = null;
 async function checkVersion() {
   try { const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return; const b = (await r.json()).build;
-    if (build === null) build = b; else if (b !== build && !chatIn.value && modal.classList.contains('hidden') && document.activeElement !== chatIn) { toast('Office update: reloading'); setTimeout(() => location.reload(), 800); } } catch (e) {}
+    if (build === null) build = b; else if (b !== build && !chatIn.value && modal.classList.contains('hidden') && !trainer.isOpen() && document.activeElement !== chatIn) { toast('Office update: reloading'); setTimeout(() => location.reload(), 800); } } catch (e) {}
 }
 
 // ---------- controller + keyboard ----------
@@ -1329,8 +1394,9 @@ function moveSel(dx, dy) {
 }
 function press(btn) {
   const open = !modal.classList.contains('hidden');
-  if (btn === 'A') { if (open) closeCard(); else if (sel) openWorker(sel); else sel = 'grok'; }
-  else if (btn === 'B') { if (open) closeCard(); else sel = null; }
+  const train = trainer.isOpen();
+  if (btn === 'A') { if (train) return; if (open) closeCard(); else if (sel) openWorker(sel); else sel = 'grok'; }
+  else if (btn === 'B') { if (train) trainer.close(); else if (open) closeCard(); else sel = null; }
   else if (btn === 'Y') openNeeds();
   else if (btn === 'X') { closeCard(); openChat(); chatIn.focus(); }
   else if (btn === 'start') openProjects();
@@ -1389,10 +1455,16 @@ loadDeck(false);
 checkVersion(); setInterval(checkVersion, 30000);
 pollChat();
 setTimeout(() => toast('Tap a desk to see what they are on. Pinch to zoom, drag to look around.'), 900);
-window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('canvas'); scratch.width = 640; scratch.height = 420; const sg = scratch.getContext('2d'); const a = performance.now(); for (let i = 0; i < n; i++) { camTransform(sg); hits = []; staticHits(); for (const it of sceneItems(i / 10)) it.fn(sg); } return (performance.now() - a) / n; }, proj: (x, y, z = 0) => projectCSS(x, y, z), hit: (x, y) => hitAt(x, y), regions: () => hits.map(h => {
+function lookAt(x, y, z = 1.2) {
+  const [ix, iy] = P(x, y, z);
+  const sCss = homePS * cam.zoom;
+  wish.px = (FX - ix) * sCss; wish.py = (FY - iy) * sCss; clampWish();
+  cam.px = wish.px; cam.py = wish.py; cam.zoom = wish.zoom; noteInput();
+}
+window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('canvas'); scratch.width = 640; scratch.height = 420; const sg = scratch.getContext('2d'); const a = performance.now(); for (let i = 0; i < n; i++) { camTransform(sg); hits = []; staticHits(); for (const it of sceneItems(i / 10)) it.fn(sg); } return (performance.now() - a) / n; }, proj: (x, y, z = 0) => projectCSS(x, y, z), hit: (x, y) => hitAt(x, y), lookAt, regions: () => hits.map(h => {
     if (h.r) {
       const [x, y] = legToCSS(h.r[0], h.r[1]), [x2, y2] = legToCSS(h.r[0] + h.r[2], h.r[1] + h.r[3]);
       return { kind: h.kind, id: h.id || null, rect: [x, y, x2 - x, y2 - y] };
     }
     return { kind: h.kind, id: h.id || null, poly: h.poly.map(p => legToCSS(p[0], p[1])) };
-  }), openNeeds, openWorker, openProjects, openDesign, state: () => ({ PS, BW, BH, DPR, n: people.length, cam: { ...cam } }) };
+  }), openNeeds, openWorker, openProjects, openBusiness, openDesign, state: () => ({ PS, BW, BH, DPR, n: people.length, cam: { ...cam } }) };

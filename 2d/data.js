@@ -7,7 +7,9 @@ export const PAUSE_NOTE = 'Chris stopped all projects on Oct 17. Nothing restart
 
 export const PROJECTS = [
   { id: 'office2d', short: '2.5D office', icon: '🏢', title: '2.5D office (this page)', status: 'done', owners: ['grok'],
-    note: 'Done and live (Oct 17). The 3D office still works at the old link.' },
+    note: 'Done and live (Oct 17). The 3D office still works at the old link.',
+    links: [{ label: 'This office', href: './' }],
+    needIds: ['bridge'] },
   { id: 'etsy', short: 'Etsy shop', icon: '🛍️', title: 'Atom Family Etsy shop', status: 'waiting', label: 'ID submitted, under review (1-3 days)', owners: ['designer', 'cos'],
     note: 'ID submitted, under review (1-3 days). Chris finished the Etsy Persona ID check at about 5:14 PM CT Oct 17. Etsy says the review takes 1 to 3 days.' },
   { id: 'pod', short: 'Printful', icon: '📦', title: 'Printful + Tapstitch onboarding', status: 'paused', owners: ['designer'],
