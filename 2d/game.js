@@ -1177,28 +1177,34 @@ function openChat() { chatBox.classList.remove('hidden'); chatOpenBtn.classList.
 $('#chatMin').onclick = () => { chatBox.classList.add('hidden'); chatOpenBtn.classList.remove('hidden'); };
 chatOpenBtn.onclick = openChat;
 
-let fastUntil = 0, polling = false;
+let fastUntil = 0, polling = false, pollAgain = false;
 async function pollChat() {
-  if (polling || document.hidden) return; polling = true;
+  if (document.hidden) return;
+  if (polling) { pollAgain = true; return; }
+  polling = true;
   try {
-    const f = await link.fetchChatFeed();
-    let chSoon = false;
-    if (f?.feed?.items) {
-      office = f.feed.items.slice(-150); try { localStorage.setItem(FEED, JSON.stringify(office)); } catch (e) {}
-      for (const o of office) if (noteAck(o.id, o.text)) chSoon = true;
-    }
-    const reps = await link.fetchReplies(); let ch = !!f?.feed || chSoon;
-    const have = new Set(entries.filter(e => e.kind === 'bot').map(e => String(e.id)));
-    for (const r of reps) {
-      if (r.type === 'ack') { const m = entries.find(x => x.mid === r.mid); if (m && !m.issue) { m.issue = r.issue; m.route = r.route || m.route; ch = true; } continue; }
-      if (hqAck(r.id, r.text)) { if (noteAck(r.id, r.text)) ch = true; continue; }
-      if (r.thread || have.has(String(r.id))) continue;
-      entries.push({ kind: 'bot', id: r.id, from: r.from, text: r.text, at: r.at, ref: r.ref }); ch = true;
-      const who = stOf(r.who) || (/grok/i.test(r.from || '') ? stOf('grok') : null); if (who && byId(who.id)) say(who.id, r.text, 6);
-    }
-    if (ch) { saveLog(); renderChat(); }
+    do {
+      pollAgain = false;
+      const f = await link.fetchChatFeed();
+      let chSoon = false;
+      if (f?.feed?.items) {
+        office = f.feed.items.slice(-150); try { localStorage.setItem(FEED, JSON.stringify(office)); } catch (e) {}
+        for (const o of office) if (noteAck(o.id, o.text)) chSoon = true;
+      }
+      const reps = await link.fetchReplies(); let ch = !!f?.feed || chSoon;
+      const have = new Set(entries.filter(e => e.kind === 'bot').map(e => String(e.id)));
+      for (const r of reps) {
+        if (r.type === 'ack') { const m = entries.find(x => x.mid === r.mid); if (m && !m.issue) { m.issue = r.issue; m.route = r.route || m.route; ch = true; } continue; }
+        if (hqAck(r.id, r.text)) { if (noteAck(r.id, r.text)) ch = true; continue; }
+        if (r.thread || have.has(String(r.id))) continue;
+        entries.push({ kind: 'bot', id: r.id, from: r.from, text: r.text, at: r.at, ref: r.ref }); ch = true;
+        const who = stOf(r.who) || (/grok/i.test(r.from || '') ? stOf('grok') : null); if (who && byId(who.id)) say(who.id, r.text, 6);
+      }
+      if (ch) { saveLog(); renderChat(); }
+    } while (pollAgain && !document.hidden);
   } catch (e) {}
   polling = false;
+  if (pollAgain && !document.hidden) pollChat();
 }
 function noteAck(id, text) {
   const a = hqAck(id, text); if (!a) return false;
