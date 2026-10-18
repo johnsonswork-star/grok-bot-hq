@@ -2,11 +2,12 @@
 # Publish Bot Office to https://johnsonswork-star.github.io/grok-bot-hq/
 set -e
 cd "$(dirname "$0")"
-# bump the service-worker cache name so iPads drop old cached files
+# Open 2D iPads poll 2d/version.json and reload. Root version.json gets the same
+# build so an iPad still on the previous 2D page (it polled ../version.json) reloads once.
+# Root sw.js only unregisters the old 3D worker. Do not put a cache name back in it.
 BUILD=$(date +%s)
-sed -i -E "s/bot-office-v[0-9]+/bot-office-v$BUILD/" sw.js
-# open iPads poll this and reload themselves (live.js)
 echo "{\"build\":\"$BUILD\"}" > version.json
+echo "{\"build\":\"$BUILD\"}" > 2d/version.json
 git add -A
 git commit -m "${1:-Update office $(date '+%Y-%m-%d %H:%M')}" || echo "nothing to commit"
 git push origin main

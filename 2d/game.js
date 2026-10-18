@@ -1037,7 +1037,7 @@ function openHit(h) {
   if (h.kind === 'worker') { sel = h.id; openWorker(h.id); }
   else if (h.kind === 'board' || h.kind === 'status' || h.kind === 'whiteboard') openProjects();
   else if (h.kind === 'design') openDesign();
-  else if (h.kind === 'warehouse') openCard(`<h2>Warehouse</h2><div class="sub">Downstairs</div><p>Paper, pallets and the bay doors. In the 3D office this is also where the Design Trainer wall lives. Nothing is running here right now. ${esc(PAUSE_NOTE)}</p><div class="btns"><button data-act="design">Design cards</button><button data-act="go3d">Open 3D office</button></div>`);
+  else if (h.kind === 'warehouse') openCard(`<h2>Warehouse</h2><div class="sub">Downstairs</div><p>Paper, pallets and the bay doors. In the 3D office this is also where the Design Trainer wall lives. Nothing is running here right now. ${esc(PAUSE_NOTE)}</p><div class="btns"><button data-act="design">Design cards</button></div>`);
 }
 
 // ---------- modal cards ----------
@@ -1050,7 +1050,6 @@ cardBody.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
   if (a === 'design') openDesign();
-  else if (a === 'go3d') location.href = '../';
   else if (a === 'needs') openNeeds();
   else if (a === 'projects') openProjects();
   else if (a === 'worker') { sel = b.dataset.id; openWorker(b.dataset.id); }
@@ -1086,8 +1085,7 @@ function openDesign() {
   const cards = (deck?.cards || []).filter(c => c && c.title);
   openCard(`<h2>Design Wall</h2><div class="sub">Kelly's Design Trainer deck. ${esc(PROJECTS.find(p => p.id === 'cards')?.note || '')}</div>
     ${cards.length ? `<div class="grid">${cards.slice(0, 40).map(c => `<figure>${c.d ? `<img src="${c.d}" alt="">` : ''}${esc(c.title)}</figure>`).join('')}</div>`
-      : `<div class="item"><small>The deck is encrypted to your iPad, so it only loads on your device. ${link.swipeStatus ? `(status: ${esc(link.swipeStatus)})` : 'Loading...'} Swiping still lives in the 3D office warehouse.</small></div>`}
-    <div class="btns"><button data-act="go3d">Open 3D office</button></div>`);
+      : `<div class="item"><small>The deck is encrypted to your iPad, so it only loads on your device. ${link.swipeStatus ? `(status: ${esc(link.swipeStatus)})` : 'Loading...'} Swiping still lives in the 3D office warehouse.</small></div>`}`);
   if (!cards.length) loadDeck(true).then(ok => { if (ok && !modal.classList.contains('hidden')) openDesign(); });
 }
 
@@ -1202,7 +1200,7 @@ async function loadDeck(force) {
 }
 let build = null;
 async function checkVersion() {
-  try { const r = await fetch('../version.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return; const b = (await r.json()).build;
+  try { const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return; const b = (await r.json()).build;
     if (build === null) build = b; else if (b !== build && !chatIn.value && modal.classList.contains('hidden') && document.activeElement !== chatIn) { toast('Office update: reloading'); setTimeout(() => location.reload(), 800); } } catch (e) {}
 }
 
