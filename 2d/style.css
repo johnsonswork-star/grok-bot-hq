@@ -87,7 +87,7 @@ button{font-family:var(--px);cursor:pointer}
 @media (max-width:820px){#projects{min-width:200px}#chat{width:46vw}}
 /* iPad-sized screens: roomy chat, readable type, 44px tap targets. Input stays at least 16px so Safari does not zoom. */
 @media (min-width:700px) and (max-width:1400px) and (min-height:700px){
-  #chat .tabs button[data-tab]{flex:1 1 30%;font-size:16px;min-height:44px;padding:8px 6px;letter-spacing:0}
+  #chat .tabs button[data-tab]{flex:1 1 auto;font-size:16px;min-height:44px;padding:8px 8px;letter-spacing:0;white-space:nowrap}
   #chat .tabs .mini,#chatSize{font-size:16px;min-height:44px;min-width:44px;padding:8px 12px}
   #chat.sz-full #chatMin{min-width:88px;font-size:18px;min-height:48px;padding:8px 16px}
   #chatBody{font-size:18px;line-height:1.4;padding:12px 14px}
