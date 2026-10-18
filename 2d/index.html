@@ -33,18 +33,19 @@
   <div id="clock" class="panel"><span class="ci">&#9719;</span><div><div id="clkT">--:--</div><div id="clkD">---</div></div></div>
 </div>
 
-<div id="chat" class="panel hud">
+<div id="chat" class="panel hud sz-normal">
   <div class="tabs">
     <button data-tab="chat" class="on">TEAM CHAT</button>
     <button data-tab="assign">ASSIGNMENTS</button>
     <button data-tab="needs">NEEDS YOU</button>
-    <button id="chatMin" class="mini" title="hide">_</button>
+    <button id="chatSize" class="mini" type="button" title="Chat size: Normal. Tap for Large.">Normal</button>
+    <button id="chatMin" class="mini" type="button" title="hide" aria-label="Hide chat">_</button>
   </div>
   <div id="chatBody"></div>
   <form id="chatForm" autocomplete="off">
     <select id="chatTo" aria-label="send to"><option value="Grok Bot">Michael (Grok Bot)</option><option value="Office">Whole office</option></select>
     <input id="chatIn" placeholder="Type a message..." maxlength="2000" enterkeyhint="send">
-    <button id="chatSend" type="submit">&#10148;</button>
+    <button id="chatSend" type="submit">Send</button>
   </form>
 </div>
 <button id="chatOpen" class="pillbtn hud hidden">Chat</button>

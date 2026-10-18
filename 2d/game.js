@@ -1138,7 +1138,7 @@ function renderChat() {
     const list = merged();
     const meStatus = m => m.status === 'sending' ? 'sending' : m.status === 'failed' ? `<a href="#" class="retry" data-mid="${esc(m.mid)}">failed, tap to retry</a>` : m.ackN ? `Michael has it (#${esc(m.ackN)})` : 'delivered';
     html = list.length ? list.map(m => {
-      if (m.kind === 'me') return `<div class="msg me"><img class="av" src="${avatar('chris')}"><div><div class="n">Chris <i>to ${esc(m.to === OFFICE_TO || m.to === 'Office' ? 'the office' : m.to === 'Grok Bot' ? 'Michael' : m.to || '')} \u00b7 ${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div><div class="mst" style="font-size:11px;opacity:.8">${meStatus(m)}</div></div></div>`;
+      if (m.kind === 'me') return `<div class="msg me"><img class="av" src="${avatar('chris')}"><div><div class="n">Chris <i>to ${esc(m.to === OFFICE_TO || m.to === 'Office' ? 'the office' : m.to === 'Grok Bot' ? 'Michael' : m.to || '')} \u00b7 ${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div><div class="mst">${meStatus(m)}</div></div></div>`;
       const s = stOf(m.who) || stOf(m.from) || (/grok/i.test(m.from || '') ? stOf('grok') : null);
       return `<div class="msg"><img class="av" src="${avatar(s?.id || 'grok')}"><div><div class="n">${esc(s?.name || m.from || 'Grok Bot')} <i>${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div></div></div>`;
     }).join('') : `<div class="empty">No messages yet. Send one and Michael answers here.</div>`;
@@ -1176,6 +1176,47 @@ const chatBox = $('#chat'), chatOpenBtn = $('#chatOpen');
 function openChat() { chatBox.classList.remove('hidden'); chatOpenBtn.classList.add('hidden'); }
 $('#chatMin').onclick = () => { chatBox.classList.add('hidden'); chatOpenBtn.classList.remove('hidden'); };
 chatOpenBtn.onclick = openChat;
+
+// Chat size: Normal (roomy iPad default), Large, Full screen. Remembered on this device.
+const CHAT_SZ_KEY = 'hq2d.chatSize', CHAT_SZS = ['normal', 'large', 'full'];
+const chatSzLabel = sz => (sz === 'full' ? 'Full screen' : sz === 'large' ? 'Large' : 'Normal');
+const chatSzNext = sz => (sz === 'normal' ? 'Large' : sz === 'large' ? 'Full screen' : 'Normal');
+function applyChatSize(sz, persist) {
+  if (!CHAT_SZS.includes(sz)) sz = 'normal';
+  chatBox.classList.remove('sz-normal', 'sz-large', 'sz-full');
+  chatBox.classList.add('sz-' + sz);
+  const btn = $('#chatSize'), minBtn = $('#chatMin');
+  if (btn) {
+    btn.textContent = chatSzLabel(sz);
+    const tip = 'Chat size: ' + chatSzLabel(sz) + '. Tap for ' + chatSzNext(sz) + '.';
+    btn.title = tip; btn.setAttribute('aria-label', tip);
+  }
+  if (minBtn) {
+    const full = sz === 'full';
+    minBtn.textContent = full ? 'Hide' : '_';
+    minBtn.title = full ? 'Hide chat' : 'hide';
+    minBtn.setAttribute('aria-label', 'Hide chat');
+  }
+  if (persist) { try { localStorage.setItem(CHAT_SZ_KEY, sz); } catch (e) {} }
+}
+let chatSz = 'normal';
+try { chatSz = localStorage.getItem(CHAT_SZ_KEY) || 'normal'; } catch (e) {}
+applyChatSize(chatSz, false);
+const chatSizeBtn = $('#chatSize');
+if (chatSizeBtn) chatSizeBtn.onclick = e => {
+  e.stopPropagation();
+  const cur = CHAT_SZS.find(s => chatBox.classList.contains('sz-' + s)) || 'normal';
+  applyChatSize(CHAT_SZS[(CHAT_SZS.indexOf(cur) + 1) % CHAT_SZS.length], true);
+};
+function pinChatAboveKeyboard() {
+  const vv = window.visualViewport; if (!vv) return;
+  const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+  chatBox.style.setProperty('--kb', (kb > 40 ? Math.round(kb) : 0) + 'px');
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', pinChatAboveKeyboard);
+  visualViewport.addEventListener('scroll', pinChatAboveKeyboard);
+}
 
 let fastUntil = 0, polling = false, pollAgain = false;
 async function pollChat() {
