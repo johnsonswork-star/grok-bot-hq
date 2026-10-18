@@ -421,6 +421,10 @@ function drawBase() {
     poly(c, quadY(WH.y0 + 0.01, x0 + 0.85, x0 + 1.55, WH.z + 1.75, WH.z + 1.97), '#1d1d1d');
     poly(c, quadY(WH.y0 + 0.012, x0 + 0.1, x0 + 0.25, WH.z + 1.75, WH.z + 1.9), lbl === 1 ? '#5f5' : '#f55');
   }
+  // Pit shadows sit on the downstairs floor. Drawn before the upstairs carpet so a rotated
+  // view cannot leave them smeared across the bullpen.
+  for (const [x, y] of PALLETS) shadow(c, x, y, 1.4, 1.1, 1.0, WH.z);
+  shadow(c, 13.0, 11.7, 1.9, 0.8, 2, WH.z); shadow(c, 19.6, 11.7, 1.7, 0.8, 2, WH.z);
   // ---- office floor
   for (let x = 0; x < GX; x++) for (let y = 0; y < GY; y++) {
     const cx = x + 0.5, cy = y + 0.5;
@@ -467,8 +471,6 @@ function drawBase() {
   poly(c, [P(0.55, GY - 0.3), P(2.35, GY - 0.3), P(3.2, GY - 2.2), P(1.4, GY - 2.2)], 'rgba(255,236,180,.12)');
   // contact shadows
   for (const s of SHADOWS()) shadow(c, ...s);
-  for (const [x, y] of PALLETS) shadow(c, x, y, 1.4, 1.1, 1.0, WH.z);
-  shadow(c, 13.0, 11.7, 1.9, 0.8, 2, WH.z); shadow(c, 19.6, 11.7, 1.7, 0.8, 2, WH.z);
   // open aisle in front of the design trainer (Kelly and Toby sit south of this)
   poly(c, [P(15.1, 6.9), P(20.4, 6.9), P(20.4, 9.85), P(15.1, 9.85)], '#c4ad8c');
   poly(c, [P(15.28, 7.08), P(20.22, 7.08), P(20.22, 9.68), P(15.28, 9.68)], '#d8c4a4');
@@ -844,10 +846,22 @@ function avatar(id) {
   return (avatarCache[id] = k.toDataURL());
 }
 
+function paintWarehouseSign(c) {
+  box(c, 9.4, 12.5, 0, 0.08, 0.08, 1.9, '#333'); box(c, 11.5, 12.5, 0, 0.08, 0.08, 1.9, '#333');
+  const ySign = showPosY() ? 12.61 : 12.49;
+  const yFace = showPosY() ? 12.62 : 12.48;
+  poly(c, quadY(ySign, 9.3, 11.7, 1.55, 2.15), '#1f7a3a');
+  poly(c, quadY(ySign + (showPosY() ? 0.01 : -0.01), 9.36, 11.64, 1.6, 2.1), '#2a9a4a');
+  // Drawn with the posts so a nearer desk or person covers the letters too.
+  inPlane(c, 1, facePlane(PLANE_Y(9.36, yFace, 2.1), 2.28), 40, cc => {
+    cc.textBaseline = 'top'; cc.fillStyle = '#fff'; cc.font = `700 11px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', 9, 5);
+  });
+}
+
 // ---------- scene objects (depth sorted) ----------
 function sceneItems(t) {
   const it = [];
-  const add = (x, y, fn, bias = 0) => { const [u, v] = toView(x, y); it.push({ k: u + v + bias, fn }); };
+  const add = (x, y, fn, bias = 0, clip = null) => { const [u, v] = toView(x, y); it.push({ k: u + v + bias, fn, clip }); };
   // glass + low walls
   const refl = (q) => { // q = [TL, TR, BR, BL] of a glass pane: two diagonal light streaks
     const L = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
@@ -935,25 +949,25 @@ function sceneItems(t) {
     }
   }, 3);
   // reception extras
-    // warehouse: racks + pallets
-  add(16.5, 12.1, c => { rack(c, 13.0, 11.7, 1.8); rack(c, 19.6, 11.7, 1.6); });
-  for (const [x, y, n] of PALLETS) add(x, y, c => pallet(c, x, y, n), 1.2);
-  add(21.3, 13.9, c => { carton(c, 21.0, 13.5, WH.z, 0.7, 0.6, 0.5); carton(c, 21.05, 13.55, WH.z + 0.5, 0.6, 0.5, 0.45); carton(c, 21.1, 14.3, WH.z, 0.6, 0.6, 0.5); });
-  add(17.6, 15.4, c => { carton(c, 16.8, 15.1, WH.z, 0.7, 0.6, 0.5); carton(c, 17.6, 15.2, WH.z, 0.6, 0.5, 0.4); });
+  // Warehouse props sit below the floor. Clip them to the opening so a rotated camera
+  // cannot paint pallets and racks over the bullpen. The stair front is the real near
+  // wall when +y faces the camera; the other two facings look at the back of that wall,
+  // and the buried part has to stay inside the hole.
+  const stairClip = showPosY() ? null : 'stairs';
+  add(16.5, 12.1, c => { rack(c, 13.0, 11.7, 1.8); rack(c, 19.6, 11.7, 1.6); }, 0, 'pit');
+  for (const [x, y, n] of PALLETS) add(x, y, c => pallet(c, x, y, n), 1.2, 'pit');
+  add(21.3, 13.9, c => { carton(c, 21.0, 13.5, WH.z, 0.7, 0.6, 0.5); carton(c, 21.05, 13.55, WH.z + 0.5, 0.6, 0.5, 0.45); carton(c, 21.1, 14.3, WH.z, 0.6, 0.6, 0.5); }, 0, 'pit');
+  add(17.6, 15.4, c => { carton(c, 16.8, 15.1, WH.z, 0.7, 0.6, 0.5); carton(c, 17.6, 15.2, WH.z, 0.6, 0.5, 0.4); }, 0, 'pit');
   // stairs down
   for (let i = 0; i < ST.n; i++) {
     const x = ST.x0 + i * (ST.x1 - ST.x0) / ST.n, top = -(i + 1) * (-WH.z) / ST.n, w = (ST.x1 - ST.x0) / ST.n;
-    add(x + w, ST.y0, c => box(c, x, ST.y0, WH.z, w, ST.y1 - ST.y0, top - WH.z, '#8a6a4a', { t: i % 2 ? '#a5835e' : '#9a7a56', l: '#6e5238', r: '#5a432e' }), 0.5);
+    add(x + w, ST.y0, c => box(c, x, ST.y0, WH.z, w, ST.y1 - ST.y0, top - WH.z, '#8a6a4a', { t: i % 2 ? '#a5835e' : '#9a7a56', l: '#6e5238', r: '#5a432e' }), 0.5, stairClip);
   }
-  add(10.5, ST.y1, c => { // railing on the near side
+  add(10.5, ST.y1, c => { // railing along the south side of the stairs
     const a = P(ST.x0, ST.y1, 0.9), b = P(ST.x1, ST.y1, WH.z + 0.9); c.strokeStyle = '#2a2a2a'; c.lineWidth = 0.85; c.lineCap = 'round'; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
     for (let i = 0; i <= ST.n; i += 2) { const x = ST.x0 + i * 0.5, z = -(i) * (-WH.z) / ST.n; const p = P(x, ST.y1, z), q = P(x, ST.y1, z + 0.9); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); }
-  }, 0.6);
-  add(ST.x0, ST.y0, c => { // warehouse sign on posts
-    box(c, 9.4, 12.5, 0, 0.08, 0.08, 1.9, '#333'); box(c, 11.5, 12.5, 0, 0.08, 0.08, 1.9, '#333');
-    const ySign = showPosY() ? 12.61 : 12.49;
-    poly(c, quadY(ySign, 9.3, 11.7, 1.55, 2.15), '#1f7a3a'); poly(c, quadY(ySign + (showPosY() ? 0.01 : -0.01), 9.36, 11.64, 1.6, 2.1), '#2a9a4a');
-  }, -0.3);
+  }, 0.6, stairClip);
+  add(ST.x0, ST.y0, c => paintWarehouseSign(c), -0.3);
   // desks + workers
   for (const p of people) {
     const d = p.d;
@@ -1089,8 +1103,6 @@ function textPass(t, which = 'all') {
     cc.lineWidth = 1.6; const hand = (a, len) => { cc.beginPath(); cc.moveTo(r + 2, r + 2); cc.lineTo(r + 2 + Math.sin(a) * len, r + 2 - Math.cos(a) * len); cc.stroke(); };
     hand(((h % 12) + m / 60) / 12 * Math.PI * 2, 5.5); cc.lineWidth = 1; hand(m / 60 * Math.PI * 2, 8);
   });
-  // warehouse sign
-  inPlane(c, S, facePlane(PLANE_Y(9.36, showPosY() ? 12.62 : 12.48, 2.1), 2.28), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#fff'; cc.font = `700 11px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', 9, 5); });
   // reception sign (front of the desk). Only while that face points at the camera.
   if (showPosX()) inPlane(c, S, facePlane(PLANE_X(3.11, 11.15, 0.58), 2.5), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
   // design trainer sign, above the shirts
@@ -1196,6 +1208,42 @@ function pitViewRect() {
 function viewMax() {
   const a = toView(0, 0), b = toView(GX, GY);
   return [Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+}
+function viewRectOf(x0, x1, y0, y1) {
+  let u0 = 1e9, v0 = 1e9, u1 = -1e9, v1 = -1e9;
+  for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
+    const [u, v] = toView(x, y);
+    if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
+  }
+  return [u0, u1, v0, v1];
+}
+function traceQuad(c, pts) {
+  c.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+  c.closePath();
+}
+// Hole at floor level, plus the vertical drop where that side of the pit is the map edge
+// (nothing upstairs stands in front of it).
+function traceOpening(c, u0, u1, v0, v1, drop) {
+  const p = (u, v, z) => { const [x, y] = fromView(u, v); return P(x, y, z); };
+  const hole = [p(u0, v0, 0), p(u1, v0, 0), p(u1, v1, 0), p(u0, v1, 0)];
+  traceQuad(c, hole);
+  if (!drop) return;
+  const [Umax, Vmax] = viewMax();
+  const eps = 0.08;
+  const openU = u1 >= Umax - eps, openV = v1 >= Vmax - eps;
+  if (openU) traceQuad(c, [p(u1, v0, 0), p(u1, v1, 0), p(u1, v1, WH.z), p(u1, v0, WH.z)]);
+  if (openV) traceQuad(c, [p(u0, v1, 0), p(u1, v1, 0), p(u1, v1, WH.z), p(u0, v1, WH.z)]);
+}
+function clipLower(c, which) {
+  c.beginPath();
+  const pit = pitViewRect();
+  traceOpening(c, pit[0], pit[1], pit[2], pit[3], true);
+  if (which === 'stairs') {
+    const st = viewRectOf(ST.x0, ST.x1, ST.y0, ST.y1);
+    traceOpening(c, st[0], st[1], st[2], st[3], false);
+  }
+  c.clip();
 }
 function rectPoly(u0, u1, v0, v1, z) {
   const c = (u, v) => { const [x, y] = fromView(u, v); return P(x, y, z); };
@@ -1315,7 +1363,13 @@ function paintGeom(c, f, alpha, collect, t) {
   collectHits = !!collect;
   if (collectHits) hits = [];
   staticHits();
-  for (const it of sceneItems(t)) it.fn(c);
+  for (const it of sceneItems(t)) {
+    if (!it.clip) { it.fn(c); continue; }
+    c.save();
+    clipLower(c, it.clip);
+    it.fn(c);
+    c.restore();
+  }
   if (collectHits) sortHits();
   lights(c);
   c.restore();
