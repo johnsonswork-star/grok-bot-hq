@@ -133,7 +133,7 @@ export async function ingest(p, { log } = {}) {
 export function noteGrok(p, issue, tri) {
   const at = Date.parse(p.ts) || Date.now();
   append({ id: 'c-' + p.mid, mid: p.mid, kind: 'chris', who: 'chris', name: 'Chris', text: clip(p.text, 600), to: p.to || R.OFFICE_TO, route: 'grok', why: tri?.why || '', issue, at, device: p.device?.id });
-  append({ id: 'g-' + p.mid, kind: 'route', who: 'grok', name: 'Michael Scott', bot: 'Grok Bot', text: `On it (HQ #${issue}). ${tri?.cmds?.length ? 'Moves are done in the office; the' : 'The'} real Grok Bot has this one.`, issue, at: at + 1 });
+  append({ id: 'g-' + p.mid, kind: 'route', who: 'grok', name: 'Michael Scott', bot: 'Grok Bot', text: tri?.cmds?.length ? `Got it, the office moves are done and I'm on the rest (HQ #${issue}). Full answer coming shortly.` : `Got it, I'm on it (HQ #${issue}). Full answer coming shortly.`, issue, at: at + 1 });
   bump();
 }
 // a real reply (issue comment relayed to the iPad) also goes into the shared log
@@ -156,7 +156,7 @@ export async function push() {
   const feed = bundle(), devs = devices(); let ok = !!Object.keys(devs).length;
   for (const [id, d] of Object.entries(devs)) {
     try { const body = JSON.stringify(await seal(feed, d.pub));
-      const r = await fetch(`${RELAY}/${d.topic}_chat`, { method: 'POST', body, headers: { Cache: 'yes' }, signal: AbortSignal.timeout(30000) });
+      const r = await fetch(`${RELAY}/${d.topic}_chat`, { method: 'POST', body, headers: { Cache: 'yes' }, signal: AbortSignal.timeout(10000) });
       say(`chat feed -> device ${id}: ${feed.items.length} lines, ${Math.round(body.length / 1024)} KB -> ${r.status}`); ok &&= r.ok;
     } catch (e) { say('chat push error', id, e.message); ok = false; }
   }

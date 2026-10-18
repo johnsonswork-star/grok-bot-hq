@@ -1,0 +1,31 @@
+# COPY of .github/workflows/hq-wake.yml (pushing workflow files needs the GitHub `workflow` scope the box token lacks;
+# a cloud agent or Chris adds the real file). Keep the two identical.
+# Off-box wake for HQ chat (see tools/hq-wake-check.mjs). Every 5 min: if the office relay has a message the box
+# has not handled (box paused), post one Slack ping so the Grok Bot wake routine runs and the box wakes up.
+# Secret: SLACK_WEBHOOK_URL (Actions secret, never committed). Optional repo variable HQ_WAKE_TEST for a marked test.
+name: hq-wake
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hq-wake
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tools/hq-wake-check.mjs
+            hq-link.js
+          sparse-checkout-cone-mode: false
+      - name: check relay
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          HQ_WAKE_TEST: ${{ vars.HQ_WAKE_TEST }}
+        run: node tools/hq-wake-check.mjs

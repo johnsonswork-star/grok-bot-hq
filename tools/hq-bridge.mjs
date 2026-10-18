@@ -11,11 +11,13 @@ import os from 'node:os';
 const { seal, open, importPriv } = await import(new URL('../hq-crypto.js', import.meta.url));
 
 const REPO = process.env.HQ_REPO || 'johnsonswork-star/grok-bot-hq-inbox';
-const LABEL = 'hq-chat', RELAY = 'https://ntfy.sh';
+const LABEL = 'hq-chat', RELAY = process.env.HQ_RELAY || 'https://ntfy.sh';
 const DIR = `${os.homedir()}/.config/grok-bot-hq`, STATE = `${DIR}/bridge-state.json`;
 const log = (...a) => console.log(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }), ...a);
 const cfg = () => JSON.parse(process.env.HQ_INBOX_KEY || fs.readFileSync(`${DIR}/inbox-key.json`, 'utf8'));
-const gh = (...args) => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+// Every network call is bounded (Oct 17): gh is killed after 20 s, every fetch aborts after NET_MS (10 s).
+const NET_MS = 10e3;
+const gh = (...args) => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000, killSignal: 'SIGKILL' }).trim();
 const state = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { done: [] }; } };
 const uniq = (a = [], b = []) => [...new Set([...a, ...b])].slice(-500);
 const saveState = s => { try { fs.mkdirSync(DIR, { recursive: true }); const d = state();
@@ -56,7 +58,7 @@ async function fireEmail(p) {
   try {
     const topic = 'hqwake-' + cfg().inboxTopic.slice(-12);
     const r = await fetch(`${RELAY}/${topic}`, { method: 'POST', headers: { Email: to, Title: `HQ chat #${p.issue} for ${p.to}` },
-      body: `New Bot HQ chat message #${p.issue} for ${p.to}. Run tools/hq-inbox.sh pending and reply. ${p.url}`, signal: AbortSignal.timeout(10000) });
+      body: `New Bot HQ chat message #${p.issue} for ${p.to}. Run tools/hq-inbox.sh pending and reply. ${p.url}`, signal: AbortSignal.timeout(NET_MS) });
     log('email wake for issue', p.issue, '->', r.status);
   } catch (e) { log('email wake error', e.message); }
 }
@@ -89,12 +91,12 @@ async function postSlack(text, tag) {
   try {
     if (s.SLACK_WEBHOOK_URL) {
       const r = await fetch(s.SLACK_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }), signal: AbortSignal.timeout(10000) });
+        body: JSON.stringify({ text }), signal: AbortSignal.timeout(NET_MS) });
       sent.push('webhook ' + r.status);
     } else if (s.SLACK_BOT_TOKEN && s.SLACK_CHANNEL_ID) {
       const r = await fetch('https://slack.com/api/chat.postMessage', { method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8', Authorization: `Bearer ${s.SLACK_BOT_TOKEN}` },
-        body: JSON.stringify({ channel: s.SLACK_CHANNEL_ID, text }), signal: AbortSignal.timeout(10000) });
+        body: JSON.stringify({ channel: s.SLACK_CHANNEL_ID, text }), signal: AbortSignal.timeout(NET_MS) });
       const j = await r.json().catch(() => ({})); sent.push('api ' + (j.ok ? 'ok' : j.error || r.status));
     } else { if (!slackWarned) { slackWarned = true; log('slack not configured (no SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN+SLACK_CHANNEL_ID); skipping slack wake'); } return; }
     log('slack wake for', tag, '->', sent.join(', '));
@@ -107,7 +109,7 @@ async function fireWebhook(payload) {
   const headers = { 'Content-Type': 'application/json' };
   if (w.key) { const h = w.header || 'Authorization'; headers[h] = h.toLowerCase() === 'authorization' && !/^\w+\s/.test(w.key) ? `Bearer ${w.key}` : w.key; }
   try {
-    const r = await fetch(w.url, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(10000) });
+    const r = await fetch(w.url, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(NET_MS) });
     log('webhook fired for issue', payload.issue, '->', r.status);
   } catch (e) { log('webhook error', e.message); }
 }
@@ -117,8 +119,19 @@ function ensureLabel() {
   if (labelOk) return; labelOk = true;
   try { gh('label', 'create', LABEL, '--repo', REPO, '--color', 'D4AF37', '--description', 'Message from Bot HQ chat'); } catch {}
 }
+// Dedupe (Oct 17): one issue per mid, ever, across every bridge process (watch + parallel `once` runs from
+// hq-inbox.sh pending). A mid is claimed by atomically creating ~/.config/grok-bot-hq/mids/<mid> (O_EXCL), so two
+// processes handling the same relay message can never both file it. GitHub search is only a backup (its index lags).
+const MIDS = `${DIR}/mids`;
+const midFile = mid => `${MIDS}/${String(mid).replace(/[^\w-]/g, '_').slice(0, 80)}`;
+function claimMid(mid) {
+  try { fs.mkdirSync(MIDS, { recursive: true, mode: 0o700 }); fs.writeFileSync(midFile(mid), `${process.pid} ${new Date().toISOString()}\n`, { flag: 'wx', mode: 0o600 }); return true; }
+  catch (e) { if (e.code === 'EEXIST') return false; log('mid claim error (not filing)', e.message); return false; }
+}
+const releaseMid = mid => { try { fs.unlinkSync(midFile(mid)); } catch {} };
+const midSeen = mid => { try { fs.accessSync(midFile(mid)); return true; } catch { return false; } };
 function alreadyFiled(mid, st) {
-  if (st.done.includes(mid)) return true;
+  if (st.done.includes(mid) || state().done?.includes(mid) || midSeen(mid)) return true;
   try { return gh('issue', 'list', '--repo', REPO, '--state', 'all', '--search', `"hq-mid:${mid}" in:body`, '--json', 'number', '-q', 'length') !== '0'; }
   catch { return false; }
 }
@@ -129,7 +142,7 @@ function alreadyFiled(mid, st) {
 const SHOTS = `${DIR}/shots`;
 async function envelopeText(m) {
   if (m.attachment?.url) {
-    const r = await fetch(m.attachment.url, { signal: AbortSignal.timeout(30000) });
+    const r = await fetch(m.attachment.url, { signal: AbortSignal.timeout(20000) });
     if (!r.ok) throw new Error('attachment ' + r.status);
     return await r.text();
   }
@@ -151,15 +164,57 @@ function saveShot(mid, dataUrl) {
   } catch (e) { log('shot repo upload failed (local copy kept)', String(e.stderr || e.message).slice(0, 160)); }
   return { file, repoUrl };
 }
+// Chat fix (Oct 17): register every device that talks to the bridge in devices.json, so the shared office chat feed
+// (<topic>_chat, tools/office-chat.mjs publisher) reaches it even while work-live / inbox feeds are paused.
+// A brand new Safari tab or Home Screen app has its own key, so without this it saw no replies from other contexts.
+const DEVICES = `${DIR}/devices.json`;
+function registerDevice(d) {
+  if (!d?.id || !d?.topic || !d?.pub) return false;
+  let known = {}; try { known = JSON.parse(fs.readFileSync(DEVICES, 'utf8')); } catch {}
+  const cur = known[d.id];
+  if (cur && cur.topic === d.topic && JSON.stringify(cur.pub) === JSON.stringify(d.pub)) return false;
+  known[d.id] = { topic: d.topic, pub: d.pub };
+  try { fs.writeFileSync(DEVICES, JSON.stringify(known), { mode: 0o600 }); log('registered device', d.id); } catch (e) { log('device register error', e.message); return false; }
+  return true;
+}
+// Instant auto-ack (Oct 17): the moment a message is filed for Grok Bot, a short reply bubble goes back to the sending
+// device so Chris sees an answer within seconds. Same id + text as the office feed's route line, so the 2D chat de-dupes it.
+const autoAckText = (issue, tri) => tri?.cmds?.length
+  ? `Got it, the office moves are done and I'm on the rest (HQ #${issue}). Full answer coming shortly.`
+  : `Got it, I'm on it (HQ #${issue}). Full answer coming shortly.`;
+async function sendAutoAck(p, issue, tri) {
+  const d = p.device; if (!d?.topic || !d?.pub || !issue) return;
+  try {
+    const msg = { id: 'g-' + p.mid, ref: issue, from: 'Grok Bot', text: autoAckText(issue, tri), at: new Date().toISOString() };
+    const r = await fetch(`${RELAY}/${d.topic}`, { method: 'POST', signal: AbortSignal.timeout(NET_MS), body: JSON.stringify(await seal(msg, d.pub)) });
+    log('auto-ack issue', issue, 'to device', d.id, r.status);
+  } catch (e) { log('auto-ack error', e.message); }
+}
+// Off-box wake (tools/hq-wake-check.mjs in GitHub Actions) markers on the relay, plain unix seconds only:
+//   <inbox>_seen  newest relay time this box has handled (published after each batch), so the Action stays quiet
+//   <inbox>_wake  newest relay time the Action already pinged Slack for, so the bridge skips a second ping
+async function publishSeen(t) {
+  if (!t) return; try { await fetch(`${RELAY}/${cfg().inboxTopic}_seen`, { method: 'POST', body: String(t), headers: { Cache: 'yes' }, signal: AbortSignal.timeout(NET_MS) }); } catch (e) { log('seen marker error', e.message); }
+}
+async function wakeMarker() {
+  try { const r = await fetch(`${RELAY}/${cfg().inboxTopic}_wake/json?poll=1&since=latest`, { signal: AbortSignal.timeout(5000) });
+    return Math.max(0, ...(await r.text()).split('\n').filter(Boolean).map(l => +JSON.parse(l).message || 0).filter(v => v <= Date.now() / 1000 + 60)); }
+  catch { return 0; }
+}
 async function handle(m, priv, st) {
   if (m.event !== 'message' || !(m.message || m.attachment?.url)) return;
   let p; try { p = await open(JSON.parse(await envelopeText(m)), priv); } catch { return log('skip undecryptable', m.id); }
+  // already-handled mids (relay replays on catch-up) don't re-register, so a removed test device stays removed
+  const replay = st.lastTime && m.time && m.time <= st.lastTime; // `once` catch-up re-reads 12 h: old hellos must not re-register pruned devices
+  try { if (!replay && !(p.mid && (st.done.includes(p.mid) || midSeen(p.mid)))) registerDevice(p.device); } catch {}
+  if (p.type === 'hello') return; // device check-in on page load: registration only (no issue, no Slack)
   if (p.type === 'refresh') return handleRefresh(p, st);
   if (p.type === 'pick') return handlePick(p, st);
   if (p.type === 'swipe') return handleSwipe(p, st); // HQ #85: design-trainer wall swipes -> design-train/*.jsonl (no issue, no Slack)
   if (p.type === 'suggest') return handleSuggest(p, st); // HQ #92: Design Trainer Suggestion Box -> design-train/suggestions.jsonl
   if (p.direct) return handleDirect(p, st); // HQ #63: Direct tab = 1:1 with a teammate, never filed for Grok Bot, no Slack wake
   if (!p.mid || alreadyFiled(p.mid, st)) return;
+  if (!claimMid(p.mid)) return log('dup mid skipped', p.mid);
   let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
   const shot = p.shot ? saveShot(p.mid, p.shot) : null;
   if (p.shot && shot) log('shot saved', shot.file);
@@ -172,7 +227,8 @@ async function handle(m, priv, st) {
   const body = `**From:** Chris (Bot HQ)\n**To:** ${team}\n**Sent:** ${chicago(p.ts)} (${p.ts})\n\n---\n\n${text}${shotMd}\n\n---\n` +
     `_Reply with \`tools/hq-inbox.sh reply <n> "text" [Bot Name]\` (or comment here, start with \`**Bot Name:**\`). Replies show up in the HQ chat on Chris's iPad._\n\n<!-- hq-mid:${p.mid} -->\n<!-- hq-meta ${JSON.stringify(meta)} -->`;
   ensureLabel();
-  const url = gh('issue', 'create', '--repo', REPO, '--title', `HQ chat → ${to}: ${snippet}`, '--body', body, '--label', LABEL);
+  let url; try { url = gh('issue', 'create', '--repo', REPO, '--title', `HQ chat → ${to}: ${snippet}`, '--body', body, '--label', LABEL); }
+  catch (e) { releaseMid(p.mid); throw e; } // not filed: free the claim so a retry can file it
   st.done.push(p.mid); saveState(st);
   log('filed', url);
   // Wake queue: one JSON line per new HQ message so Grok Bot's poll routine (or anything else) can pick it up.
@@ -181,10 +237,12 @@ async function handle(m, priv, st) {
   try { fs.appendFileSync(`${DIR}/queue.jsonl`, JSON.stringify(evt) + '\n'); } catch {}
   try { const W = await memory(); if (W) { const r = W.logHq({ issue: evt.issue, to, text, at: p.ts, src: 'hq' }); W.markSynced(evt.issue); log('memory: remembered by', r.join(', ') || '-'); } } catch (e) { log('memory error', e.message); }
   await sendAck(p, evt.issue);
+  await sendAutoAck(p, evt.issue, tri);
   try { (await officeChat())?.noteGrok(p, evt.issue, tri); } catch {}
   await fireWebhook(evt);
   await fireEmail(evt);
-  await fireSlack(evt);
+  if (m.time && (await wakeMarker()) >= m.time) log('slack wake skipped for issue', evt.issue, '(off-box relay check already pinged)');
+  else await fireSlack(evt);
 }
 
 // HQ #63 Direct tab: Chris talks 1:1 to one teammate. tools/direct.mjs answers in character (free), logs the thread, and queues
@@ -290,7 +348,7 @@ async function handlePick(p, st) {
 async function sendAck(p, issue) {
   const d = p.device; if (!d?.topic || !d?.pub || !issue) return;
   try {
-    const r = await fetch(`${RELAY}/${d.topic}`, { method: 'POST', signal: AbortSignal.timeout(10000),
+    const r = await fetch(`${RELAY}/${d.topic}`, { method: 'POST', signal: AbortSignal.timeout(NET_MS),
       body: JSON.stringify(await seal({ type: 'ack', id: 'ack-' + p.mid, mid: p.mid, issue, at: new Date().toISOString() }, d.pub)) });
     log('ack issue', issue, 'to device', d.id, r.status);
   } catch (e) { log('ack error', e.message); }
@@ -298,10 +356,13 @@ async function sendAck(p, issue) {
 
 async function once(since = '12h') {
   const c = cfg(), priv = await importPriv(c.privJwk), st = state();
-  const r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=${since}`);
+  const r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=${since}`, { signal: AbortSignal.timeout(NET_MS) });
   if (!r.ok) throw new Error('relay ' + r.status);
-  for (const line of (await r.text()).split('\n')) if (line.trim()) { const m = JSON.parse(line); await handle(m, priv, st); if (m.id) st.last = m.id; }
+  let top = 0;
+  for (const line of (await r.text()).split('\n')) if (line.trim()) { const m = JSON.parse(line); await handle(m, priv, st); if (m.id) st.last = m.id; if (m.event === 'message' && m.time > top) top = m.time; }
+  if (top > (st.lastTime || 0)) st.lastTime = top;
   saveState(st);
+  if (top) await publishSeen(top);
 }
 
 // Relay any new issue comment (made via hq-inbox.sh, gh, or github.com) back to the iPad.
@@ -320,30 +381,54 @@ async function sweepComments() {
   const s2 = state(); s2.sweptAt = now; saveState(s2);
 }
 
+// One live bridge only: ~/.config/grok-bot-hq/bridge.pid. A second `watch` exits if the recorded pid is still alive.
+function singleWatch() {
+  const f = `${DIR}/bridge.pid`;
+  try { const old = +fs.readFileSync(f, 'utf8').trim(); if (old && old !== process.pid) { process.kill(old, 0); log('bridge already running as pid', old, '- exiting'); process.exit(0); } } catch {}
+  fs.writeFileSync(f, String(process.pid));
+  process.on('exit', () => { try { if (+fs.readFileSync(f, 'utf8') === process.pid) fs.unlinkSync(f); } catch {} });
+  for (const sg of ['SIGTERM', 'SIGINT']) process.on(sg, () => process.exit(0));
+}
+// Watch mode (Oct 17, v3): short polling, no long-lived stream (a stream can hang with no error).
+//  - every POLL_MS (4 s): GET <relay>/<topic>/json?poll=1&since=<last handled id>, aborted after NET_MS (10 s)
+//  - one loop, messages handled one at a time, the mid claim files make filing exactly-once across processes
+//  - heartbeat file ~/.config/grok-bot-hq/bridge.heartbeat after every successful poll; tools/hq-supervisor.sh
+//    (the only thing that restarts the bridge) kills + restarts it when the heartbeat is older than 30 s
+//  - comment sweep (replies -> iPad) runs in the same loop every 20 s, so nothing runs in parallel
+const HEARTBEAT = `${DIR}/bridge.heartbeat`, POLL_MS = +process.env.HQ_POLL_MS || 5000, SWEEP_MS = 20000; // 5 s = ntfy.sh's sustained anonymous rate (1 request / 5 s)
+const beat = (extra = {}) => { try { fs.writeFileSync(HEARTBEAT, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), ...extra }) + '\n'); } catch {} };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function pollOnce(c, priv, st) {
+  const r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=${st.last || '12h'}`, { signal: AbortSignal.timeout(NET_MS) });
+  if (!r.ok) throw new Error('relay ' + r.status);
+  const lines = (await r.text()).split('\n').filter(l => l.trim());
+  let n = 0;
+  for (const l of lines) {
+    let m; try { m = JSON.parse(l); } catch { continue; }
+    if (m.event !== 'message' || !m.id) continue;
+    n++;
+    try { await handle(m, priv, st); } catch (e) { log('file error', e.message); }
+    st.last = m.id; if (m.time) st.lastTime = Math.max(st.lastTime || 0, m.time); saveState(st); // move past it either way: the mid claim was released if filing failed, and the next 12h catch-up (`once`) can retry
+  }
+  return n;
+}
 async function watch() {
+  singleWatch();
   const c = cfg(), priv = await importPriv(c.privJwk);
-  officeChat().then(O => O?.startPublisher(log)); // HQ #59: unified office chat feed -> <device topic>_chat
-  const sweep = () => sweepComments().catch(e => log('sweep error', e.message));
-  sweep(); setInterval(sweep, 20000);
+  officeChat().then(O => O?.startPublisher(log)); // HQ #59: unified office chat feed -> <device topic>_chat (pushes only on change)
+  const st = state();
+  log('polling relay every', POLL_MS / 1000, 's (since', st.last || '12h', ')');
+  let fails = 0, lastSweep = 0;
   for (;;) {
-    const st = state();
+    const t0 = Date.now();
     try {
-      const r = await fetch(`${RELAY}/${c.inboxTopic}/json?since=${st.last || '12h'}`);
-      if (!r.ok) throw new Error('relay ' + r.status);
-      log('listening on relay');
-      const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
-      for (;;) {
-        const { value, done } = await rd.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let i; while ((i = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, i); buf = buf.slice(i + 1); if (!line.trim()) continue;
-          const m = JSON.parse(line);
-          try { await handle(m, priv, st); } catch (e) { log('file error', e.message); continue; }
-          if (m.event === 'message') { st.last = m.id; saveState(st); }
-        }
-      }
-    } catch (e) { log('relay error', e.message); }
-    await new Promise(r => setTimeout(r, 3000));
+      const n = await pollOnce(c, priv, st);
+      if (fails) log('relay poll ok again after', fails, 'failure(s)');
+      fails = 0; beat({ last: st.last, n });
+      if (n) { log('poll handled', n, 'message(s) in', Date.now() - t0, 'ms'); await publishSeen(st.lastTime); }
+    } catch (e) { if (fails++ < 3 || fails % 15 === 0) log('relay poll error', e.name === 'TimeoutError' ? 'timeout' : e.message, `(x${fails})`); }
+    if (Date.now() - lastSweep > SWEEP_MS) { lastSweep = Date.now(); try { await sweepComments(); } catch (e) { log('sweep error', String(e.message).slice(0, 160)); } }
+    await sleep(Math.max(500, POLL_MS - (Date.now() - t0)));
   }
 }
 
@@ -353,7 +438,7 @@ async function relayComment(issueBody, c) {
   const { device } = JSON.parse(mm[1]); if (!device?.topic || !device?.pub) return;
   const nb = (c.body || '').match(/^\s*\*\*([^*]{1,40}):\*\*\s*/);
   const msg = { id: String(c.id), ref: c.issue, from: nb ? nb[1].trim() : 'Grok Bot', text: nb ? c.body.slice(nb[0].length) : c.body, at: c.created_at };
-  const r = await fetch(`${RELAY}/${device.topic}`, { method: 'POST', body: JSON.stringify(await seal(msg, device.pub)) });
+  const r = await fetch(`${RELAY}/${device.topic}`, { method: 'POST', body: JSON.stringify(await seal(msg, device.pub)), signal: AbortSignal.timeout(NET_MS) });
   log('relayed comment', c.id, 'to device', device.id, r.status);
   try { (await officeChat())?.noteReply({ id: c.id, issue: c.issue, from: msg.from, text: msg.text, at: c.created_at }); } catch {}
   if (r.ok) { const st = state(); (st.relayed ||= []).push(String(c.id)); st.relayed = st.relayed.slice(-500); saveState(st); }
