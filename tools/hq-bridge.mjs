@@ -79,7 +79,7 @@ function loadSlack() {
   }
   return out;
 }
-let slackWarned = false;
+let slackWarned = false, lastSlackWake = 0;
 async function fireSlack(p) {
   const text = `:speech_balloon: *HQ chat #${p.issue}* from Chris → *${p.to}*\n>${String(p.text || '').replace(/\n/g, '\n>')}\n` +
     (p.shot ? `:camera: View screenshot: \`${p.shot}\` (on the box; open with Read)\n` : '') + (p.url || '');
@@ -129,6 +129,10 @@ function claimMid(mid) {
   catch (e) { if (e.code === 'EEXIST') return false; log('mid claim error (not filing)', e.message); return false; }
 }
 const releaseMid = mid => { try { fs.unlinkSync(midFile(mid)); } catch {} };
+// Oct 18: the claim file also records the outcome ("filed #n" / "office"), so `hq-inbox.sh pending` can wait for a
+// filing that another process is in the middle of, and a late screenshot (type 'shot') finds its issue.
+const markMid = (mid, what) => { try { fs.appendFileSync(midFile(mid), what + '\n'); } catch {} };
+const midIssue = mid => { try { return +(fs.readFileSync(midFile(mid), 'utf8').match(/filed #(\d+)/) || [])[1] || 0; } catch { return 0; } };
 const midSeen = mid => { try { fs.accessSync(midFile(mid)); return true; } catch { return false; } };
 function alreadyFiled(mid, st) {
   if (st.done.includes(mid) || state().done?.includes(mid) || midSeen(mid)) return true;
@@ -211,11 +215,12 @@ async function handle(m, priv, st) {
   if (p.type === 'refresh') return handleRefresh(p, st);
   if (p.type === 'pick') return handlePick(p, st);
   if (p.type === 'swipe') return handleSwipe(p, st); // HQ #85: design-trainer wall swipes -> design-train/*.jsonl (no issue, no Slack)
-  if (p.type === 'suggest') return handleSuggest(p, st); // HQ #92: Design Trainer Suggestion Box -> design-train/suggestions.jsonl
+  if (p.type === 'suggest') return handleSuggest(p, st);
+  if (p.type === 'shot') return handleShot(p, st); // Oct 18: the page now sends the screenshot after the text, as its own message // HQ #92: Design Trainer Suggestion Box -> design-train/suggestions.jsonl
   if (p.direct) return handleDirect(p, st); // HQ #63: Direct tab = 1:1 with a teammate, never filed for Grok Bot, no Slack wake
   if (!p.mid || alreadyFiled(p.mid, st)) return;
   if (!claimMid(p.mid)) return log('dup mid skipped', p.mid);
-  let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
+  let tri = null; try { const O = await officeChat(); if (O) { const r = await O.ingest(p, { log }); tri = r.tri; if (r.handled) { st.done.push(p.mid); saveState(st); markMid(p.mid, 'office'); return; } } } catch (e) { log('office-chat triage error (filing for Grok Bot)', e.message); }
   const shot = p.shot ? saveShot(p.mid, p.shot) : null;
   if (p.shot && shot) log('shot saved', shot.file);
   const to = String(p.to || 'Grok Bot').slice(0, 60), text = String(p.text || '');
@@ -229,7 +234,7 @@ async function handle(m, priv, st) {
   ensureLabel();
   let url; try { url = gh('issue', 'create', '--repo', REPO, '--title', `HQ chat → ${to}: ${snippet}`, '--body', body, '--label', LABEL); }
   catch (e) { releaseMid(p.mid); throw e; } // not filed: free the claim so a retry can file it
-  st.done.push(p.mid); saveState(st);
+  st.done.push(p.mid); saveState(st); markMid(p.mid, 'filed #' + url.split('/').pop());
   log('filed', url);
   // Wake queue: one JSON line per new HQ message so Grok Bot's poll routine (or anything else) can pick it up.
   const evt = { source: 'grok-bot-hq', event: 'hq-chat', issue: +url.split('/').pop(), url, to, text, ts: p.ts, filedAt: new Date().toISOString(),
@@ -242,7 +247,8 @@ async function handle(m, priv, st) {
   await fireWebhook(evt);
   await fireEmail(evt);
   if (m.time && (await wakeMarker()) >= m.time) log('slack wake skipped for issue', evt.issue, '(off-box relay check already pinged)');
-  else await fireSlack(evt);
+  else if (Date.now() - lastSlackWake < 6000) log('slack wake coalesced for issue', evt.issue, '(pinged <6 s ago; that run lists this one too)');
+  else { lastSlackWake = Date.now(); await fireSlack(evt); }
 }
 
 // HQ #63 Direct tab: Chris talks 1:1 to one teammate. tools/direct.mjs answers in character (free), logs the thread, and queues
@@ -253,6 +259,26 @@ async function handleDirect(p, st) {
   if (!p.mid || st.done.includes(p.mid)) return;
   st.done.push(p.mid); saveState(st);
   try { const D = await direct(); if (D) await D.handle(p, { log }); } catch (e) { log('direct error', e.message); }
+}
+
+// Oct 18: late screenshot for an already sent chat message (same mid). Save it like before and append it to the
+// issue body, so `hq-inbox.sh shot <n>` and the GitHub issue show it. No Slack, no ack (the text already did that).
+async function handleShot(p, st) {
+  const key = 'shot:' + p.mid; if (!p.mid || st.done.includes(key)) return;
+  st.done.push(key); saveState(st);
+  let issue = midIssue(p.mid);
+  if (!issue) { try { issue = +gh('issue', 'list', '--repo', REPO, '--state', 'all', '--search', `"hq-mid:${p.mid}" in:body`, '--json', 'number', '-q', '.[0].number') || 0; } catch {} }
+  const shot = saveShot(p.mid, p.shot); if (!shot) return log('late shot not saved', p.mid);
+  log('late shot saved', shot.file, issue ? 'for issue ' + issue : '(no issue: office bot took it)');
+  if (!issue) return;
+  try {
+    const body = gh('issue', 'view', String(issue), '--repo', REPO, '--json', 'body', '-q', '.body');
+    if (body.includes(shot.file)) return;
+    const md = `**📸 Chris's view when he sent this:**\n` + (shot.repoUrl ? `![HQ view](${shot.repoUrl})\n` : '') + `Local copy on Grok Bot's box: \`${shot.file}\` (open with Read)`;
+    const nb = body.replace(/\n\n---\n_Reply with/, `\n\n${md}\n\n---\n_Reply with`);
+    gh('issue', 'edit', String(issue), '--repo', REPO, '--body', nb === body ? body + '\n\n' + md : nb);
+    log('late shot added to issue', issue);
+  } catch (e) { log('late shot issue edit failed', String(e.stderr || e.message).slice(0, 160)); }
 }
 
 // Tap-to-refresh (HQ #29): Chris tapped REFRESH on the whiteboard BANK panel or the Family Inbox monitor. No GitHub issue:
@@ -354,12 +380,16 @@ async function sendAck(p, issue) {
   } catch (e) { log('ack error', e.message); }
 }
 
-async function once(since = '12h') {
+// `once` with no argument (Oct 18) reads only what came after the last handled relay id, so the woken routine's
+// `hq-inbox.sh pending` files new messages straight from the relay in a second or two, bridge or no bridge.
+async function once(since) {
   const c = cfg(), priv = await importPriv(c.privJwk), st = state();
-  const r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=${since}`, { signal: AbortSignal.timeout(NET_MS) });
+  since ||= st.last || '12h';
+  let r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=${since}`, { signal: AbortSignal.timeout(NET_MS) });
+  if (!r.ok && since === st.last) r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=12h`, { signal: AbortSignal.timeout(NET_MS) }); // id expired
   if (!r.ok) throw new Error('relay ' + r.status);
-  let top = 0;
-  for (const line of (await r.text()).split('\n')) if (line.trim()) { const m = JSON.parse(line); await handle(m, priv, st); if (m.id) st.last = m.id; if (m.event === 'message' && m.time > top) top = m.time; }
+  let top = 0, failed = false; // after a failed filing st.last stops moving, so the next run re-reads it (claims stop doubles)
+  for (const line of (await r.text()).split('\n')) if (line.trim()) { const m = JSON.parse(line); try { await handle(m, priv, st); } catch (e) { failed = true; log('once: file error', e.message); } if (m.id && !failed) st.last = m.id; if (m.event === 'message' && m.time > top) top = m.time; }
   if (top > (st.lastTime || 0)) st.lastTime = top;
   saveState(st);
   if (top) await publishSeen(top);

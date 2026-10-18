@@ -21,6 +21,7 @@ bridge() {
   # This only makes sure the supervisor itself is running; it never starts or kills the bridge directly.
   if pgrep -f "bash .*hq-supervisor.sh$" >/dev/null; then echo "bridge supervised ($("$DIR/hq-supervisor.sh" status))"; return; fi
   setsid nohup "$DIR/hq-supervisor.sh" > /dev/null 2>&1 < /dev/null &
+  [ "$1" = nowait ] && return  # pending: don't wait 6 s, it reads the relay itself right after this
   sleep 6; echo "supervisor started ($("$DIR/hq-supervisor.sh" status))"
 }
 worklive() { # live desk-monitor publisher (tools/work-live.mjs watch): plain node, no AI
@@ -60,17 +61,30 @@ case "$1" in
           [ -n "$to" ] && { echo; echo "----- worker memory (HQ #58) -----"; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" digest "$to" 2>/dev/null; } ;;
   memory) NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1; NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" digest "${2:-grok}" ;;
   pending) echo "$(date -Is) pending pid $$ ppid $PPID" >> "$HOME/.config/grok-bot-hq/pending.log"  # when a wake run starts (delay measurement)
-          bridge >/dev/null
-          # fallback catch-up only if the bridge looks unhealthy (heartbeat > 30 s); the claim files stop double filing
-          [ $(( $(date +%s) - $(stat -c %Y "$HOME/.config/grok-bot-hq/bridge.heartbeat" 2>/dev/null || echo 0) )) -gt 30 ] && NODE_NO_WARNINGS=1 timeout 60 node "$DIR/hq-bridge.mjs" once >/dev/null 2>&1
+          bridge nowait >/dev/null
+          # Oct 18: always read the relay directly (only what came after the last handled id, ~1-2 s), so a woken run
+          # files new messages itself even when the box bridge is dead or stalled. The mid claim files stop double filing.
+          NODE_NO_WARNINGS=1 timeout 40 node "$DIR/hq-bridge.mjs" once >> "$CFG/bridge.log" 2>&1
+          # a filing the live bridge is in the middle of (claimed < 30 s ago, no outcome yet): wait up to 12 s for it
+          for _ in 1 2 3 4 5 6; do
+            find "$CFG/mids" -type f -newermt '-30 seconds' 2>/dev/null | xargs -r grep -L -E 'filed #|office' 2>/dev/null | grep -q . || break; sleep 2
+          done
           NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" sync >/dev/null 2>&1
-          gh issue list --repo $REPO --label hq-chat --state open --limit 50 --json number,title,createdAt,comments \
-           -q '.[] | select((.comments|length)==0 or ((.comments|last|.body) | test("^\\s*\\*\\*[^*]{1,40}:\\*\\*") | not)) | "#\(.number)  \(.createdAt)  \(.title)"'
+          # Oct 18 ack dedupe: this run claims what it lists; ones another run already claimed are shown apart (tools/hq-claim.mjs)
+          mkdir -p "$CFG/claims"
+          ( flock -w 20 9
+            gh issue list --repo $REPO --label hq-chat --state open --limit 50 --json number,title,createdAt,comments \
+             -q '.[] | select((.comments|length)==0 or ((.comments|last|.body) | test("^\\s*\\*\\*[^*]{1,40}:\\*\\*") | not)) | "#\(.number)  \(.createdAt)  \(.title)"' |
+             NODE_NO_WARNINGS=1 node "$DIR/hq-claim.mjs" filter
+          ) 9> "$CFG/claims/.lock"
           refreshes
           NODE_NO_WARNINGS=1 node "$DIR/direct.mjs" pending --quiet ;;  # HQ #63: Direct-tab messages queued for real teammates
   refreshes) refreshes ;;
   direct) shift; NODE_NO_WARNINGS=1 node "$DIR/direct.mjs" "$@" ;;  # HQ #63: map | pending | forwarded <bot> <id|all> | reply <bot> "text" | thread <bot>
-  reply)  url=$(gh issue comment "$2" --repo $REPO --body "**${4:-Grok Bot}:** $3") && echo "$url" &&
+  reply)  mkdir -p "$CFG/claims"; exec 9> "$CFG/claims/$2.lock"; flock -w 30 9  # Oct 18: one reply at a time per issue
+          [ "${HQ_FORCE:-}" = 1 ] || NODE_NO_WARNINGS=1 node "$DIR/hq-claim.mjs" may-reply "$2" || exit 3  # double-ack guard
+          url=$(gh issue comment "$2" --repo $REPO --body "**${4:-Grok Bot}:** $3") && echo "$url" &&
+          { NODE_NO_WARNINGS=1 node "$DIR/hq-claim.mjs" replied "$2" || true; } &&
           { NODE_NO_WARNINGS=1 node "$DIR/worker-memory.mjs" log "${4:-Grok Bot}" "I told Chris: $3" --kind reply --issue "$2" --src hq-reply >/dev/null 2>&1 || true; } &&
           NODE_NO_WARNINGS=1 node "$DIR/hq-bridge.mjs" relay "$2" "${url##*issuecomment-}" ;;
   shot)   paths=$(gh issue view "$2" --repo $REPO --json body -q .body | grep -oE '[^` ]*/grok-bot-hq/shots/[A-Za-z0-9_-]+\.(jpg|png)' | sort -u)

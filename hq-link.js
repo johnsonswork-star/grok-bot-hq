@@ -46,11 +46,50 @@ const DEV = 'hq.device';
 // chat message is on the relay, even while Grok Bot's box is asleep. It gets only the message id, never the text.
 // Empty = off (the GitHub Action check every 5 min and the box bridge still deliver).
 export const WAKE_URL = 'https://grokbothq--fb701e76caaf11f1848b1607ee4eb77e.web.val.run/';
-function wake(mid) {
-  if (!WAKE_URL) return;
-  // relayFetch refuses ntfy.sh and *.val.run while ntfyBlocked(), so headless tests never wake Grok Bot.
-  try { relayFetch(WAKE_URL, { method: 'POST', mode: 'cors', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mid }) }).catch(() => {}); } catch (e) {}
+// Oct 18 wake fix: the old one-shot, fire-and-forget wake (JSON body = CORS preflight + keepalive) could be lost
+// silently, e.g. when iOS suspended the tab, and then nothing woke Grok Bot while the box slept (HQ #132/#133).
+// Now: text/plain body (a "simple" request, no preflight), checked response, retries with backoff, and a small
+// queue in localStorage that is retried on every page load / return to the tab / network back, for up to 30 min.
+// The relay dedupes per message, so retries never double ping.
+const WQ = 'hq.wakeq', WAKE_TTL = 30 * 60e3, WAKE_BACKOFF = [0, 2000, 5000, 12000, 30000];
+const tSig = ms => (globalThis.AbortSignal && AbortSignal.timeout) ? AbortSignal.timeout(ms) : undefined;
+const wq = () => { try { return JSON.parse(localStorage.getItem(WQ) || '[]').filter(x => x && x.mid && Date.now() - x.at < WAKE_TTL); } catch (e) { return []; } };
+const wqSave = q => { try { localStorage.setItem(WQ, JSON.stringify(q.slice(-12))); } catch (e) {} };
+const wqDrop = mid => wqSave(wq().filter(x => x.mid !== mid));
+async function wakeOnce(mid) { // true = done (pinged, or already pinged); false = try again later
+  const r = await relayFetch(WAKE_URL, { method: 'POST', mode: 'cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ mid }), signal: tSig(15000) });
+  if (!r || !r.status) return false;
+  let j = null; try { j = await r.json(); } catch (e) {}
+  if (r.ok && j && j.ok) return true;
+  if (r.status === 400) return true; // bad id: retrying cannot help
+  return false; // 404 not on the relay yet, 429 cooldown, 5xx, network: retry
 }
+const waking = new Set();
+async function wakeLoop(mid) {
+  if (waking.has(mid)) return; waking.add(mid);
+  try {
+    for (const ms of WAKE_BACKOFF) {
+      if (ms) await new Promise(r => setTimeout(r, ms));
+      if (!wq().some(x => x.mid === mid)) return; // another tab finished it
+      let done = false; try { done = await wakeOnce(mid); } catch (e) {}
+      if (done) { wqDrop(mid); return; }
+    }
+  } finally { waking.delete(mid); }
+}
+function wake(mid) {
+  if (!WAKE_URL || !mid) return;
+  // relayFetch refuses ntfy.sh and *.val.run while ntfyBlocked(), so headless tests never wake Grok Bot.
+  if (ntfyBlocked()) return;
+  const q = wq(); if (!q.some(x => x.mid === mid)) { q.push({ mid, at: Date.now() }); wqSave(q); }
+  wakeLoop(mid);
+}
+function wakeRetryAll() { if (!WAKE_URL || ntfyBlocked()) return; for (const x of wq()) wakeLoop(x.mid); }
+try {
+  globalThis.addEventListener?.('pageshow', wakeRetryAll);
+  globalThis.addEventListener?.('online', wakeRetryAll);
+  globalThis.document?.addEventListener?.('visibilitychange', () => { if (document.visibilityState === 'visible') wakeRetryAll(); });
+  setTimeout(wakeRetryAll, 1500);
+} catch (e) {}
 
 (function cleanupOldSetup() { // v1 used a per-device GitHub key; drop it
   try { localStorage.removeItem('hq.key'); } catch (e) {}
@@ -74,28 +113,32 @@ export const isLinked = () => !!(globalThis.crypto && crypto.subtle);
 
 const SHOT_MAX = 1.5e6; // chars of data URL (~1.1 MB JPEG); bigger shots are dropped, text still goes
 
+// Oct 18 fix (HQ #132/#133 were 5 and 9 min late): the text goes FIRST, alone (~1 KB, well under a second), then the
+// wake, and only then the screenshot as its own follow-up message (type 'shot', same mid). Before, the ~1 MB shot
+// upload went first with no time limit; on the iPad it hung for minutes and failed, and the text waited behind it.
+const SEND_MS = 15000, SHOT_MS = 60000;
+async function inboxPost(msg, ms, tag) {
+  const q = tag ? `?tags=${encodeURIComponent(tag)}` : '';
+  const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}${q}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)), signal: tSig(ms) });
+  if (!r.ok) throw new Error('relay ' + r.status);
+}
 export async function send({ to, text, sentAt, shot, office, direct, mid: fixedMid }) {
   try {
     const d = await device();
     const mid = fixedMid || randomId(9); // HQ #59: chat.js picks the id up front so its instant office-bot line and the box's copy match
-    const post = async withShot => {
-      const msg = { v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(),
-        device: { id: d.id, topic: d.topic, pub: d.pubJwk }, ua: navigator.userAgent.slice(0, 120) };
-      if (withShot) msg.shot = shot;
-      if (direct) msg.direct = direct; // HQ #63: { bot } = 1:1 Direct tab; the box answers as that teammate, never files it for Grok Bot
-      if (office) msg.office = office; // HQ #59: { near, bot, line } so the box's triage + reply match what the iPad already did
-      // ?tags=m-<mid>: plaintext random id only, lets the wake relay confirm this message is real (no extra preflight)
-      const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}?tags=m-${encodeURIComponent(mid)}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
-      if (!r.ok) throw new Error('relay ' + r.status);
-    };
+    const dev = { id: d.id, topic: d.topic, pub: d.pubJwk };
+    const msg = { v: 2, mid, to, text: text.slice(0, 2500), ts: sentAt.toISOString(), device: dev, ua: navigator.userAgent.slice(0, 120) };
+    if (direct) msg.direct = direct; // HQ #63: { bot } = 1:1 Direct tab; the box answers as that teammate, never files it for Grok Bot
+    if (office) msg.office = office; // HQ #59: { near, bot, line } so the box's triage + reply match what the iPad already did
+    // ?tags=m-<mid>: plaintext random id only, lets the wake relay confirm this message is real
+    try { await inboxPost(msg, SEND_MS, 'm-' + mid); }
+    catch (e) { await new Promise(r => setTimeout(r, 1200)); await inboxPost(msg, SEND_MS, 'm-' + mid); } // one retry, same mid (bridge de-dupes)
+    wake(mid); // Direct-tab messages too: their in-character answer also runs on the box
     const useShot = typeof shot === 'string' && shot.startsWith('data:image/') && shot.length < SHOT_MAX;
-    if (useShot) {
-      try { await post(true); wake(mid); return { status: 'delivered', ref: mid, shot: true }; }
-      catch (e) { /* relay refused the big one: fall through to text-only (same mid, bridge de-dupes) */ }
+    if (useShot) { // best effort, in the background: never delays the text or the wake
+      inboxPost({ v: 2, type: 'shot', mid, shot, ts: new Date().toISOString(), device: dev }, SHOT_MS, 'shot-' + mid).catch(() => {});
     }
-    await post(false);
-    wake(mid);
-    return { status: 'delivered', ref: mid, shot: false };
+    return { status: 'delivered', ref: mid, shot: useShot };
   } catch (e) {
     return { status: 'failed', error: e.message, shot: false };
   }
