@@ -1604,7 +1604,7 @@ function renderChat() {
   let html = '';
   if (tab === 'chat') {
     const list = merged();
-    const meStatus = m => m.status === 'sending' ? 'sending' : m.status === 'failed' ? `<a href="#" class="retry" data-mid="${esc(m.mid)}">failed, tap to retry</a>` : m.ackN ? `Michael has it (#${esc(m.ackN)})` : 'delivered';
+    const meStatus = m => (m.status === 'sending' ? 'sending' : m.status === 'failed' ? `<a href="#" class="retry" data-mid="${esc(m.mid)}">failed, tap to retry</a>` : m.ackN ? `Michael has it (#${esc(m.ackN)})` : 'delivered') + (m.shot === 'on' ? ' · 📸' : '');
     html = list.length ? list.map(m => {
       if (m.kind === 'me') return `<div class="msg me"><img class="av" src="${avatar('chris')}"><div><div class="n">Chris <i>to ${esc(m.to === OFFICE_TO || m.to === 'Office' ? 'the office' : m.to === 'Grok Bot' ? 'Michael' : m.to || '')} \u00b7 ${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div><div class="mst">${meStatus(m)}</div></div></div>`;
       const s = stOf(m.who) || stOf(m.from) || (/grok/i.test(m.from || '') ? stOf('grok') : null);
@@ -1642,11 +1642,57 @@ chatBody.addEventListener('click', e => {
   if (row.dataset.id) { sel = row.dataset.id; openWorker(row.dataset.id); } else if (row.dataset.needs) openNeeds();
 });
 const rid = () => Math.random().toString(36).slice(2, 11);
+// JPEG of the office canvas only. Chat, clock, and the other HUD are HTML on top of #c, so they are not in the shot.
+// The canvas already shows the current rotation (including a turn in progress), so every facing is captured as Chris sees it.
+// Same envelope field the 3D office used: shot = data:image/jpeg;base64,... (hq-link seals it; the bridge saveShot writes it).
+const SHOT_EDGE = 1280, SHOT_Q = 0.7;
+let shotCvs = null;
+function shotLabel() {
+  if (rotAnim) return `2.5D office · turning ${FACE_NAME[rotAnim.from] || '?'}→${FACE_NAME[rotAnim.to] || '?'}`;
+  return `2.5D office · facing ${FACE_NAME[facing] || '?'}`;
+}
+function stampShot(g, w, h) {
+  const label = shotLabel(), k = Math.max(0.75, w / SHOT_EDGE);
+  g.font = `600 ${Math.round(16 * k)}px system-ui, Arial, sans-serif`;
+  const padX = 8 * k, tw = g.measureText(label).width, bw = tw + padX * 2, bh = 22 * k;
+  const x = 8 * k, y = h - bh - 8 * k;
+  g.fillStyle = 'rgba(20,12,6,.62)'; g.fillRect(x, y, bw, bh);
+  g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.fillText(label, x + padX, y + bh / 2);
+}
+function snapshot() {
+  try {
+    if (!cv.width || !cv.height) return null;
+    const sc = Math.min(1, SHOT_EDGE / Math.max(cv.width, cv.height));
+    const w = Math.max(1, Math.round(cv.width * sc)), h = Math.max(1, Math.round(cv.height * sc));
+    if (!shotCvs) shotCvs = document.createElement('canvas');
+    if (shotCvs.width !== w || shotCvs.height !== h) { shotCvs.width = w; shotCvs.height = h; }
+    const g = shotCvs.getContext('2d', { alpha: false });
+    if (!g) return null;
+    g.drawImage(cv, 0, 0, w, h);
+    try { stampShot(g, w, h); } catch (e) {}
+    let url = shotCvs.toDataURL('image/jpeg', SHOT_Q);
+    if (url.length >= 1.5e6) url = shotCvs.toDataURL('image/jpeg', 0.5); // hq-link drops anything bigger and sends the text alone
+    return /^data:image\/jpeg;base64,/.test(url) && url.length > 2000 && url.length < 1.5e6 ? url : null;
+  } catch (e) { return null; }
+}
+// Let the "sending" bubble paint before the JPEG encode, but never wait on a paused animation frame.
+function nextPaint() {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    try { requestAnimationFrame(finish); } catch (e) { finish(); return; }
+    setTimeout(finish, 48);
+  });
+}
 async function deliver(m) {
   m.status = 'sending'; renderChat();
+  await nextPaint();
+  let shot = null; try { shot = snapshot() || null; } catch (e) { shot = null; }
+  if (shot) { m.shot = 'on'; renderChat(); }
   let tri = { route: m.route, cmds: [] }; try { tri = triage(m.text, { to: m.to, near: null }); } catch (e) {}
-  const r = await link.send({ to: m.to, text: m.text, sentAt: new Date(m.at), office: { near: sel || null, bot: tri.cmds?.[0]?.bot || null, line: '' }, mid: m.mid });
-  Object.assign(m, { status: r.status, ref: r.ref, route: tri.route }); saveLog(); renderChat();
+  const r = await link.send({ to: m.to, text: m.text, sentAt: new Date(m.at), shot, office: { near: sel || null, bot: tri.cmds?.[0]?.bot || null, line: '' }, mid: m.mid });
+  Object.assign(m, { status: r.status, ref: r.ref, route: tri.route, shot: r.shot ? 'on' : '' }); saveLog(); renderChat();
   if (r.status === 'delivered') { fastUntil = Date.now() + 60000; toast(m.to === 'Grok Bot' ? 'Sent to Michael (Grok Bot)' : 'Sent to the office'); }
   else toast('Did not send. Tap retry in chat.');
 }
@@ -1993,4 +2039,4 @@ window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('c
       return { kind: h.kind, id: h.id || null, rect: [x, y, x2 - x, y2 - y] };
     }
     return { kind: h.kind, id: h.id || null, poly: h.poly.map(p => legToCSS(p[0], p[1])) };
-  }), tap: (x, y) => tap(x, y), checkHits, openNeeds, openWorker, openProjects, openBusiness, openDesign, setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, facing: () => FACE_NAME[facing], rotate: rotateView, setFacing, state: () => ({ PS, BW, BH, DPR, n: people.length, facing: FACE_NAME[facing], cam: { ...cam } }) };
+  }), tap: (x, y) => tap(x, y), checkHits, openNeeds, openWorker, openProjects, openBusiness, openDesign, setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, facing: () => FACE_NAME[facing], rotate: rotateView, setFacing, snapshot, state: () => ({ PS, BW, BH, DPR, n: people.length, facing: FACE_NAME[facing], cam: { ...cam } }) };
