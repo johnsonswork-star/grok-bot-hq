@@ -18,8 +18,15 @@ const FONT = '"Pixelify Sans","Courier New",monospace';
 
 // ---------- world ----------
 const GX = 22, GY = 16, HX = 14, HY = 7, ZU = 16, WALL = 3.2;
-const WH = { x0: 12, x1: GX, y0: 11.5, y1: GY, z: -2 };        // warehouse pit (downstairs)
-const ST = { x0: 9, x1: 12, y0: 12.8, y1: 14.8, n: 6 };        // stairs down to it
+// The warehouse is its own floor (a full room, not a pit under the office). ST is the shared stair footprint.
+const ST = { x0: 15.3, x1: 18.3, y0: 12.6, y1: 14.5, n: 6 }; // open south-east corner, clear of the desks
+const FLOOR_MS = 480;
+let floor = 'office';
+try {
+  const savedFl = localStorage.getItem('hq2d.floor');
+  if (savedFl === 'warehouse' || savedFl === 'office') floor = savedFl;
+} catch (e) {}
+let floorAnim = null; // { from, to, t0 } while the floors crossfade
 const MGR = { x0: 16, x1: GX, y0: 0, y1: 5.5 };                   // manager office
 const CONF = { x0: 7.5, x1: 14, y0: 0, y1: 5.5 };
 const KIT = { x0: 14, x1: 16, y0: 0, y1: 3 };                   // conference room
@@ -84,7 +91,9 @@ function needsCount() { return NEEDS.length + liveNeeds().length; }
 // so outlines and sprites are not chunks of a tiny buffer blown up.
 const cv = $('#c'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1, PS = 2, fitPS = 2, homePS = 3, BW = 0, BH = 0;
-const FOCUS = [11.4, 6.35];  // bullpen, conference room, manager office, and the top of the warehouse
+const FOCUS = [11.4, 6.35];  // bullpen, conference room, and the manager office
+const FOCUS_WH = [11, 7.6];   // center of the warehouse floor
+function focusPoint() { return floor === 'warehouse' ? FOCUS_WH : FOCUS; }
 // Four isometric facings. 0 is the original southeast camera (far walls: north and west).
 // Each step orbits the camera 90 degrees clockwise. N E S W are what the iPad remembers.
 const FACE_NAME = ['N', 'E', 'S', 'W'];
@@ -110,7 +119,8 @@ function showPosX() { return facing === 0 || facing === 3; } // world +x face po
 function showPosY() { return facing === 0 || facing === 1; }
 function facesCamera(lookY) { return lookY * [1, 1, -1, -1][facing] > 0; }
 function focusIso() {
-  const [u, v] = toView(FOCUS[0], FOCUS[1]);
+  const [fx, fy] = focusPoint();
+  const [u, v] = toView(fx, fy);
   return [(u - v) * HX, (u + v) * HY - ZU];
 }
 const cam = { zoom: 1, px: 0, py: 0 };
@@ -131,7 +141,7 @@ function resize() {
   homePS = Math.max(fitPS, Math.min(4.6, W / WIN_X, H / WIN_Y));
   PS = homePS * cam.zoom;
   BW = Math.ceil(W / PS); BH = Math.ceil(H / PS);
-  baseOk.fill(false);
+  for (const fl of ['office', 'warehouse']) baseOk[fl].fill(false);
 }
 const clampZ = z => Math.max(fitPS / homePS * 0.95, Math.min(2.2, z));
 function clampWish() {
@@ -141,7 +151,7 @@ function clampWish() {
   wish.py = Math.max(-ly, Math.min(ly, wish.py));
 }
 function camMoving() {
-  return !!rotAnim || Math.abs(wish.px - cam.px) > 0.35 || Math.abs(wish.py - cam.py) > 0.35 || Math.abs(wish.zoom - cam.zoom) > 0.0015;
+  return !!rotAnim || !!floorAnim || Math.abs(wish.px - cam.px) > 0.35 || Math.abs(wish.py - cam.py) > 0.35 || Math.abs(wish.zoom - cam.zoom) > 0.0015;
 }
 function stepCam(dt) {
   const dragging = ptrs.size > 0 && (drag || pinch);
@@ -276,6 +286,15 @@ function inPlane(c, scale, pl, K, fn) {
   c.setTransform(m[0] * scale * s, m[1] * scale * s, m[2] * scale * s, m[3] * scale * s, m[4] * scale * s + tx, m[5] * scale * s + ty);
   fn(c); c.restore();
 }
+// Same plane, composed onto the transform already on the canvas. The live view uses the camera;
+// the cached warehouse bitmap uses the floor cache. Either way the letters stay on the sign.
+function paintOnPlane(c, pl, K, fn) {
+  const m = planeM(pl[0], pl[1], pl[2], K);
+  c.save();
+  c.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  fn(c);
+  c.restore();
+}
 // Keep authored wall text left-to-right on screen. span is the world length of the text block along `right`.
 function facePlane(pl, span) {
   const [o, r, dwn] = pl;
@@ -288,11 +307,16 @@ function facePlane(pl, span) {
 // ---------- hash noise ----------
 const hsh = (x, y) => { let n = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; n = (n ^ (n >> 13)) * 1274126177; return ((n ^ (n >> 16)) >>> 0) / 4294967295; };
 
-// ---------- base layer (floors, walls, pit) cached per facing ----------
-const baseCvs = [0, 1, 2, 3].map(() => document.createElement('canvas'));
-const baseCtx = baseCvs.map(cv => cv.getContext('2d'));
-const baseBox = [null, null, null, null];
-const baseOk = [false, false, false, false];
+// ---------- base layer (floors, walls) cached per floor and facing ----------
+function makeBaseSet() {
+  const cvs = [0, 1, 2, 3].map(() => document.createElement('canvas'));
+  return { cvs, ctx: cvs.map(cv => cv.getContext('2d')), box: [null, null, null, null], ok: [false, false, false, false] };
+}
+const baseSet = { office: makeBaseSet(), warehouse: makeBaseSet() };
+const baseCvs = { office: baseSet.office.cvs, warehouse: baseSet.warehouse.cvs };
+const baseCtx = { office: baseSet.office.ctx, warehouse: baseSet.warehouse.ctx };
+const baseBox = { office: baseSet.office.box, warehouse: baseSet.warehouse.box };
+const baseOk = { office: baseSet.office.ok, warehouse: baseSet.warehouse.ok };
 function wallX(c, x, y0, y1, wood) { // inner face of an x=const wall
   const inn = x < 1 ? 0.001 : -0.001;
   if (wood) {
@@ -367,69 +391,60 @@ const SHADOWS = () => {
   for (const p of people) L.push([p.d.x, p.d.y, p.d.w, p.d.d, 0.7]);
   L.push([8.9, 1.95, 3.8, 1.6, 0.7], [0.05, 13.3, 0.7, 1.3, 1.1], [14.2, 0.25, 0.9, 0.7, 0.9], [15.3, 0.3, 0.45, 0.45, 1.1], [19.6, 0.05, 1.6, 0.45, 1.9], [20.9, 4.0, 0.9, 0.7, 0.6], [15.7, 6.4, 3.9, 0.7, 1.2]);
   L.push([21.22, 6.15, 0.7, 0.6, 1.1], [21.22, 6.9, 0.7, 0.6, 1.1], [21.35, 10.15, 0.45, 0.45, 1.1], [0.35, 15.28, 0.7, 0.6, 1.1], [1.15, 15.28, 0.7, 0.6, 1.1]);
+  L.push([12.5, 15.18, 0.7, 0.6, 1.1], [13.85, 15.18, 0.7, 0.6, 1.1], [19.35, 15.18, 0.7, 0.6, 1.1], [20.55, 15.18, 0.7, 0.6, 1.1]);
   for (const [x, y] of PLANTS) L.push([x, y, 0.5, 0.5, 0.9]);
   return L;
 };
-const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [20.9, 2.55], [0.3, 15.2], [8.3, 11.35], [8.2, 7.9], [21.4, 0.5], [2.15, 7.15]];
-const PALLETS = [[13.3, 13.4, 3], [15.3, 13.8, 2], [17.4, 13.3, 3], [19.3, 14.0, 4], [14.6, 14.85, 2]];
+const PLANTS = [[0.3, 0.3], [6.9, 0.4], [13.3, 0.4], [20.9, 2.55], [0.3, 15.2], [8.3, 11.35], [8.2, 7.9], [21.4, 0.5], [2.15, 7.15], [13.6, 12.15], [19.4, 12.35], [20.5, 14.45]];
+// Warehouse stock, spread across the whole downstairs floor (the old pit was only the south-east corner).
+const RACKS = [
+  [0.85, 2.15, 3.5], [5.0, 2.15, 3.5], [9.3, 2.15, 3.3], [13.4, 2.15, 3.5], [17.7, 2.15, 3.1],
+  [0.85, 8.85, 3.5], [5.0, 8.85, 3.5], [13.5, 8.85, 3.5], [17.7, 8.85, 3.1],
+];
+const PALLETS = [
+  [1.0, 4.7, 4], [2.7, 4.85, 3], [4.5, 4.65, 4], [6.3, 4.9, 2],
+  [13.7, 4.7, 3], [15.5, 4.85, 4], [17.3, 4.65, 3], [19.1, 4.9, 2],
+  [1.15, 6.55, 3], [3.0, 6.7, 4], [4.9, 6.5, 2], [6.6, 6.75, 3],
+  [13.8, 6.55, 4], [15.6, 6.7, 3], [17.4, 6.5, 4], [19.2, 6.75, 2],
+  [1.0, 11.35, 3], [3.0, 11.55, 4], [5.1, 11.3, 2],
+  [12.3, 11.05, 3], [13.9, 11.15, 4], [18.7, 11.05, 3],
+  [1.15, 13.35, 2], [3.3, 13.55, 3], [5.4, 13.3, 4],
+  [12.35, 13.15, 3], [13.7, 14.35, 2], [19.15, 12.85, 3], [19.35, 14.35, 2],
+];
+const BENCH = { x: 9.55, y: 10.85, w: 2.5, d: 1.05 };
 function measureIso() {
   let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
   const add = (x, y, z) => { const p = P(x, y, z); if (p[0] < minX) minX = p[0]; if (p[1] < minY) minY = p[1]; if (p[0] > maxX) maxX = p[0]; if (p[1] > maxY) maxY = p[1]; };
-  for (const x of [-0.7, 0, GX, GX + 0.7]) for (const y of [-0.7, 0, GY, GY + 0.7]) { add(x, y, WALL); add(x, y, 0); add(x, y, WH.z - 0.7); }
+  for (const x of [-0.7, 0, GX, GX + 0.7]) for (const y of [-0.7, 0, GY, GY + 0.7]) { add(x, y, WALL); add(x, y, 0); add(x, y, -0.7); }
   const pad = 14;
   return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
 }
-function ensureBase(f) {
-  if (baseOk[f]) return;
-  const prev = facing;
-  facing = f;
+function ensureBase(fl, f) {
+  if (baseOk[fl][f]) return;
+  const prevF = facing, prevFl = floor;
+  facing = f; floor = fl;
   drawBase();
-  facing = prev;
+  facing = prevF; floor = prevFl;
 }
 function drawBase() {
   const box = measureIso();
   const s = homePS * DPR, legW = box.maxX - box.minX, legH = box.maxY - box.minY;
-  const cv = baseCvs[facing], c = baseCtx[facing];
+  const cv = baseCvs[floor][facing], c = baseCtx[floor][facing];
   cv.width = Math.max(1, Math.ceil(legW * s)); cv.height = Math.max(1, Math.ceil(legH * s));
   c.setTransform(s, 0, 0, s, -box.minX * s, -box.minY * s);
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   c.lineJoin = 'round'; c.lineCap = 'round';
   c.fillStyle = '#1a1410'; c.fillRect(box.minX, box.minY, legW, legH);
-  // ---- warehouse (down a level)
-  for (let x = WH.x0; x < WH.x1; x++) for (let y = Math.floor(WH.y0); y < WH.y1; y++) {
-    const y0 = Math.max(y, WH.y0), n = hsh(x, y);
-    poly(c, [P(x, y0, WH.z), P(x + 1, y0, WH.z), P(x + 1, y + 1, WH.z), P(x, y + 1, WH.z)], shade('#8b8984', 0.92 + n * 0.12));
-    for (let k = 0; k < 4; k++) { const p = P(x + hsh(x * 3 + k, y) * 0.95, Math.max(y0, y + hsh(x, y * 5 + k) * 0.95), WH.z); c.fillStyle = k % 2 ? 'rgba(60,60,60,.18)' : 'rgba(255,255,255,.12)'; c.beginPath(); c.arc(p[0], p[1], 0.28, 0, Math.PI * 2); c.fill(); }
-    if (x % 2 === 0) seg(c, P(x, y0, WH.z), P(x, y + 1, WH.z), 'rgba(60,58,55,.35)');
+  if (floor === 'warehouse') {
+    drawWarehouseBase(c);
+    baseBox[floor][facing] = box;
+    baseOk[floor][facing] = true;
+    return;
   }
-  for (const yy of [13.9, 17.4]) { poly(c, [P(15.6, yy, WH.z), P(25.6, yy, WH.z), P(25.6, yy + 0.12, WH.z), P(15.6, yy + 0.12, WH.z)], '#e0b43a'); }
-  for (let x = 16; x < 25.5; x += 0.9) poly(c, [P(x, 13.4, WH.z), P(x + 0.4, 13.4, WH.z), P(x + 0.55, 13.9, WH.z), P(x + 0.15, 13.9, WH.z)], 'rgba(30,30,30,.0)');
-  // pit walls: painted block
-  poly(c, quadY(WH.y0, WH.x0, WH.x1, WH.z, 0), '#9a8a76');
-  for (let z = WH.z + 0.25; z < 0; z += 0.25) poly(c, quadY(WH.y0 + 0.002, WH.x0, WH.x1, z, z + 0.02), 'rgba(70,55,40,.35)');
-  for (let z = WH.z, r = 0; z < 0; z += 0.25, r++) for (let x = WH.x0 + (r % 2) * 0.35; x < WH.x1; x += 0.7) poly(c, quadY(WH.y0 + 0.002, x, x + 0.02, z, z + 0.25), 'rgba(70,55,40,.3)');
-  poly(c, quadY(WH.y0 + 0.003, WH.x0, WH.x1, WH.z, WH.z + 0.5), '#5b6e86');
-  poly(c, quadY(WH.y0, WH.x0, WH.x1, -0.25, 0), '#5a4636');
-  poly(c, quadX(WH.x0, WH.y0, ST.y0, WH.z, 0), '#857562'); poly(c, quadX(WH.x0, ST.y1, WH.y1, WH.z, 0), '#857562');
-  poly(c, quadX(WH.x0 + 0.003, WH.y0, ST.y0, WH.z, WH.z + 0.5), '#4f6075'); poly(c, quadX(WH.x0 + 0.003, ST.y1, WH.y1, WH.z, WH.z + 0.5), '#4f6075');
-  poly(c, quadY(ST.y0, ST.x0, ST.x1, WH.z, 0), '#9a8a76');
-  for (const [x0, lbl] of [[15.0, 1], [18.6, 2]]) {
-    poly(c, quadY(WH.y0 + 0.004, x0 - 0.1, x0 + 2.5, WH.z, WH.z + 1.72), '#3d3d3d');
-    poly(c, quadY(WH.y0 + 0.006, x0, x0 + 2.4, WH.z, WH.z + 1.62), '#c3beb2');
-    for (let z = WH.z + 0.12; z < WH.z + 1.6; z += 0.16) poly(c, quadY(WH.y0 + 0.008, x0, x0 + 2.4, z, z + 0.035), '#9d988c');
-    poly(c, quadY(WH.y0 + 0.01, x0, x0 + 2.4, WH.z, WH.z + 0.12), '#e0b43a');
-    poly(c, quadY(WH.y0 + 0.01, x0 + 0.85, x0 + 1.55, WH.z + 1.75, WH.z + 1.97), '#1d1d1d');
-    poly(c, quadY(WH.y0 + 0.012, x0 + 0.1, x0 + 0.25, WH.z + 1.75, WH.z + 1.9), lbl === 1 ? '#5f5' : '#f55');
-  }
-  // Pit shadows sit on the downstairs floor. Drawn before the upstairs carpet so a rotated
-  // view cannot leave them smeared across the bullpen.
-  for (const [x, y] of PALLETS) shadow(c, x, y, 1.4, 1.1, 1.0, WH.z);
-  shadow(c, 13.0, 11.7, 1.9, 0.8, 2, WH.z); shadow(c, 19.6, 11.7, 1.7, 0.8, 2, WH.z);
-  // ---- office floor
+  // ---- office floor (the warehouse lives on its own floor, so this room is carpet wall to wall)
   for (let x = 0; x < GX; x++) for (let y = 0; y < GY; y++) {
     const cx = x + 0.5, cy = y + 0.5;
-    if (inR(cx, cy, WH) || inR(cx, cy, ST)) continue;
-    const n = hsh(x, y); let y1 = y + 1; if (x >= WH.x0 && y + 1 > WH.y0 && y < WH.y0) y1 = WH.y0;
+    const n = hsh(x, y); const y1 = y + 1;
     const T = (a, b, cc, dd) => [P(x + a, y + b), P(x + cc, y + b), P(x + cc, Math.min(y + dd, y1)), P(x + a, Math.min(y + dd, y1))];
     if (inR(cx, cy, MGR)) { // wood planks run along x
       for (let k = 0; k < 3; k++) { const pc = shade('#9b6a3e', 0.86 + hsh(x * 3 + k, y) * 0.22); poly(c, T(0, k / 3, 1, (k + 1) / 3), pc); seg(c, P(x, y + k / 3), P(x + 1, y + k / 3), 'rgba(60,30,12,.45)');
@@ -475,8 +490,8 @@ function drawBase() {
   poly(c, [P(15.1, 6.9), P(20.4, 6.9), P(20.4, 9.85), P(15.1, 9.85)], '#c4ad8c');
   poly(c, [P(15.28, 7.08), P(20.22, 7.08), P(20.22, 9.68), P(15.28, 9.68)], '#d8c4a4');
   drawShell(c);
-  baseBox[facing] = box;
-  baseOk[facing] = true;
+  baseBox[floor][facing] = box;
+  baseOk[floor][facing] = true;
 }
 function lipColors(innerFace, light) {
   const left = ['+y', '-x', '-y', '+x'][facing];
@@ -504,26 +519,30 @@ function stubX(c, x, y0, y1) {
   poly(c, quadX(x + inn * 2, y0, y1, 0, 0.14), '#5e4029');
   poly(c, quadX(x + inn * 2, y0, y1, 0.38, 0.46), '#7a5232');
 }
-function whWallY(c, y, x0, x1) {
+function blockWallY(c, y, x0, x1) {
   const inn = y < GY * 0.5 ? 0.004 : -0.004;
-  poly(c, quadY(y + inn, x0, x1, WH.z, 0), '#9a8a76');
-  poly(c, quadY(y + inn, x0, x1, 0, WALL), '#cfc3ae');
-  for (let z = WH.z + 0.22; z < 0; z += 0.28) poly(c, quadY(y + inn * 2, x0, x1, z, z + 0.02), 'rgba(70,55,40,.35)');
-  poly(c, quadY(y + inn * 2, x0, x1, WH.z, WH.z + 0.12), '#e0b43a');
-  poly(c, quadY(y + inn * 2, x0, x1, 0, 0.16), '#5e4029');
-  poly(c, quadY(y + inn * 2, x0, x1, 2.98, WALL), '#6a4426');
-  if (x1 - x0 > 4) windowY(c, y, x0 + 0.7, Math.min(x0 + 3.3, x1 - 0.4), 1.25, 2.5);
-  if (x1 - x0 > 8) windowY(c, y, x1 - 3.5, x1 - 0.7, 1.25, 2.5);
+  poly(c, quadY(y + inn, x0, x1, 0, WALL), '#c4b49a');
+  for (let z = 0.28; z < WALL - 0.2; z += 0.32) poly(c, quadY(y + inn * 2, x0, x1, z, z + 0.025), 'rgba(70,55,40,.28)');
+  for (let z = 0, row = 0; z < WALL - 0.15; z += 0.32, row++) for (let x = x0 + (row % 2) * 0.4; x < x1; x += 0.8) poly(c, quadY(y + inn * 2, x, x + 0.025, z, z + 0.32), 'rgba(70,55,40,.22)');
+  poly(c, quadY(y + inn * 2, x0, x1, 0, 0.16), '#e0b43a');
+  poly(c, quadY(y + inn * 2, x0, x1, 2.98, WALL), '#6a5340');
 }
-function whWallX(c, x, y0, y1) {
+function blockWallX(c, x, y0, y1) {
   const inn = x < GX * 0.5 ? 0.004 : -0.004;
-  poly(c, quadX(x + inn, y0, y1, WH.z, 0), '#8d7d6b');
-  poly(c, quadX(x + inn, y0, y1, 0, WALL), '#e4d6bf');
-  for (let z = WH.z + 0.22; z < 0; z += 0.28) poly(c, quadX(x + inn * 2, y0, y1, z, z + 0.02), 'rgba(70,55,40,.35)');
-  poly(c, quadX(x + inn * 2, y0, y1, WH.z, WH.z + 0.12), '#e0b43a');
-  poly(c, quadX(x + inn * 2, y0, y1, 0, 0.16), '#5e4029');
-  poly(c, quadX(x + inn * 2, y0, y1, 2.98, WALL), '#6a4426');
-  if (y1 - y0 > 2.4) windowX(c, x, y0 + 0.35, y1 - 0.35, 1.2, 2.45);
+  poly(c, quadX(x + inn, y0, y1, 0, WALL), '#d2c2a6');
+  for (let z = 0.28; z < WALL - 0.2; z += 0.32) poly(c, quadX(x + inn * 2, y0, y1, z, z + 0.025), 'rgba(70,55,40,.28)');
+  for (let z = 0, row = 0; z < WALL - 0.15; z += 0.32, row++) for (let y = y0 + (row % 2) * 0.4; y < y1; y += 0.8) poly(c, quadX(x + inn * 2, y, y + 0.025, z, z + 0.32), 'rgba(70,55,40,.22)');
+  poly(c, quadX(x + inn * 2, y0, y1, 0, 0.16), '#e0b43a');
+  poly(c, quadX(x + inn * 2, y0, y1, 2.98, WALL), '#6a5340');
+}
+function bayDoorY(c, y, x0) {
+  const inn = y < GY * 0.5 ? 1 : -1;
+  const q = (eps, xa, xb, za, zb) => quadY(y + inn * eps, xa, xb, za, zb);
+  poly(c, q(0.002, x0 - 0.14, x0 + 2.7, 0.02, 2.35), '#2e2e2e');
+  poly(c, q(0.006, x0, x0 + 2.5, 0.1, 2.2), '#c9c3b6');
+  for (let z = 0.22; z < 2.15; z += 0.2) poly(c, q(0.01, x0, x0 + 2.5, z, z + 0.045), '#9d988c');
+  poly(c, q(0.012, x0, x0 + 2.5, 0.1, 0.28), '#e0b43a');
+  poly(c, q(0.014, x0 + 0.4, x0 + 2.1, 2.22, 2.55), '#1d1d1d');
 }
 function drawShell(c) {
   const far = [[0, 0], [GX, 0], [GX, GY], [0, GY]][facing];
@@ -562,39 +581,39 @@ function drawShell(c) {
     const lip = lipColors('-x', '#e6d6b4');
     box(c, GX, 0, 0, 0.4, GY, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
     wallX(c, GX, 0, MGR.y1, true);
-    wallX(c, GX, MGR.y1, WH.y0, false);
-    whWallX(c, GX, WH.y0, GY);
+    wallX(c, GX, MGR.y1, GY, false);
     shade(GX, far[1] < 1 ? 0 : GY, 0, far[1] < 1 ? 1.6 : -1.6);
     windowX(c, GX, 0.45, 2.25);
     frameX(c, GX, 3.15, 4.7, 1.5, 2.5, ['#5f8f6a', '#9cc7df']);
     windowX(c, GX, 6.35, 8.25);
     frameX(c, GX, 8.7, 10.25, 1.45, 2.4, ['#8a4a3c', '#e6c98a']);
+    windowX(c, GX, 11.6, 13.9);
   } else {
-    floorLipX(c, GX, 0, WH.y0, -0.5, 0, '#3a2719', '#6a4c32');
-    floorLipX(c, GX, WH.y0, GY, WH.z - 0.5, WH.z, '#3c3b38', '#6e6d68');
-    stubX(c, GX, 0, WH.y0);
+    floorLipX(c, GX, 0, GY, -0.5, 0, '#3a2719', '#6a4c32');
+    stubX(c, GX, 0, GY);
   }
   if (isFar('S')) {
     const lip = lipColors('-y', '#ddcca8');
     box(c, 0, GY, 0, GX, 0.4, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
-    wallY(c, GY, 0, WH.x0, false);
-    whWallY(c, GY, WH.x0, GX);
+    wallY(c, GY, 0, GX, false);
     shade(far[0] < 1 ? 0 : GX, GY, far[0] < 1 ? 1.6 : -1.6, 0);
     windowY(c, GY, 0.45, 2.45);
     frameY(c, GY, 3.45, 4.95, 1.5, 2.45, ['#4a6a8a', '#d9b46a']);
     frameY(c, GY, 6.25, 7.7, 1.55, 2.35, ['#6a5344', '#c9b48a']);
     windowY(c, GY, 9.55, 11.45);
+    windowY(c, GY, 14.3, 16.7);
+    windowY(c, GY, 18.3, 20.6);
   } else {
-    floorLipY(c, GY, 0, WH.x0, -0.5, 0, '#4a3322', '#7a5a3c');
-    floorLipY(c, GY, WH.x0, GX, WH.z - 0.5, WH.z, '#4b4a47', '#6e6d68');
-    stubY(c, GY, 0, WH.x0);
+    floorLipY(c, GY, 0, GX, -0.5, 0, '#4a3322', '#7a5a3c');
+    stubY(c, GY, 0, GX);
   }}
 const LIGHTS = [[5.4, 8.3, 78, 0.2], [11.6, 8.3, 78, 0.2], [4.0, 13.1, 64, 0.16], [10.8, 2.8, 66, 0.18], [19, 2.6, 70, 0.24], [16.8, 9.6, 58, 0.16], [2.2, 10.0, 58, 0.16], [17, 14, 86, 0.12]];
 function lights(c) {
   const LS = HX / 12;
+  const list = floor === 'warehouse' ? WH_LIGHTS : LIGHTS;
   c.save(); c.globalCompositeOperation = 'screen';
-  for (const [x, y, r0, a] of LIGHTS) {
-    const r = r0 * LS, p = Pf(x, y, y > 12.5 && x > 15 ? WH.z : 0);
+  for (const [x, y, r0, a] of list) {
+    const r = r0 * LS, p = Pf(x, y, 0);
     const gr = c.createRadialGradient(p[0], p[1], r * 0.06, p[0], p[1], r);
     gr.addColorStop(0, `rgba(255,220,170,${a})`); gr.addColorStop(1, 'rgba(255,220,170,0)');
     c.fillStyle = gr; c.beginPath(); c.arc(p[0], p[1], r, 0, Math.PI * 2); c.fill();
@@ -662,29 +681,29 @@ function ream(c, x, y, z, w, d, band) {
   const xb = showPosX() ? x + w + 0.002 : x - 0.002;
   poly(c, quadY(yb, x, x + w, z + 0.09, z + 0.16), band); poly(c, quadX(xb, y, y + d, z + 0.09, z + 0.16), shade(band, 0.75));
 }
-function pallet(c, x, y, layers = 3) {
-  box(c, x, y, WH.z, 1.4, 1.1, 0.16, '#a07a4a', { l: '#86643a', r: '#6e512e' });
-  for (const f of [0.25, 0.65, 1.05]) poly(c, quadY(y + 1.1 + 0.002, x + f, x + f + 0.2, WH.z, WH.z + 0.1), '#3a2a18');
-  for (const f of [0.2, 0.6]) poly(c, quadX(x + 1.4 + 0.002, y + f, y + f + 0.25, WH.z, WH.z + 0.1), '#3a2a18');
+function pallet(c, x, y, layers = 3, z0 = 0) {
+  box(c, x, y, z0, 1.4, 1.1, 0.16, '#a07a4a', { l: '#86643a', r: '#6e512e' });
+  for (const f of [0.25, 0.65, 1.05]) poly(c, quadY(y + 1.1 + 0.002, x + f, x + f + 0.2, z0, z0 + 0.1), '#3a2a18');
+  for (const f of [0.2, 0.6]) poly(c, quadX(x + 1.4 + 0.002, y + f, y + f + 0.25, z0, z0 + 0.1), '#3a2a18');
   for (let i = 0; i < layers; i++) {
-    const z = WH.z + 0.16 + i * 0.28;
+    const z = z0 + 0.16 + i * 0.28;
     ream(c, x + 0.06, y + 0.06, z, 0.62, 0.48, '#3d7ec4'); ream(c, x + 0.72, y + 0.06, z, 0.62, 0.48, '#3d7ec4');
     ream(c, x + 0.06, y + 0.56, z, 0.62, 0.48, '#3d7ec4'); ream(c, x + 0.72, y + 0.56, z, 0.62, 0.48, '#3d7ec4');
     // plastic wrap sheen
     poly(c, [P(x + 0.12, y + 0.12, z + 0.27), P(x + 0.4, y + 0.12, z + 0.27), P(x + 0.28, y + 0.32, z + 0.27)], 'rgba(255,255,255,.55)');
   }
-  const zt = WH.z + 0.16 + layers * 0.28; poly(c, [P(x + 0.1, y + 0.1, zt), P(x + 0.7, y + 0.1, zt), P(x + 0.5, y + 0.35, zt)], 'rgba(255,255,255,.5)');
+  const zt = z0 + 0.16 + layers * 0.28; poly(c, [P(x + 0.1, y + 0.1, zt), P(x + 0.7, y + 0.1, zt), P(x + 0.5, y + 0.35, zt)], 'rgba(255,255,255,.5)');
 }
 function carton(c, x, y, z, w, d, h) {
   box(c, x, y, z, w, d, h, '#c99b62', { l: '#b0844f', r: '#93693b' });
   poly(c, [P(x + w * 0.45, y, z + h), P(x + w * 0.55, y, z + h), P(x + w * 0.55, y + d, z + h), P(x + w * 0.45, y + d, z + h)], '#e3c48f');
   poly(c, quadY(y + d + 0.002, x + w * 0.2, x + w * 0.45, z + h * 0.3, z + h * 0.6), '#f2ead8');
 }
-function rack(c, x, y, w) {
-  for (let i = 0; i <= w + 0.01; i += w / 2) box(c, x + i, y, WH.z, 0.1, 0.8, 2.0, '#3d5a80', { l: '#35507a', r: '#2b4266' });
+function rack(c, x, y, w, z0 = 0) {
+  for (let i = 0; i <= w + 0.01; i += w / 2) box(c, x + i, y, z0, 0.1, 0.8, 2.0, '#3d5a80', { l: '#35507a', r: '#2b4266' });
   for (const z of [0.0, 0.7, 1.4]) {
-    box(c, x, y, WH.z + z + 0.05, w + 0.1, 0.8, 0.07, '#e08a2a', { l: '#c47422', r: '#a8601c' });
-    for (let k = 0; k < w - 0.3; k += 0.75) carton(c, x + 0.15 + k, y + 0.1, WH.z + z + 0.12, 0.6, 0.6, 0.42 + ((k * 7 | 0) % 2) * 0.08);
+    box(c, x, y, z0 + z + 0.05, w + 0.1, 0.8, 0.07, '#e08a2a', { l: '#c47422', r: '#a8601c' });
+    for (let k = 0; k < w - 0.3; k += 0.75) carton(c, x + 0.15 + k, y + 0.1, z0 + z + 0.12, 0.6, 0.6, 0.42 + ((k * 7 | 0) % 2) * 0.08);
   }
 }
 function chair(c, x, y, col = '#2c3442') {
@@ -846,22 +865,153 @@ function avatar(id) {
   return (avatarCache[id] = k.toDataURL());
 }
 
-function paintWarehouseSign(c) {
-  box(c, 9.4, 12.5, 0, 0.08, 0.08, 1.9, '#333'); box(c, 11.5, 12.5, 0, 0.08, 0.08, 1.9, '#333');
-  const ySign = showPosY() ? 12.61 : 12.49;
-  const yFace = showPosY() ? 12.62 : 12.48;
-  poly(c, quadY(ySign, 9.3, 11.7, 1.55, 2.15), '#1f7a3a');
-  poly(c, quadY(ySign + (showPosY() ? 0.01 : -0.01), 9.36, 11.64, 1.6, 2.1), '#2a9a4a');
-  // Drawn with the posts so a nearer desk or person covers the letters too.
-  inPlane(c, 1, facePlane(PLANE_Y(9.36, yFace, 2.1), 2.28), 40, cc => {
-    cc.textBaseline = 'top'; cc.fillStyle = '#fff'; cc.font = `700 11px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', 9, 5);
+// ---------- stairs (shared footprint; the two floors are never drawn together) ----------
+function stairSteps(up) {
+  const n = ST.n, w = (ST.x1 - ST.x0) / n, depth = ST.y1 - ST.y0;
+  const steps = [];
+  for (let i = 0; i < n; i++) {
+    const k = up ? i : (n - 1 - i);
+    steps.push({ x: ST.x0 + i * w, w, top: 0.2 + k * 0.16, y: ST.y0, d: depth });
+  }
+  return steps;
+}
+function paintStep(c, s) {
+  box(c, s.x, s.y, 0, s.w + 0.02, s.d, s.top, '#8a6a4a', { t: (s.x * 3 | 0) % 2 ? '#c4a078' : '#b08a62', l: '#6e5238', r: '#5a432e' });
+  poly(c, [P(s.x + 0.04, s.y + 0.08, s.top), P(s.x + s.w - 0.04, s.y + 0.08, s.top), P(s.x + s.w - 0.06, s.y + 0.22, s.top), P(s.x + 0.06, s.y + 0.22, s.top)], 'rgba(255,236,210,.28)');
+}
+function paintStairRails(c) {
+  const rail = (y) => {
+    c.strokeStyle = '#2a241c'; c.lineWidth = 0.95; c.lineCap = 'round'; c.lineJoin = 'round';
+    const a = P(ST.x0, y, 1.28), b = P(ST.x1, y, 1.28);
+    c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+    for (let i = 0; i <= ST.n; i += 2) {
+      const x = ST.x0 + i * (ST.x1 - ST.x0) / ST.n;
+      const p = P(x, y, 0.02), q = P(x, y, 1.28);
+      c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke();
+    }
+  };
+  rail(ST.y0 + 0.1);
+  rail(ST.y1 - 0.1);
+}
+function stairSignBox() {
+  const yPost = ST.y0 - 0.42;
+  const x0 = ST.x0 + 0.06, x1 = ST.x1 - 0.06;
+  const ySign = showPosY() ? yPost + 0.16 : yPost + 0.02;
+  return { yPost, x0, x1, ySign, textX: x0 + 0.1, span: x1 - x0 - 0.2 };
+}
+function paintStairSign(c, up) {
+  const s = stairSignBox();
+  box(c, s.x0 + 0.08, s.yPost, 0, 0.1, 0.1, 2.08, '#333');
+  box(c, s.x1 - 0.22, s.yPost, 0, 0.1, 0.1, 2.08, '#333');
+  poly(c, quadY(s.ySign, s.x0, s.x1, 1.42, 2.08), up ? '#1f4e86' : '#1f7a3a');
+  const yFace = s.ySign + (showPosY() ? 0.01 : -0.01);
+  poly(c, quadY(yFace, s.x0 + 0.08, s.x1 - 0.08, 1.48, 2.02), up ? '#2a6cb0' : '#2a9a4a');
+  // Drawn with the posts so a nearer desk, person, or pallet covers the letters too.
+  paintOnPlane(c, facePlane(PLANE_Y(s.textX, yFace, 2.0), s.span), 40, cc => {
+    cc.textBaseline = 'top'; cc.textAlign = 'center'; cc.fillStyle = '#fff'; cc.font = `700 12px ${FONT}`;
+    cc.fillText(up ? '\u2191 OFFICE' : '\u2193 WAREHOUSE', s.span * 20, 3);
   });
 }
+function paintBench(c) {
+  const b = BENCH;
+  box(c, b.x, b.y, 0, b.w, b.d, 0.74, '#6a4226', { t: '#8a5a34', l: '#5a381f', r: '#4a2e18' });
+  paperStack(c, b.x + 0.15, b.y + 0.15, 0.74, 5);
+  paperStack(c, b.x + 0.72, b.y + 0.22, 0.74, 3);
+  box(c, b.x + b.w - 0.72, b.y + 0.28, 0.74, 0.5, 0.38, 0.06, '#1d4e86', { ol: false });
+  carton(c, b.x + 1.3, b.y + 0.2, 0.74, 0.42, 0.38, 0.3);
+}
+function drawWarehouseFloor(c) {
+  for (let x = 0; x < GX; x++) for (let y = 0; y < GY; y++) {
+    const n = hsh(x + 20, y + 3);
+    const col = shade('#8d8b86', 0.9 + n * 0.16);
+    const a = P(x, y), b = P(x + 1, y), dpt = P(x, y + 1);
+    const g = c.createLinearGradient(a[0], a[1], b[0], dpt[1]);
+    g.addColorStop(0, shade(col, 1.06)); g.addColorStop(1, shade(col, 0.9));
+    poly(c, [a, b, P(x + 1, y + 1), dpt], g);
+    seg(c, a, b, 'rgba(40,40,38,.22)'); seg(c, a, dpt, 'rgba(255,255,255,.08)');
+    for (let k = 0; k < 3; k++) {
+      const p = P(x + 0.08 + hsh(x * 3 + k, y + 9) * 0.84, y + 0.08 + hsh(x, y * 4 + k) * 0.84);
+      c.fillStyle = k % 2 ? 'rgba(40,40,40,.16)' : 'rgba(255,255,255,.13)';
+      c.beginPath(); c.arc(p[0], p[1], 0.22, 0, Math.PI * 2); c.fill();
+    }
+  }
+  poly(c, [P(0.35, 1.7), P(GX - 0.35, 1.7), P(GX - 0.35, 1.88), P(0.35, 1.88)], '#e0b43a');
+  poly(c, [P(0.35, 1.92), P(GX - 0.35, 1.92), P(GX - 0.35, 2.04), P(0.35, 2.04)], '#2a2a28');
+  poly(c, [P(8.55, 3.15), P(8.78, 3.15), P(8.78, 10.55), P(8.55, 10.55)], '#e0b43a');
+  poly(c, [P(13.15, 3.15), P(13.38, 3.15), P(13.38, 10.55), P(13.15, 10.55)], '#e0b43a');
+  poly(c, [P(ST.x0 - 0.2, ST.y0 - 0.4), P(ST.x1 + 0.2, ST.y0 - 0.4), P(ST.x1 + 0.2, ST.y1 + 0.18), P(ST.x0 - 0.2, ST.y1 + 0.18)], '#6a6660');
+}
+function drawWarehouseShell(c) {
+  const far = [[0, 0], [GX, 0], [GX, GY], [0, GY]][facing];
+  box(c, far[0] < 1 ? -0.4 : GX, far[1] < 1 ? -0.4 : GY, 0, 0.4, 0.4, WALL, '#3b2a1c', { ol: false });
+  if (isFar('W')) {
+    const lip = lipColors('+x', '#d2c2a6');
+    box(c, -0.4, 0, 0, 0.4, GY, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
+    blockWallX(c, 0, 0, GY);
+    windowX(c, 0, 4.1, 7.2, 1.25, 2.55);
+    windowX(c, 0, 11.1, 13.7, 1.25, 2.45);
+  } else floorLipX(c, 0, 0, GY, -0.45, 0, '#3c3b38', '#8a8680');
+  if (isFar('N')) {
+    const lip = lipColors('+y', '#c4b49a');
+    box(c, 0, -0.4, 0, GX, 0.4, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
+    blockWallY(c, 0, 0, GX);
+    bayDoorY(c, 0, 1.1);
+    bayDoorY(c, 0, 6.5);
+    bayDoorY(c, 0, 14.55);
+    windowY(c, 0, 11.05, 13.45, 1.3, 2.5);
+  } else floorLipY(c, 0, 0, GX, -0.45, 0, '#4b4a47', '#8a8680');
+  if (isFar('E')) {
+    const lip = lipColors('-x', '#d2c2a6');
+    box(c, GX, 0, 0, 0.4, GY, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
+    blockWallX(c, GX, 0, GY);
+    windowX(c, GX, 3.3, 6.5, 1.25, 2.55);
+    windowX(c, GX, 10.3, 13.3, 1.25, 2.45);
+  } else floorLipX(c, GX, 0, GY, -0.45, 0, '#3c3b38', '#8a8680');
+  if (isFar('S')) {
+    const lip = lipColors('-y', '#c4b49a');
+    box(c, 0, GY, 0, GX, 0.4, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
+    blockWallY(c, GY, 0, GX);
+    windowY(c, GY, 1.05, 3.55, 1.25, 2.45);
+    boardY(c, GY, 6.2, 12.5, 0.8, 2.6, '#22303a');
+    windowY(c, GY, 15.1, 18.5, 1.25, 2.45);
+  } else floorLipY(c, GY, 0, GX, -0.45, 0, '#4b4a47', '#8a8680');
+}
+function drawWarehouseProps(c) {
+  const props = [];
+  const add = (x, y, fn, bias = 0) => { const [u, v] = toView(x, y); props.push({ k: u + v + bias, fn }); };
+  for (const [x, y, w] of RACKS) add(x + w / 2, y + 0.4, cc => rack(cc, x, y, w), 0.25);
+  for (const [x, y, n] of PALLETS) add(x + 0.7, y + 0.55, cc => pallet(cc, x, y, n), 0.15);
+  add(20.55, 8.35, cc => { carton(cc, 20.25, 7.95, 0, 0.7, 0.58, 0.5); carton(cc, 20.35, 8.05, 0.5, 0.52, 0.42, 0.38); });
+  add(0.75, 8.15, cc => { carton(cc, 0.35, 7.85, 0, 0.62, 0.52, 0.46); carton(cc, 0.42, 8.45, 0, 0.55, 0.48, 0.4); });
+  add(BENCH.x + BENCH.w / 2, BENCH.y + BENCH.d / 2, cc => paintBench(cc), 0.2);
+  add(12.45, 11.35, cc => { ream(cc, 12.15, 11.1, 0, 0.7, 0.5, '#3d7ec4'); ream(cc, 12.22, 11.16, 0.27, 0.7, 0.5, '#c45438'); ream(cc, 12.28, 11.22, 0.54, 0.7, 0.5, '#3d7ec4'); });
+  for (const s of stairSteps(true)) add(s.x + s.w / 2, s.y + s.d / 2, cc => paintStep(cc, s), 0.4);
+  add((ST.x0 + ST.x1) / 2, ST.y0 - 0.15, cc => { paintStairRails(cc); paintStairSign(cc, true); }, 0.15);
+  add(11.7, 0.7, cc => {
+    box(cc, 11.4, 0.35, 0, 0.62, 0.72, 0.08, '#2c2c2c', { ol: false });
+    box(cc, 11.5, 0.82, 0, 0.1, 0.1, 1.15, '#3a3a3a', { ol: false });
+    box(cc, 11.88, 0.82, 0, 0.1, 0.1, 1.15, '#3a3a3a', { ol: false });
+    carton(cc, 11.38, 0.4, 0.08, 0.58, 0.5, 0.4);
+  }, 0.05);
+  props.sort((a, b) => a.k - b.k);
+  for (const p of props) p.fn(c);
+}
+function drawWarehouseBase(c) {
+  drawWarehouseFloor(c);
+  for (const [x, y, n] of PALLETS) shadow(c, x, y, 1.4, 1.1, 0.45 + n * 0.08, 0);
+  for (const [x, y, w] of RACKS) shadow(c, x, y, w, 0.85, 1.5, 0);
+  shadow(c, BENCH.x, BENCH.y, BENCH.w, BENCH.d, 0.74, 0);
+  shadow(c, ST.x0, ST.y0, ST.x1 - ST.x0, ST.y1 - ST.y0, 0.7, 0);
+  drawWarehouseShell(c);
+  drawWarehouseProps(c);
+}
+const WH_LIGHTS = [[4.2, 5.4, 96, 0.16], [11, 6.8, 110, 0.18], [17.4, 5.4, 96, 0.16], [4.6, 12.6, 84, 0.14], [16.8, 12.8, 90, 0.15], [10.8, 13.5, 72, 0.13], [11.2, 1.2, 70, 0.1]];
 
 // ---------- scene objects (depth sorted) ----------
 function sceneItems(t) {
+  if (floor === 'warehouse') return [];
   const it = [];
-  const add = (x, y, fn, bias = 0, clip = null) => { const [u, v] = toView(x, y); it.push({ k: u + v + bias, fn, clip }); };
+  const add = (x, y, fn, bias = 0) => { const [u, v] = toView(x, y); it.push({ k: u + v + bias, fn }); };
   // glass + low walls
   const refl = (q) => { // q = [TL, TR, BR, BL] of a glass pane: two diagonal light streaks
     const L = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
@@ -918,6 +1068,7 @@ function sceneItems(t) {
   for (const y of [6.15, 6.9]) add(21.22, y, c => cabinet(c, 21.22, y, 'w'), 0.3);
   add(21.35, 10.15, c => cooler(c, 21.35, 10.15), 0.4);
   for (const x of [0.35, 1.15]) add(x, 15.28, c => cabinet(c, x, 15.28, 'n'), 0.3);
+  for (const x of [12.5, 13.85, 19.35, 20.55]) add(x, 15.18, c => cabinet(c, x, 15.18, 'n'), 0.3);
   // design trainer (free-standing cork board). Raised so the shirts clear the knee wall, sorted in front of it.
   add(17.75, 6.55, c => {
     const yCork = showPosY() ? 6.581 : 6.399;
@@ -948,26 +1099,9 @@ function sceneItems(t) {
       { const p = P(x0 + 0.65, yPin, 2.4); c.fillStyle = '#d33'; c.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
     }
   }, 3);
-  // reception extras
-  // Warehouse props sit below the floor. Clip them to the opening so a rotated camera
-  // cannot paint pallets and racks over the bullpen. The stair front is the real near
-  // wall when +y faces the camera; the other two facings look at the back of that wall,
-  // and the buried part has to stay inside the hole.
-  const stairClip = showPosY() ? null : 'stairs';
-  add(16.5, 12.1, c => { rack(c, 13.0, 11.7, 1.8); rack(c, 19.6, 11.7, 1.6); }, 0, 'pit');
-  for (const [x, y, n] of PALLETS) add(x, y, c => pallet(c, x, y, n), 1.2, 'pit');
-  add(21.3, 13.9, c => { carton(c, 21.0, 13.5, WH.z, 0.7, 0.6, 0.5); carton(c, 21.05, 13.55, WH.z + 0.5, 0.6, 0.5, 0.45); carton(c, 21.1, 14.3, WH.z, 0.6, 0.6, 0.5); }, 0, 'pit');
-  add(17.6, 15.4, c => { carton(c, 16.8, 15.1, WH.z, 0.7, 0.6, 0.5); carton(c, 17.6, 15.2, WH.z, 0.6, 0.5, 0.4); }, 0, 'pit');
-  // stairs down
-  for (let i = 0; i < ST.n; i++) {
-    const x = ST.x0 + i * (ST.x1 - ST.x0) / ST.n, top = -(i + 1) * (-WH.z) / ST.n, w = (ST.x1 - ST.x0) / ST.n;
-    add(x + w, ST.y0, c => box(c, x, ST.y0, WH.z, w, ST.y1 - ST.y0, top - WH.z, '#8a6a4a', { t: i % 2 ? '#a5835e' : '#9a7a56', l: '#6e5238', r: '#5a432e' }), 0.5, stairClip);
-  }
-  add(10.5, ST.y1, c => { // railing along the south side of the stairs
-    const a = P(ST.x0, ST.y1, 0.9), b = P(ST.x1, ST.y1, WH.z + 0.9); c.strokeStyle = '#2a2a2a'; c.lineWidth = 0.85; c.lineCap = 'round'; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
-    for (let i = 0; i <= ST.n; i += 2) { const x = ST.x0 + i * 0.5, z = -(i) * (-WH.z) / ST.n; const p = P(x, ST.y1, z), q = P(x, ST.y1, z + 0.9); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); }
-  }, 0.6, stairClip);
-  add(ST.x0, ST.y0, c => paintWarehouseSign(c), -0.3);
+  // stairs down to the warehouse. Every tread sits on this floor, so nothing from downstairs can poke through.
+  for (const s of stairSteps(false)) add(s.x + s.w * 0.5, (ST.y0 + ST.y1) / 2, c => paintStep(c, s), 0.45);
+  add((ST.x0 + ST.x1) / 2, ST.y0 - 0.15, c => { paintStairRails(c); paintStairSign(c, false); }, 0.15);
   // desks + workers
   for (const p of people) {
     const d = p.d;
@@ -1053,9 +1187,34 @@ function fontFit(c, s, w, maxPx, minPx) {
   while (px > minPx && c.measureText(s).width > w) { px = Math.round((px - 0.5) * 10) / 10; c.font = `700 ${px}px ${FONT}`; }
   return s;
 }
+function warehouseText(c, S) {
+  if (isFar('N')) {
+    for (const [x, label] of [[1.1, 'BAY 1'], [6.5, 'BAY 2'], [14.55, 'BAY 3']]) {
+      inPlane(c, S, facePlane(PLANE_Y(x + 0.45, 0.02, 2.5), 1.6), 26, cc => {
+        cc.textBaseline = 'middle'; cc.textAlign = 'center'; cc.fillStyle = '#f6edd4'; cc.font = `700 11px ${FONT}`; cc.fillText(label, 20, 8);
+      });
+    }
+  }
+  if (isFar('S')) inPlane(c, S, facePlane(PLANE_Y(6.45, GY - 0.02, 2.48), 5.7), 34, cc => {
+    const Wd = 5.7 * 34;
+    cc.textBaseline = 'middle';
+    cc.fillStyle = '#f2b33d'; cc.fillRect(2, 2, Wd - 4, 16);
+    cc.fillStyle = '#16120e'; cc.font = `700 12px ${FONT}`; cc.fillText('PAPER STOCK', 8, 10);
+    cc.fillStyle = '#f3ead2'; cc.fillRect(2, 20, Wd - 4, 58);
+    cc.fillStyle = '#1d1a16'; cc.font = `700 10px ${FONT}`;
+    cc.fillText('Reams on the pallets', 8, 32);
+    cc.fillText('Cartons on the racks', 8, 48);
+    cc.fillText('Tap a pallet for the list', 8, 64);
+  });
+  const yB = showPosY() ? BENCH.y + BENCH.d : BENCH.y;
+  inPlane(c, S, facePlane(PLANE_Y(BENCH.x + 0.12, yB, 0.68), 2.2), 32, cc => {
+    cc.textBaseline = 'middle'; cc.fillStyle = '#f7f1e4'; cc.font = `700 10px ${FONT}`; cc.fillText('STOCK DESK', 2, 8);
+  });
+}
 function textPass(t, which = 'all') {
   if (which === 'screen') { screenText(t); return; }
   const S = 1, c = ctx;
+  if (floor === 'warehouse') { warehouseText(c, S); if (which === 'walls') return; screenText(t); return; }
   // Team Board: every business, two columns. Needs you stays in the chat tab and in each business panel.
   if (isFar('N')) inPlane(c, S, facePlane(PLANE_Y(7.7, 0.02, 2.96), 6.1), 36, cc => {
     const Wd = 6.1 * 36;
@@ -1116,6 +1275,7 @@ function textPass(t, which = 'all') {
   screenText(t);
 }
 function screenText(t) {
+  if (floor !== 'office') return;
   const c = ctx;
   // speech bubbles + selected name tag (screen aligned)
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1197,95 +1357,34 @@ function fromView(u, v) {
     default: return [u, v];
   }
 }
-function pitViewRect() {
-  let u0 = 1e9, v0 = 1e9, u1 = -1e9, v1 = -1e9;
-  for (const [x, y] of [[WH.x0, WH.y0], [WH.x1, WH.y0], [WH.x1, WH.y1], [WH.x0, WH.y1]]) {
-    const [u, v] = toView(x, y);
-    if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
+function addStairHits() {
+  for (const s of stairSteps(floor === 'warehouse')) {
+    const key = anchorKey(s.x + s.w / 2, s.y + s.d / 2, s.top);
+    pushPoly('stairs', [P(s.x, s.y, s.top), P(s.x + s.w, s.y, s.top), P(s.x + s.w, s.y + s.d, s.top), P(s.x, s.y + s.d, s.top)], key);
+    pushPoly('stairs', [P(s.x, s.y + s.d, s.top), P(s.x + s.w, s.y + s.d, s.top), P(s.x + s.w, s.y + s.d, 0), P(s.x, s.y + s.d, 0)], key);
+    pushPoly('stairs', [P(s.x + s.w, s.y, s.top), P(s.x + s.w, s.y + s.d, s.top), P(s.x + s.w, s.y + s.d, 0), P(s.x + s.w, s.y, 0)], key);
   }
-  return [u0, u1, v0, v1];
+  const s = stairSignBox();
+  pushPoly('stairs', quadY(s.ySign, s.x0, s.x1, 1.42, 2.08), anchorKey((s.x0 + s.x1) / 2, s.ySign, 1.75));
 }
-function viewMax() {
-  const a = toView(0, 0), b = toView(GX, GY);
-  return [Math.max(a[0], b[0]), Math.max(a[1], b[1])];
-}
-function viewRectOf(x0, x1, y0, y1) {
-  let u0 = 1e9, v0 = 1e9, u1 = -1e9, v1 = -1e9;
-  for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
-    const [u, v] = toView(x, y);
-    if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
+function addStockHits() {
+  for (const [x, y, w] of RACKS) {
+    const key = anchorKey(x + w / 2, y + 0.4, 1.2);
+    pushPoly('warehouse', [P(x, y, 2.05), P(x + w, y, 2.05), P(x + w, y + 0.8, 2.05), P(x, y + 0.8, 2.05)], key);
+    const yF = showPosY() ? y + 0.8 : y;
+    pushPoly('warehouse', quadY(yF, x, x + w, 0.1, 2.0), key);
   }
-  return [u0, u1, v0, v1];
-}
-function traceQuad(c, pts) {
-  c.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
-  c.closePath();
-}
-// Hole at floor level, plus the vertical drop where that side of the pit is the map edge
-// (nothing upstairs stands in front of it).
-function traceOpening(c, u0, u1, v0, v1, drop) {
-  const p = (u, v, z) => { const [x, y] = fromView(u, v); return P(x, y, z); };
-  const hole = [p(u0, v0, 0), p(u1, v0, 0), p(u1, v1, 0), p(u0, v1, 0)];
-  traceQuad(c, hole);
-  if (!drop) return;
-  const [Umax, Vmax] = viewMax();
-  const eps = 0.08;
-  const openU = u1 >= Umax - eps, openV = v1 >= Vmax - eps;
-  if (openU) traceQuad(c, [p(u1, v0, 0), p(u1, v1, 0), p(u1, v1, WH.z), p(u1, v0, WH.z)]);
-  if (openV) traceQuad(c, [p(u0, v1, 0), p(u1, v1, 0), p(u1, v1, WH.z), p(u0, v1, WH.z)]);
-}
-function clipLower(c, which) {
-  c.beginPath();
-  const pit = pitViewRect();
-  traceOpening(c, pit[0], pit[1], pit[2], pit[3], true);
-  if (which === 'stairs') {
-    const st = viewRectOf(ST.x0, ST.x1, ST.y0, ST.y1);
-    traceOpening(c, st[0], st[1], st[2], st[3], false);
+  for (const [x, y, n] of PALLETS) {
+    const zt = 0.16 + n * 0.28;
+    pushPoly('warehouse', [P(x, y, zt), P(x + 1.4, y, zt), P(x + 1.4, y + 1.1, zt), P(x, y + 1.1, zt)], anchorKey(x + 0.7, y + 0.55, zt));
   }
-  c.clip();
-}
-function rectPoly(u0, u1, v0, v1, z) {
-  const c = (u, v) => { const [x, y] = fromView(u, v); return P(x, y, z); };
-  return [c(u0, v0), c(u1, v0), c(u1, v1), c(u0, v1)];
-}
-// Pit floor at z=-2 slides toward the camera and would cover the office in front of it.
-// Keep only the part whose screen pixel is not office carpet, plus the hole at floor level.
-function visibleFloorRects() {
-  const [u0, u1, v0, v1] = pitViewRect();
-  const [Umax, Vmax] = viewMax();
-  const s = (0 - WH.z) * ZU / (2 * HY);
-  const rects = [];
-  if (u1 - s > u0 + 0.05 && v1 - s > v0 + 0.05) rects.push([u0, u1 - s, v0, v1 - s]);
-  if (Umax - s < u1 - 0.02) {
-    const a = Math.max(u0, Umax - s);
-    if (a < u1 - 0.02) rects.push([a, u1, v0, v1]);
+  const b = BENCH, bh = 0.74;
+  const key = anchorKey(b.x + b.w / 2, b.y + b.d / 2, bh);
+  pushPoly('warehouse', [P(b.x, b.y, bh), P(b.x + b.w, b.y, bh), P(b.x + b.w, b.y + b.d, bh), P(b.x, b.y + b.d, bh)], key);
+  if (isFar('N')) {
+    for (const x0 of [1.1, 6.5, 14.55]) pushPoly('warehouse', quadY(0.01, x0, x0 + 2.5, 0.1, 2.2), anchorKey(x0 + 1.25, 0, 1.1));
   }
-  if (Vmax - s < v1 - 0.02) {
-    const b = Math.max(v0, Vmax - s);
-    if (b < v1 - 0.02) rects.push([u0, u1, b, v1]);
-  }
-  return rects;
-}
-function addRectTiles(u0, u1, v0, v1, z) {
-  const step = 1;
-  for (let u = u0; u < u1 - 0.02; u += step) {
-    for (let v = v0; v < v1 - 0.02; v += step) {
-      const uu = Math.min(u + step, u1), vv = Math.min(v + step, v1);
-      if (uu - u < 0.08 || vv - v < 0.08) continue;
-      const [x, y] = fromView((u + uu) / 2, (v + vv) / 2);
-      pushPoly('warehouse', rectPoly(u, uu, v, vv, z), anchorKey(x, y, z));
-    }
-  }
-}
-function addWarehouseHits() {
-  const [u0, u1, v0, v1] = pitViewRect();
-  // Hole in the office floor, one tile at a time so a nearer desk or person wins the overlap.
-  addRectTiles(u0, u1, v0, v1, 0);
-  // Gray pit floor that is not hidden under the carpet in front of the hole.
-  for (const [a, b, c, d] of visibleFloorRects()) addRectTiles(a, b, c, d, WH.z);
-  const ySign = showPosY() ? 12.6 : 12.48;
-  pushPoly('warehouse', quadY(ySign, 9.3, 11.7, 1.5, 2.2), anchorKey(10.5, ySign, 1.85));
+  if (isFar('S')) pushPoly('warehouse', quadY(GY, 6.2, 12.5, 0.8, 2.6), anchorKey(9.35, GY, 1.7));
 }
 function deskTop(d) { return d.reception ? 0.89 : 0.62; }
 function addDeskHits(p) {
@@ -1303,6 +1402,8 @@ function addWorkerHits(p, sx, sy) {
 }
 function staticHits() {
   if (!collectHits) return;
+  addStairHits();
+  if (floor === 'warehouse') { addStockHits(); return; }
   if (isFar('N')) {
     pushPoly('board', quadY(0, 7.55, 13.95, 0.38, 3.08), anchorKey(10.75, 0, 1.73));
     pushPoly('status', quadY(0, 3.0, 7.2, 0.95, 2.7), anchorKey(5.1, 0, 1.8));
@@ -1317,7 +1418,6 @@ function staticHits() {
   pushPoly('design', quadY(ySign, 15.35, 19.55, 2.19, 2.76), anchorKey(17.45, ySign, 2.47));
   pushPoly('design', [P(15.8, 6.65, 0.62), P(19.7, 6.65, 0.62), P(19.7, 7.1, 0.62), P(15.8, 7.1, 0.62)], anchorKey(17.75, 6.87, 0.62));
   pushPoly('design', quadY(yShelf, 15.8, 19.7, 0, 0.62), anchorKey(17.75, yShelf, 0.31));
-  addWarehouseHits();
 }
 function inPoly(x, y, pts) { let ins = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if (((yi > y) !== (yj > y)) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins; } return ins; }
 function hitAt(cssX, cssY) {
@@ -1335,12 +1435,41 @@ function stepActors(t) {
   }
 }
 function rotateView(dir) {
-  if (rotAnim) return;
+  if (rotAnim || floorAnim) return;
   const to = (facing + (dir > 0 ? 1 : 3)) % 4;
   try { localStorage.setItem('hq2d.facing', FACE_NAME[to]); } catch (e) {}
   rotAnim = { from: facing, to, t0: performance.now() };
   noteInput();
-  ensureBase(to);
+  ensureBase(floor, to);
+}
+function updateFloorBtn() {
+  const btn = $('#floorBtn'); if (!btn) return;
+  const here = floorAnim ? floorAnim.to : floor;
+  const down = here === 'office';
+  btn.textContent = down ? 'Down' : 'Up';
+  const tip = down ? 'Go downstairs to the warehouse' : 'Go back upstairs to the office';
+  btn.title = tip; btn.setAttribute('aria-label', tip);
+}
+function goFloor(to) {
+  if (floorAnim || rotAnim) return;
+  if (to !== 'office' && to !== 'warehouse') to = floor === 'office' ? 'warehouse' : 'office';
+  if (to === floor) return;
+  try { localStorage.setItem('hq2d.floor', to); } catch (e) {}
+  ensureBase(to, facing);
+  floorAnim = { from: floor, to, t0: performance.now() };
+  wish.px = 0; wish.py = 0; wish.zoom = 1;
+  noteInput();
+  updateFloorBtn();
+}
+function setFloor(name) {
+  if (name !== 'office' && name !== 'warehouse') return;
+  floorAnim = null;
+  floor = name;
+  try { localStorage.setItem('hq2d.floor', name); } catch (e) {}
+  wish.px = wish.py = 0; wish.zoom = 1;
+  cam.px = cam.py = 0; cam.zoom = 1;
+  updateFloorBtn();
+  noteInput();
 }
 function setFacing(name) {
   const idx = typeof name === 'number' ? name : FACE_NAME.indexOf(name);
@@ -1350,30 +1479,26 @@ function setFacing(name) {
   try { localStorage.setItem('hq2d.facing', FACE_NAME[idx]); } catch (e) {}
   noteInput();
 }
-function paintGeom(c, f, alpha, collect, t) {
-  const prev = facing;
+function paintGeom(c, f, alpha, collect, t, fl = floor) {
+  const prevF = facing, prevFl = floor;
   facing = f;
-  ensureBase(f);
-  const box = baseBox[f];
+  floor = fl;
+  ensureBase(fl, f);
+  const box = baseBox[fl][f];
   c.save();
   c.globalAlpha = alpha;
   camTransform(c);
   c.lineJoin = 'round'; c.lineCap = 'round';
-  if (box) c.drawImage(baseCvs[f], box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY);
+  if (box) c.drawImage(baseCvs[fl][f], box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY);
   collectHits = !!collect;
   if (collectHits) hits = [];
   staticHits();
-  for (const it of sceneItems(t)) {
-    if (!it.clip) { it.fn(c); continue; }
-    c.save();
-    clipLower(c, it.clip);
-    it.fn(c);
-    c.restore();
-  }
+  for (const it of sceneItems(t)) it.fn(c);
   if (collectHits) sortHits();
   lights(c);
   c.restore();
-  facing = prev;
+  facing = prevF;
+  floor = prevFl;
 }
 
 // ---------- render loop ----------
@@ -1391,7 +1516,7 @@ function frame(ts) {
   stepCam(frameDt);
   const t = now();
   stepActors(t);
-  let blend = null;
+  let blend = null, floorBlend = null;
   if (rotAnim) {
     const p = Math.min(1, (performance.now() - rotAnim.t0) / ROT_MS);
     const e = easeIO(p);
@@ -1399,12 +1524,22 @@ function frame(ts) {
     if (p < 1) blend = { from: rotAnim.from, to: rotAnim.to, e };
     else { facing = rotAnim.to; rotAnim = null; }
   }
+  if (floorAnim) {
+    const p = Math.min(1, (performance.now() - floorAnim.t0) / FLOOR_MS);
+    const e = easeIO(p);
+    if (e >= 0.5) floor = floorAnim.to;
+    if (p < 1) floorBlend = { from: floorAnim.from, to: floorAnim.to, e };
+    else { floor = floorAnim.to; floorAnim = null; updateFloorBtn(); }
+  }
   const c = ctx;
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalAlpha = 1;
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   c.fillStyle = '#1a1410'; c.fillRect(0, 0, cv.width, cv.height);
-  if (blend) {
+  if (floorBlend) {
+    paintGeom(c, facing, 1 - floorBlend.e, floorBlend.e < 0.5, t, floorBlend.from);
+    paintGeom(c, facing, floorBlend.e, floorBlend.e >= 0.5, t, floorBlend.to);
+  } else if (blend) {
     paintGeom(c, blend.from, 1, blend.e < 0.5, t);
     paintGeom(c, blend.to, blend.e, blend.e >= 0.5, t);
   } else paintGeom(c, facing, 1, true, t);
@@ -1418,8 +1553,19 @@ function frame(ts) {
     vig = { gr, w: cv.width, h: cv.height };
   }
   c.fillStyle = vig.gr; c.fillRect(0, 0, cv.width, cv.height);
-  tickBubbles(t);
-  if (blend) {
+  if (floor === 'office') tickBubbles(t);
+  if (floorBlend) {
+    const prevF = facing, prevFl = floor;
+    c.save();
+    floor = floorBlend.from; c.globalAlpha = 1 - floorBlend.e; textPass(t, 'walls');
+    floor = floorBlend.to; c.globalAlpha = floorBlend.e; textPass(t, 'walls');
+    c.restore();
+    facing = prevF; floor = floorBlend.e >= 0.5 ? floorBlend.to : floorBlend.from;
+    textPass(t, 'screen');
+    floor = prevFl;
+    const veil = Math.sin(Math.min(1, floorBlend.e) * Math.PI) * 0.28;
+    c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = veil; c.fillStyle = '#120c08'; c.fillRect(0, 0, cv.width, cv.height); c.restore();
+  } else if (blend) {
     const prev = facing;
     c.save();
     facing = blend.from; c.globalAlpha = 1 - blend.e; textPass(t, 'walls');
@@ -1496,6 +1642,7 @@ function openHit(h) {
   if (h.kind === 'worker') { sel = h.id; openWorker(h.id); }
   else if (h.kind === 'board' || h.kind === 'status' || h.kind === 'whiteboard') openProjects();
   else if (h.kind === 'design') openDesign();
+  else if (h.kind === 'stairs') goFloor(floor === 'office' ? 'warehouse' : 'office');
   else if (h.kind === 'warehouse') openCard(`<h2>Warehouse</h2><div class="sub">Downstairs</div><p>Paper, pallets and the bay doors. The Design Trainer is the clothes board by Kelly's desk. Tap it to keep or skip designs. ${esc(PAUSE_NOTE)}</p><div class="btns"><button data-act="design">Design Trainer</button></div>`);
 }
 
@@ -1702,8 +1849,9 @@ const rid = () => Math.random().toString(36).slice(2, 11);
 const SHOT_EDGE = 1280, SHOT_Q = 0.7;
 let shotCvs = null;
 function shotLabel() {
-  if (rotAnim) return `2.5D office · turning ${FACE_NAME[rotAnim.from] || '?'}→${FACE_NAME[rotAnim.to] || '?'}`;
-  return `2.5D office · facing ${FACE_NAME[facing] || '?'}`;
+  const place = floor === 'warehouse' ? 'warehouse' : 'office';
+  if (rotAnim) return `2.5D ${place} · turning ${FACE_NAME[rotAnim.from] || '?'}→${FACE_NAME[rotAnim.to] || '?'}`;
+  return `2.5D ${place} · facing ${FACE_NAME[facing] || '?'}`;
 }
 function stampShot(g, w, h) {
   const label = shotLabel(), k = Math.max(0.75, w / SHOT_EDGE);
@@ -1930,6 +2078,7 @@ function pollPad(dt) {
     if (edge(12)) moveSel(0, -1); if (edge(13)) moveSel(0, 1); if (edge(14)) moveSel(-1, 0); if (edge(15)) moveSel(1, 0);
     if (edge(0)) press('A'); if (edge(2)) press('X'); if (edge(3)) press('Y'); if (edge(9)) press('start');
     if (edge(4)) rotateView(-1); if (edge(5)) rotateView(1);
+    if (edge(8)) goFloor();
   }
   if (edge(1)) { if (document.activeElement === chatIn) chatIn.blur(); else press('B'); }
   const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, ry = gp.axes[3] || 0;
@@ -1962,6 +2111,7 @@ addEventListener('keydown', e => {
   if (k === 'ArrowUp') moveSel(0, -1); else if (k === 'ArrowDown') moveSel(0, 1); else if (k === 'ArrowLeft') moveSel(-1, 0); else if (k === 'ArrowRight') moveSel(1, 0);
   else if (k === 'Enter') press('A'); else if (k === 'Escape') press('B'); else if (k === 'n') press('Y'); else if (k === 'c') { e.preventDefault(); press('X'); }
   else if (k === 'q' || k === 'Q') rotateView(-1); else if (k === 'e' || k === 'E') rotateView(1);
+  else if (k === 'f' || k === 'F') goFloor();
   else return; e.preventDefault();
 });
 
@@ -1971,31 +2121,45 @@ let toastT = 0; function toast(s) { const el = $('#toast'); el.textContent = noD
 // ---------- boot ----------
 resize(); renderProjects(); renderChat();
 startLoop();
-document.fonts?.ready?.then(() => { /* boards redraw every frame once the font is in */ });
+document.fonts?.ready?.then(() => { baseOk.warehouse.fill(false); });
 loadTasks(); setInterval(loadTasks, 30000);
 loadWork(); setInterval(loadWork, 90000);
 loadDeck(false);
 checkVersion(); setInterval(checkVersion, 30000);
 pollChat();
-setTimeout(() => toast('Tap a desk to see what they are on. Pinch to zoom, drag to look around. Q and E rotate.'), 900);
-let prebuildQ = [1, 2, 3];
+setTimeout(() => toast('Tap the stairs for the warehouse. Pinch to zoom, drag to look around. Q and E rotate.'), 900);
+updateFloorBtn();
+const floorBtn = $('#floorBtn');
+if (floorBtn) floorBtn.onclick = () => goFloor();
+let prebuildQ = [];
+function queuePrebuild() {
+  prebuildQ = [];
+  const order = [floor, floor === 'office' ? 'warehouse' : 'office'];
+  for (const fl of order) for (const f of [0, 1, 2, 3]) {
+    if (fl === floor && f === facing) continue;
+    if (!baseOk[fl][f]) prebuildQ.push([fl, f]);
+  }
+}
 function prebuildBases() {
   if (!prebuildQ.length) return;
-  if (document.hidden || rotAnim) { requestAnimationFrame(prebuildBases); return; }
-  const f = prebuildQ.shift();
-  if (!baseOk[f]) ensureBase(f);
+  if (document.hidden || rotAnim || floorAnim) { requestAnimationFrame(prebuildBases); return; }
+  const [fl, f] = prebuildQ.shift();
+  if (!baseOk[fl][f]) ensureBase(fl, f);
   if (prebuildQ.length) requestAnimationFrame(prebuildBases);
 }
+queuePrebuild();
 requestAnimationFrame(prebuildBases);
-addEventListener('resize', () => { prebuildQ = [0, 1, 2, 3].filter(f => f !== facing && !baseOk[f]); requestAnimationFrame(prebuildBases); });
+addEventListener('resize', () => { queuePrebuild(); requestAnimationFrame(prebuildBases); });
 function rebuildHits() {
   const prev = collectHits;
   hits = [];
   collectHits = true;
   staticHits();
-  for (const p of people) {
-    const [sx, sy] = P(p.seat[0], p.seat[1], SEATZ);
-    addWorkerHits(p, sx, sy);
+  if (floor === 'office') {
+    for (const p of people) {
+      const [sx, sy] = P(p.seat[0], p.seat[1], SEATZ);
+      addWorkerHits(p, sx, sy);
+    }
   }
   sortHits();
   collectHits = prev;
@@ -2009,6 +2173,20 @@ function expectedTitle(want) {
 }
 function clickTargets() {
   const list = [];
+  const sign = stairSignBox();
+  const step = stairSteps(floor === 'warehouse')[3];
+  if (floor === 'warehouse') {
+    list.push({ name: 'stairs', want: 'stairs', x: step.x + step.w / 2, y: step.y + step.d / 2, z: step.top });
+    list.push({ name: 'stair sign', want: 'stairs', x: (sign.x0 + sign.x1) / 2, y: sign.ySign, z: 1.75 });
+    const [px, py, pn] = PALLETS[8];
+    list.push({ name: 'pallet', want: 'warehouse', x: px + 0.7, y: py + 0.55, z: 0.16 + pn * 0.28 });
+    const [rx, ry, rw] = RACKS[2];
+    list.push({ name: 'rack', want: 'warehouse', x: rx + rw / 2, y: ry + 0.4, z: 2.05 });
+    list.push({ name: 'stock desk', want: 'warehouse', x: BENCH.x + BENCH.w / 2, y: BENCH.y + BENCH.d / 2, z: 0.74 });
+    if (isFar('N')) list.push({ name: 'bay', want: 'warehouse', x: 2.35, y: 0.01, z: 1.15 });
+    if (isFar('S')) list.push({ name: 'stock board', want: 'warehouse', x: 9.35, y: GY, z: 1.7 });
+    return list;
+  }
   for (const p of people) {
     const d = p.d, h = deskTop(d);
     list.push({ name: 'desk ' + p.s.id, want: p.s.id, x: d.x + d.w / 2, y: d.y + d.d / 2, z: h });
@@ -2022,61 +2200,65 @@ function clickTargets() {
   if (isFar('W')) list.push({ name: 'whiteboard', want: 'whiteboard', x: 0, y: (4.6 + 8.4) / 2, z: (0.95 + 2.55) / 2 });
   const yShirt = showPosY() ? 6.582 : 6.398;
   list.push({ name: 'design wall', want: 'design', x: 17.75, y: yShirt, z: 1.8 });
-  const [u0, u1, v0, v1] = pitViewRect();
-  const [wx, wy] = fromView((u0 + u1) / 2, (v0 + v1) / 2);
-  list.push({ name: 'warehouse', want: 'warehouse', x: wx, y: wy, z: 0 });
-  const ySign = showPosY() ? 12.6 : 12.48;
-  list.push({ name: 'warehouse sign', want: 'warehouse', x: 10.5, y: ySign, z: (1.5 + 2.2) / 2 });
+  list.push({ name: 'stairs', want: 'stairs', x: step.x + step.w / 2, y: step.y + step.d / 2, z: step.top });
+  list.push({ name: 'stair sign', want: 'stairs', x: (sign.x0 + sign.x1) / 2, y: sign.ySign, z: 1.75 });
   return list;
 }
-const OFFICE_PROBES = [[4, 2, 'conference'], [11, 3, 'table'], [15, 1, 'kitchen'], [18.5, 3.2, 'manager floor'], [5, 8, 'bullpen'], [8, 11, 'aisle'], [2, 14, 'south west'], [10, 13.2, 'south'], [16, 10, 'annex floor'], [19, 7.2, 'east floor'], [14, 10.4, 'above pit'], [6, 13.4, 'by stairs']];
+const OFFICE_PROBES = [[4, 2, 'conference'], [11, 3, 'table'], [15, 1, 'kitchen'], [18.5, 3.2, 'manager floor'], [5, 8, 'bullpen'], [8, 11, 'aisle'], [2, 14, 'south west'], [16, 10, 'annex floor'], [19, 7.2, 'east floor'], [14, 10.4, 'old pit corner'], [10.4, 13.6, 'old stairs'], [12.4, 13.8, 'south aisle'], [20.4, 14.5, 'south east floor']];
 function checkHits() {
-  const saved = facing;
+  const savedF = facing, savedFl = floor;
   const fails = [], rows = [];
   try {
-    for (let f = 0; f < 4; f++) {
-      facing = f;
-      rebuildHits();
-      for (const t of clickTargets()) {
-        const css = t.iso ? isoToCSS(t.iso[0], t.iso[1]) : projectCSS(t.x, t.y, t.z);
-        const h = hitAt(css[0], css[1]);
-        const got = hitLabel(h);
-        const row = { facing: FACE_NAME[f], name: t.name, want: t.want, got: got || 'none' };
-        rows.push(row);
-        if (got !== t.want) fails.push(row);
-        else {
+    for (const fl of ['office', 'warehouse']) {
+      floor = fl;
+      floorAnim = null;
+      for (let f = 0; f < 4; f++) {
+        facing = f;
+        rebuildHits();
+        if (fl === 'office' && hits.some(h => h.kind === 'warehouse')) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'warehouse hit upstairs', want: 'none', got: 'warehouse' });
+        for (const t of clickTargets()) {
+          const css = t.iso ? isoToCSS(t.iso[0], t.iso[1]) : projectCSS(t.x, t.y, t.z);
+          const h = hitAt(css[0], css[1]);
+          const got = hitLabel(h);
+          const row = { floor: fl, facing: FACE_NAME[f], name: t.name, want: t.want, got: got || 'none' };
+          rows.push(row);
+          if (got !== t.want) { fails.push(row); continue; }
+          if (t.want === 'stairs') continue;
           openHit(h);
           if (t.want === 'design') {
-            if (!trainer.isOpen()) fails.push({ facing: FACE_NAME[f], name: t.name + ' card', want: 'Design Trainer', got: 'closed' });
+            if (!trainer.isOpen()) fails.push({ floor: fl, facing: FACE_NAME[f], name: t.name + ' card', want: 'Design Trainer', got: 'closed' });
             trainer.close();
           } else {
             const title = $('#card h2')?.textContent || '';
             const exp = expectedTitle(t.want);
-            if (title !== exp) fails.push({ facing: FACE_NAME[f], name: t.name + ' card', want: exp, got: title || 'none' });
+            if (title !== exp) fails.push({ floor: fl, facing: FACE_NAME[f], name: t.name + ' card', want: exp, got: title || 'none' });
             closeCard();
           }
         }
-      }
-      const sign = quadY(showPosY() ? 12.6 : 12.48, 9.3, 11.7, 1.5, 2.2);
-      for (let x = 0.6; x < GX; x += 1) for (let y = 0.6; y < GY; y += 1) {
-        if (x >= WH.x0 - 0.05 && y >= WH.y0 - 0.05) continue;
-        if (x >= ST.x0 - 0.15 && x <= ST.x1 + 0.15 && y >= ST.y0 - 0.15 && y <= ST.y1 + 0.15) continue;
-        const css = projectCSS(x, y, 0);
-        const iso = cssToLeg(css[0], css[1]);
-        if (inPoly(iso[0], iso[1], sign)) continue;
-        const h = hitAt(css[0], css[1]);
-        if (h && h.kind === 'warehouse') fails.push({ facing: FACE_NAME[f], name: 'floor ' + x.toFixed(0) + ',' + y.toFixed(0), want: 'not warehouse', got: 'warehouse' });
-      }
-      for (const [x, y, label] of OFFICE_PROBES) {
-        const css = projectCSS(x, y, 0);
-        const got = hitLabel(hitAt(css[0], css[1]));
-        const row = { facing: FACE_NAME[f], name: 'probe ' + label, want: 'not warehouse', got: got || 'none' };
-        rows.push(row);
-        if (got === 'warehouse') fails.push(row);
+        if (fl === 'office') {
+          const sg = stairSignBox();
+          const sign = quadY(sg.ySign, sg.x0, sg.x1, 1.42, 2.08);
+          for (let x = 0.6; x < GX; x += 1) for (let y = 0.6; y < GY; y += 1) {
+            if (x >= ST.x0 - 0.3 && x <= ST.x1 + 0.3 && y >= ST.y0 - 0.6 && y <= ST.y1 + 0.25) continue;
+            const css = projectCSS(x, y, 0);
+            const iso = cssToLeg(css[0], css[1]);
+            if (inPoly(iso[0], iso[1], sign)) continue;
+            const h = hitAt(css[0], css[1]);
+            if (h && h.kind === 'warehouse') fails.push({ floor: fl, facing: FACE_NAME[f], name: 'floor ' + x.toFixed(0) + ',' + y.toFixed(0), want: 'office', got: h.kind });
+          }
+          for (const [x, y, label] of OFFICE_PROBES) {
+            const got = hitLabel(hitAt(...projectCSS(x, y, 0)));
+            const row = { floor: fl, facing: FACE_NAME[f], name: 'probe ' + label, want: 'not warehouse', got: got || 'none' };
+            rows.push(row);
+            if (got === 'warehouse') fails.push(row);
+          }
+        }
       }
     }
   } finally {
-    facing = saved;
+    facing = savedF;
+    floor = savedFl;
+    floorAnim = null;
     rebuildHits();
   }
   return { ok: fails.length === 0, fails, checked: rows.length };
@@ -2093,4 +2275,4 @@ window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('c
       return { kind: h.kind, id: h.id || null, rect: [x, y, x2 - x, y2 - y] };
     }
     return { kind: h.kind, id: h.id || null, poly: h.poly.map(p => legToCSS(p[0], p[1])) };
-  }), tap: (x, y) => tap(x, y), checkHits, openNeeds, openWorker, openProjects, openBusiness, openDesign, setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, facing: () => FACE_NAME[facing], rotate: rotateView, setFacing, snapshot, state: () => ({ PS, BW, BH, DPR, n: people.length, facing: FACE_NAME[facing], cam: { ...cam } }) };
+  }), tap: (x, y) => tap(x, y), checkHits, openNeeds, openWorker, openProjects, openBusiness, openDesign, setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, facing: () => FACE_NAME[facing], rotate: rotateView, setFacing, snapshot, floor: () => floor, goFloor, setFloor, state: () => ({ PS, BW, BH, DPR, n: people.length, facing: FACE_NAME[facing], floor, cam: { ...cam } }) };
