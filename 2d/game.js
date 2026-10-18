@@ -146,13 +146,19 @@ function camTransform(c) {
   const [s, tx, ty] = camOrigin();
   c.setTransform(s, 0, 0, s, tx, ty);
 }
+function legToCSS(ix, iy) {
+  const [s, tx, ty] = camOrigin();
+  return [(ix * s + tx) / DPR, (iy * s + ty) / DPR];
+}
 function projectCSS(x, y, z = 0) {
-  const [ix, iy] = P(x, y, z), [s, tx, ty] = camOrigin();
-  return [(ix - FX) * s / DPR + tx / DPR, (iy - FY) * s / DPR + ty / DPR];
+  const [ix, iy] = P(x, y, z);
+  // camOrigin already centers on FOCUS. Subtracting it again drifts labels off the sprite.
+  return legToCSS(ix, iy);
 }
 function cssToLeg(cssX, cssY) {
   const [s, tx, ty] = camOrigin();
-  return [(cssX * DPR - tx) / s + FX, (cssY * DPR - ty) / s + FY];
+  // Inverse of camTransform, in the same P() space the hit polygons are built in.
+  return [(cssX * DPR - tx) / s, (cssY * DPR - ty) / s];
 }
 function poly(c, pts, fill, stroke) {
   c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); c.closePath();
@@ -936,12 +942,25 @@ function say(id, text, secs = 5) { const t = now(); const i = bubbles.findIndex(
 // ---------- hotspots ----------
 let hits = [];
 function staticHits() {
-  hits.push({ kind: 'board', poly: quadY(0, 7.62, 13.9, 0.75, 2.85) });
-  hits.push({ kind: 'status', poly: quadY(0, 3.0, 7.2, 0.95, 2.7) });
-  hits.push({ kind: 'whiteboard', poly: quadX(0, 4.6, 8.4, 0.95, 3.2) });
-  hits.push({ kind: 'design', poly: quadY(6.6, 15.3, 20.2, 0, 2.6) });
-  hits.push({ kind: 'warehouse', poly: [P(WH.x0, WH.y0, WH.z), P(WH.x1, WH.y0, WH.z), P(WH.x1, WH.y1, WH.z), P(WH.x0, WH.y1, WH.z)] });
-  hits.push({ kind: 'warehouse', poly: quadY(12.6, 9.3, 11.7, 1.5, 2.2) });
+  // Polygons are the same quads the painter uses, in P() space, so a rotated camera stays aligned.
+  hits.push({ kind: 'board', poly: quadY(0, 7.62, 13.9, 0.75, 2.85) });       // boardY frame
+  hits.push({ kind: 'status', poly: quadY(0, 3.0, 7.2, 0.95, 2.7) });          // boardY frame
+  hits.push({ kind: 'whiteboard', poly: quadX(0, 4.6, 8.4, 0.95, 2.55) });    // painted frame, not the wall above it
+  // design wall: cork face, the DESIGN WALL bar (drawn on the plane just above it), and the shelf
+  hits.push({ kind: 'design', poly: quadY(6.582, 15.3, 20.2, 0.8, 2.5) });
+  hits.push({ kind: 'design', poly: quadY(6.4, 15.5, 17.4, 2.345, 2.62) });
+  hits.push({ kind: 'design', poly: [P(15.8, 6.65, 0.62), P(19.7, 6.65, 0.62), P(19.7, 7.1, 0.62), P(15.8, 7.1, 0.62)] });
+  hits.push({ kind: 'design', poly: quadY(7.1, 15.8, 19.7, 0, 0.62) });
+  // warehouse pit: sunken floor, the opening, the painted walls, the cutaway edges, and the sign
+  const pit = (z) => [P(WH.x0, WH.y0, z), P(WH.x1, WH.y0, z), P(WH.x1, WH.y1, z), P(WH.x0, WH.y1, z)];
+  hits.push({ kind: 'warehouse', poly: pit(WH.z) });
+  hits.push({ kind: 'warehouse', poly: pit(0) });
+  hits.push({ kind: 'warehouse', poly: quadY(WH.y0, WH.x0, WH.x1, WH.z, 0) });
+  hits.push({ kind: 'warehouse', poly: quadX(WH.x0, WH.y0, ST.y0, WH.z, 0) });
+  hits.push({ kind: 'warehouse', poly: quadX(WH.x0, ST.y1, WH.y1, WH.z, 0) });
+  hits.push({ kind: 'warehouse', poly: quadY(GY, WH.x0, GX, WH.z - 0.5, WH.z) });
+  hits.push({ kind: 'warehouse', poly: quadX(GX, WH.y0, GY, WH.z - 0.5, WH.z) });
+  hits.push({ kind: 'warehouse', poly: quadY(12.6, 9.3, 11.7, 1.55, 2.15) });
 }
 function inPoly(x, y, pts) { let ins = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if (((yi > y) !== (yj > y)) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins; } return ins; }
 function hitAt(cssX, cssY) {
@@ -1023,7 +1042,7 @@ cv.addEventListener('pointermove', e => {
 });
 const endPtr = e => { const was = ptrs.has(e.pointerId); ptrs.delete(e.pointerId); if (!was) return;
   if (drag && drag.moved && ptrs.size === 0) { wish.px = cam.px + Math.max(-900, Math.min(900, velX)) * 0.22; wish.py = cam.py + Math.max(-900, Math.min(900, velY)) * 0.22; clampWish(); velX = velY = 0; }
-  if (drag && !drag.moved && e.type === 'pointerup') tap(e.clientX, e.clientY);
+  if (drag && !drag.moved && e.type === 'pointerup') { e.preventDefault(); tap(e.clientX, e.clientY); }
   if (ptrs.size < 2) pinch = null; if (ptrs.size === 0) { drag = null; if (e.pointerType !== 'mouse') hoverId = null; } };
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
 cv.addEventListener('wheel', e => { e.preventDefault(); noteInput(); const z0 = wish.zoom; wish.zoom = clampZ(wish.zoom * (e.deltaY < 0 ? 1.08 : 0.925)); const k = wish.zoom / z0; wish.px *= k; wish.py *= k; cam.px = wish.px; cam.py = wish.py; clampWish(); }, { passive: false });
@@ -1042,10 +1061,13 @@ function openHit(h) {
 
 // ---------- modal cards ----------
 const modal = $('#modal'), cardBody = $('#cardBody');
-function openCard(html) { cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); }
+let openedAt = 0;
+function openCard(html) { cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); openedAt = performance.now(); }
 function closeCard() { modal.classList.add('hidden'); }
 $('#cardX').onclick = closeCard;
-modal.addEventListener('click', e => { if (e.target === modal) closeCard(); });
+// A tap opens the card on pointerup. The same gesture then delivers a click, which lands on
+// the dimmed backdrop when the desk is outside the card and would close it immediately.
+modal.addEventListener('click', e => { if (e.target === modal && performance.now() - openedAt > 400) closeCard(); });
 cardBody.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
@@ -1367,4 +1389,10 @@ loadDeck(false);
 checkVersion(); setInterval(checkVersion, 30000);
 pollChat();
 setTimeout(() => toast('Tap a desk to see what they are on. Pinch to zoom, drag to look around.'), 900);
-window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('canvas'); scratch.width = 640; scratch.height = 420; const sg = scratch.getContext('2d'); const a = performance.now(); for (let i = 0; i < n; i++) { camTransform(sg); hits = []; staticHits(); for (const it of sceneItems(i / 10)) it.fn(sg); } return (performance.now() - a) / n; }, proj: (x, y, z = 0) => projectCSS(x, y, z), hit: (x, y) => hitAt(x, y), openNeeds, openWorker, openProjects, openDesign, state: () => ({ PS, BW, BH, DPR, n: people.length, cam: { ...cam } }) };
+window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('canvas'); scratch.width = 640; scratch.height = 420; const sg = scratch.getContext('2d'); const a = performance.now(); for (let i = 0; i < n; i++) { camTransform(sg); hits = []; staticHits(); for (const it of sceneItems(i / 10)) it.fn(sg); } return (performance.now() - a) / n; }, proj: (x, y, z = 0) => projectCSS(x, y, z), hit: (x, y) => hitAt(x, y), regions: () => hits.map(h => {
+    if (h.r) {
+      const [x, y] = legToCSS(h.r[0], h.r[1]), [x2, y2] = legToCSS(h.r[0] + h.r[2], h.r[1] + h.r[3]);
+      return { kind: h.kind, id: h.id || null, rect: [x, y, x2 - x, y2 - y] };
+    }
+    return { kind: h.kind, id: h.id || null, poly: h.poly.map(p => legToCSS(p[0], p[1])) };
+  }), openNeeds, openWorker, openProjects, openDesign, state: () => ({ PS, BW, BH, DPR, n: people.length, cam: { ...cam } }) };
