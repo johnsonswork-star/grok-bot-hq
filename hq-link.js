@@ -15,6 +15,26 @@ import { seal, open, newKeyPair, importPriv, randomId } from './hq-crypto.js';
 
 export const INBOX_REPO = 'johnsonswork-star/grok-bot-hq-inbox';
 const RELAY = 'https://ntfy.sh';
+
+// Headless checks must not touch the live inbox. navigator.webdriver (Playwright / Puppeteer /
+// Headless Chrome) and window.__HQ_BLOCK_NTFY both count. Real iPad Safari is neither.
+export function ntfyBlocked() {
+  try {
+    if (globalThis.__HQ_BLOCK_NTFY) return true;
+    const nav = globalThis.navigator;
+    if (!nav) return false;
+    if (nav.webdriver) return true;
+    if (/Headless/i.test(nav.userAgent || '')) return true;
+  } catch (e) {}
+  return false;
+}
+function relayFetch(url, opts) {
+  const u = typeof url === 'string' ? url : '';
+  if (ntfyBlocked() && /ntfy\.sh/i.test(u)) {
+    return Promise.resolve({ ok: false, status: 0, text: async () => '', json: async () => null });
+  }
+  return globalThis.fetch(url, opts);
+}
 const INBOX_TOPIC = 'hqin_fzBxIcY6ogUeBH0F8ziL4j6ngcEZ4mld';
 const INBOX_PUB = {"kty":"EC","crv":"P-256","x":"z0ZG58n1mbb7yy0m4A4gqjxWAJ59Qq37Zw3Bn6nVEBQ","y":"W2tdYXFuAE_Y-q9P44DpwynBHUTSD7pAffCo_5vY37M"};
 const DEV = 'hq.device';
@@ -51,7 +71,7 @@ export async function send({ to, text, sentAt, shot, office, direct, mid: fixedM
       if (withShot) msg.shot = shot;
       if (direct) msg.direct = direct; // HQ #63: { bot } = 1:1 Direct tab; the box answers as that teammate, never files it for Grok Bot
       if (office) msg.office = office; // HQ #59: { near, bot, line } so the box's triage + reply match what the iPad already did
-      const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+      const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
       if (!r.ok) throw new Error('relay ' + r.status);
     };
     const useShot = typeof shot === 'string' && shot.startsWith('data:image/') && shot.length < SHOT_MAX;
@@ -71,7 +91,7 @@ export async function fetchReplies() {
   const out = [];
   try {
     const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}/json?poll=1&since=all`);
+    const r = await relayFetch(`${RELAY}/${d.topic}/json?poll=1&since=all`);
     if (!r.ok) return out;
     for (const line of (await r.text()).split('\n')) {
       if (!line.trim()) continue;
@@ -93,7 +113,7 @@ export async function fetchReplies() {
 export async function fetchInboxFeed() {
   try {
     const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}_inbox/json?poll=1&since=all`, { cache: 'no-store' });
+    const r = await relayFetch(`${RELAY}/${d.topic}_inbox/json?poll=1&since=all`, { cache: 'no-store' });
     if (!r.ok) return null;
     const lines = (await r.text()).split('\n').filter(l => l.trim()).reverse();
     for (const line of lines) {
@@ -113,7 +133,7 @@ export async function fetchInboxFeed() {
 export async function fetchBankFeed() {
   try {
     const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}_bank/json?poll=1&since=all`, { cache: 'no-store' });
+    const r = await relayFetch(`${RELAY}/${d.topic}_bank/json?poll=1&since=all`, { cache: 'no-store' });
     if (!r.ok) return null;
     const lines = (await r.text()).split('\n').filter(l => l.trim()).reverse();
     for (const line of lines) {
@@ -136,7 +156,7 @@ export async function requestRefresh(kind) {
     const d = await device();
     const msg = { v: 2, type: 'refresh', kind: String(kind).slice(0, 20), mid: 'rf' + randomId(9), ts: new Date().toISOString(),
       device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
-    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
     return r.ok;
   } catch (e) { return false; }
 }
@@ -148,7 +168,7 @@ export async function hello() {
     const d = await device();
     const msg = { v: 2, type: 'hello', mid: 'hl' + randomId(9), ts: new Date().toISOString(),
       device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
-    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
     return r.ok;
   } catch (e) { return false; }
 }
@@ -166,13 +186,13 @@ let workId = null;
 export async function fetchWorkFeed() {
   try {
     const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}_work/json?poll=1&since=latest`, { cache: 'no-store' });
+    const r = await relayFetch(`${RELAY}/${d.topic}_work/json?poll=1&since=latest`, { cache: 'no-store' });
     if (!r.ok) return null;
     const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) return null;
     const m = JSON.parse(line); if (m.event !== 'message') return null;
     if (m.id === workId) return { id: m.id, same: true };
     let body = m.message;
-    if (m.attachment?.url) { const a = await fetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
+    if (m.attachment?.url) { const a = await relayFetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
     const p = await open(JSON.parse(body), d.priv);
     if (p.type !== 'work' || !p.bots) return null;
     workId = m.id; return { id: m.id, feed: p };
@@ -188,7 +208,7 @@ export async function requestPick({ bot, id, issue, picks }) {
     const msg = { v: 2, type: 'pick', bot: String(bot).slice(0, 30), id: String(id).slice(0, 60), issue: issue || null,
       picks: (picks || []).map(String).slice(0, 12), mid: 'pk' + randomId(9), ts: new Date().toISOString(),
       device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
-    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
     return r.ok;
   } catch (e) { return false; }
 }
@@ -200,13 +220,13 @@ let chatId = null;
 export async function fetchChatFeed() {
   try {
     const d = await device();
-    const r = await fetch(`${RELAY}/${d.topic}_chat/json?poll=1&since=latest`, { cache: 'no-store' });
+    const r = await relayFetch(`${RELAY}/${d.topic}_chat/json?poll=1&since=latest`, { cache: 'no-store' });
     if (!r.ok) return null;
     const line = (await r.text()).split('\n').filter(l => l.trim()).pop(); if (!line) return null;
     const m = JSON.parse(line); if (m.event !== 'message') return null;
     if (m.id === chatId) return { id: m.id, same: true };
     let body = m.message;
-    if (m.attachment?.url) { const a = await fetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
+    if (m.attachment?.url) { const a = await relayFetch(m.attachment.url, { cache: 'no-store' }); if (!a.ok) return null; body = await a.text(); }
     const p = await open(JSON.parse(body), d.priv);
     if (p.type !== 'office-chat' || !Array.isArray(p.items)) return null;
     chatId = m.id; return { id: m.id, feed: p };
@@ -217,7 +237,7 @@ export async function fetchChatFeed() {
 // (real Printful + Tapstitch ideas + small thumbnails; newest only). Returns { id, feed } | { id, same: true } | null.
 let swipeId = null;
 export let swipeStatus = '';
-const withTimeout = (u, ms) => fetch(u, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined });
+const withTimeout = (u, ms) => relayFetch(u, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined });
 // force = the wall still has no deck: re-read even if we've already seen this message id (HQ #87)
 export async function fetchSwipeDeck(force = false) {
   let d;
@@ -250,7 +270,7 @@ export async function sendSwipes(items) {
   try {
     const d = await device();
     const msg = { v: 2, type: 'swipe', mid: 'sw' + randomId(9), items: items.slice(0, 40), ts: new Date().toISOString(), device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
-    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
     return r.ok;
   } catch (e) { return false; }
 }
@@ -271,7 +291,7 @@ export async function sendSuggest({ text, cardId = null, deck = null, mid: fixed
       device: { id: d.id, topic: d.topic, pub: d.pubJwk },
     };
     if (!msg.text) return { ok: false, mid, error: 'empty' };
-    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    const r = await relayFetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
     return { ok: r.ok, mid };
   } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 80) }; }
 }
