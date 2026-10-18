@@ -946,8 +946,9 @@ function staticHits() {
   hits.push({ kind: 'board', poly: quadY(0, 7.62, 13.9, 0.75, 2.85) });       // boardY frame
   hits.push({ kind: 'status', poly: quadY(0, 3.0, 7.2, 0.95, 2.7) });          // boardY frame
   hits.push({ kind: 'whiteboard', poly: quadX(0, 4.6, 8.4, 0.95, 2.55) });    // painted frame, not the wall above it
-  // design wall: front of the cork board (plus the DESIGN WALL header) and the shelf under it
-  hits.push({ kind: 'design', poly: quadY(6.582, 15.3, 20.2, 0.8, 2.62) });
+  // design wall: cork face, the DESIGN WALL bar (drawn on the plane just above it), and the shelf
+  hits.push({ kind: 'design', poly: quadY(6.582, 15.3, 20.2, 0.8, 2.5) });
+  hits.push({ kind: 'design', poly: quadY(6.4, 15.5, 17.4, 2.345, 2.62) });
   hits.push({ kind: 'design', poly: [P(15.8, 6.65, 0.62), P(19.7, 6.65, 0.62), P(19.7, 7.1, 0.62), P(15.8, 7.1, 0.62)] });
   hits.push({ kind: 'design', poly: quadY(7.1, 15.8, 19.7, 0, 0.62) });
   // warehouse pit: sunken floor, the opening, the painted walls, the cutaway edges, and the sign
@@ -1041,7 +1042,7 @@ cv.addEventListener('pointermove', e => {
 });
 const endPtr = e => { const was = ptrs.has(e.pointerId); ptrs.delete(e.pointerId); if (!was) return;
   if (drag && drag.moved && ptrs.size === 0) { wish.px = cam.px + Math.max(-900, Math.min(900, velX)) * 0.22; wish.py = cam.py + Math.max(-900, Math.min(900, velY)) * 0.22; clampWish(); velX = velY = 0; }
-  if (drag && !drag.moved && e.type === 'pointerup') tap(e.clientX, e.clientY);
+  if (drag && !drag.moved && e.type === 'pointerup') { e.preventDefault(); tap(e.clientX, e.clientY); }
   if (ptrs.size < 2) pinch = null; if (ptrs.size === 0) { drag = null; if (e.pointerType !== 'mouse') hoverId = null; } };
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
 cv.addEventListener('wheel', e => { e.preventDefault(); noteInput(); const z0 = wish.zoom; wish.zoom = clampZ(wish.zoom * (e.deltaY < 0 ? 1.08 : 0.925)); const k = wish.zoom / z0; wish.px *= k; wish.py *= k; cam.px = wish.px; cam.py = wish.py; clampWish(); }, { passive: false });
@@ -1060,10 +1061,13 @@ function openHit(h) {
 
 // ---------- modal cards ----------
 const modal = $('#modal'), cardBody = $('#cardBody');
-function openCard(html) { cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); }
+let openedAt = 0;
+function openCard(html) { cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); openedAt = performance.now(); }
 function closeCard() { modal.classList.add('hidden'); }
 $('#cardX').onclick = closeCard;
-modal.addEventListener('click', e => { if (e.target === modal) closeCard(); });
+// A tap opens the card on pointerup. The same gesture then delivers a click, which lands on
+// the dimmed backdrop when the desk is outside the card and would close it immediately.
+modal.addEventListener('click', e => { if (e.target === modal && performance.now() - openedAt > 400) closeCard(); });
 cardBody.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
