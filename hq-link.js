@@ -38,6 +38,14 @@ function relayFetch(url, opts) {
 const INBOX_TOPIC = 'hqin_fzBxIcY6ogUeBH0F8ziL4j6ngcEZ4mld';
 const INBOX_PUB = {"kty":"EC","crv":"P-256","x":"z0ZG58n1mbb7yy0m4A4gqjxWAJ59Qq37Zw3Bn6nVEBQ","y":"W2tdYXFuAE_Y-q9P44DpwynBHUTSD7pAffCo_5vY37M"};
 const DEV = 'hq.device';
+// Instant wake (Oct 17): always-on relay (tools/hq-wake-relay.mjs, hosted off the box) that pings Grok Bot the moment a
+// chat message is on the relay, even while Grok Bot's box is asleep. It gets only the message id, never the text.
+// Empty = off (the GitHub Action check every 5 min and the box bridge still deliver).
+export const WAKE_URL = '';
+function wake(mid) {
+  if (!WAKE_URL) return;
+  try { fetch(WAKE_URL, { method: 'POST', mode: 'cors', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mid }) }).catch(() => {}); } catch (e) {}
+}
 
 (function cleanupOldSetup() { // v1 used a per-device GitHub key; drop it
   try { localStorage.removeItem('hq.key'); } catch (e) {}
@@ -76,10 +84,11 @@ export async function send({ to, text, sentAt, shot, office, direct, mid: fixedM
     };
     const useShot = typeof shot === 'string' && shot.startsWith('data:image/') && shot.length < SHOT_MAX;
     if (useShot) {
-      try { await post(true); return { status: 'delivered', ref: mid, shot: true }; }
+      try { await post(true); wake(mid); return { status: 'delivered', ref: mid, shot: true }; }
       catch (e) { /* relay refused the big one: fall through to text-only (same mid, bridge de-dupes) */ }
     }
     await post(false);
+    wake(mid);
     return { status: 'delivered', ref: mid, shot: false };
   } catch (e) {
     return { status: 'failed', error: e.message, shot: false };

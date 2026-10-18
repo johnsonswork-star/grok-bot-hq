@@ -398,18 +398,36 @@ function singleWatch() {
 const HEARTBEAT = `${DIR}/bridge.heartbeat`, POLL_MS = +process.env.HQ_POLL_MS || 5000, SWEEP_MS = 20000; // 5 s = ntfy.sh's sustained anonymous rate (1 request / 5 s)
 const beat = (extra = {}) => { try { fs.writeFileSync(HEARTBEAT, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), ...extra }) + '\n'); } catch {} };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// One receive cycle: open the relay stream from <last handled id> and read it for at most CYCLE_MS, then close it.
+// Messages arrive within ~0.3 s while the box is awake, and no read can hang: the AbortController always fires.
+// (The old forever-stream hung silently; a stream that is reopened every 15 s cannot.) Backlog since <last> comes
+// first on every reopen, so nothing is lost between cycles. ~4 requests/min, well under ntfy.sh's anonymous limit.
+const CYCLE_MS = +process.env.HQ_CYCLE_MS || 15000;
 async function pollOnce(c, priv, st) {
-  const r = await fetch(`${RELAY}/${c.inboxTopic}/json?poll=1&since=${st.last || '12h'}`, { signal: AbortSignal.timeout(NET_MS) });
-  if (!r.ok) throw new Error('relay ' + r.status);
-  const lines = (await r.text()).split('\n').filter(l => l.trim());
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), CYCLE_MS);
   let n = 0;
-  for (const l of lines) {
-    let m; try { m = JSON.parse(l); } catch { continue; }
-    if (m.event !== 'message' || !m.id) continue;
-    n++;
-    try { await handle(m, priv, st); } catch (e) { log('file error', e.message); }
-    st.last = m.id; if (m.time) st.lastTime = Math.max(st.lastTime || 0, m.time); saveState(st); // move past it either way: the mid claim was released if filing failed, and the next 12h catch-up (`once`) can retry
-  }
+  try {
+    const r = await fetch(`${RELAY}/${c.inboxTopic}/json?since=${st.last || '12h'}`, { signal: ac.signal });
+    if (!r.ok) throw new Error('relay ' + r.status);
+    beat({ last: st.last, open: true });
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;) {
+      let chunk; try { chunk = await rd.read(); } catch (e) { if (ac.signal.aborted) break; throw e; }
+      if (chunk.done) break;
+      buf += dec.decode(chunk.value, { stream: true });
+      let i; while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1); if (!line.trim()) continue;
+        let m; try { m = JSON.parse(line); } catch { continue; }
+        if (m.event !== 'message' || !m.id) continue;
+        n++;
+        try { await handle(m, priv, st); } catch (e) { log('file error', e.message); }
+        st.last = m.id; if (m.time) st.lastTime = Math.max(st.lastTime || 0, m.time); saveState(st); // move past it either way: the mid claim was released if filing failed, and the next 12h catch-up (`once`) can retry
+        beat({ last: st.last });
+        await publishSeen(st.lastTime);
+      }
+    }
+  } catch (e) { if (!ac.signal.aborted) throw e; }
+  finally { clearTimeout(timer); try { ac.abort(); } catch {} }
   return n;
 }
 async function watch() {
@@ -417,7 +435,7 @@ async function watch() {
   const c = cfg(), priv = await importPriv(c.privJwk);
   officeChat().then(O => O?.startPublisher(log)); // HQ #59: unified office chat feed -> <device topic>_chat (pushes only on change)
   const st = state();
-  log('polling relay every', POLL_MS / 1000, 's (since', st.last || '12h', ')');
+  log('receiving: relay stream reopened every', CYCLE_MS / 1000, 's (since', st.last || '12h', ')');
   let fails = 0, lastSweep = 0;
   for (;;) {
     const t0 = Date.now();
@@ -425,10 +443,10 @@ async function watch() {
       const n = await pollOnce(c, priv, st);
       if (fails) log('relay poll ok again after', fails, 'failure(s)');
       fails = 0; beat({ last: st.last, n });
-      if (n) { log('poll handled', n, 'message(s) in', Date.now() - t0, 'ms'); await publishSeen(st.lastTime); }
+      if (n) log('cycle handled', n, 'message(s)');
     } catch (e) { if (fails++ < 3 || fails % 15 === 0) log('relay poll error', e.name === 'TimeoutError' ? 'timeout' : e.message, `(x${fails})`); }
     if (Date.now() - lastSweep > SWEEP_MS) { lastSweep = Date.now(); try { await sweepComments(); } catch (e) { log('sweep error', String(e.message).slice(0, 160)); } }
-    await sleep(Math.max(500, POLL_MS - (Date.now() - t0)));
+    await sleep(fails ? Math.min(10000, 1000 * fails) : Date.now() - t0 < 2000 ? 3000 : 200); // a stream that closes at once must not become a tight loop
   }
 }
 
