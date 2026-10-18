@@ -3,7 +3,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{font-variant-ligatures:none;font-feature-settings:"liga" 0,"clig" 0;margin:0;height:100%;overflow:hidden;background:#1a1410;color:var(--ink);font-family:var(--px);
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#c{position:fixed;inset:0;width:100vw;height:100vh;touch-action:none;image-rendering:pixelated;display:block}
+#c{position:fixed;inset:0;width:100vw;height:100vh;touch-action:none;image-rendering:auto;display:block}
 .hud{position:fixed;z-index:5}
 .hidden{display:none!important}
 .panel{background:linear-gradient(180deg,#f8ecd2 0%,#efdcb6 100%);border:3px solid #24160b;box-shadow:0 0 0 2px #fff4dc inset,0 0 0 4px #b98e57 inset,0 3px 0 #6b4426,5px 6px 0 rgba(0,0,0,.45);border-radius:7px}
@@ -45,7 +45,7 @@ button{font-family:var(--px);cursor:pointer}
 .tabs .mini{flex:none}
 #chatBody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 8px;font-size:14px;line-height:1.25;-webkit-user-select:text;user-select:text}
 .msg{display:flex;gap:7px;margin-bottom:7px;align-items:flex-start}
-.av{width:22px;height:22px;flex:none;border:2px solid #000;border-radius:3px;image-rendering:pixelated}
+.av{width:22px;height:22px;flex:none;border:2px solid #000;border-radius:3px;image-rendering:auto}
 .msg .n{font-weight:700;color:#ffd27a;font-size:13px}.msg .n i{font-weight:400;color:#bba98a;font-style:normal;font-size:11px}
 .msg.me .n{color:#9fe08f}
 .msg .x{word-wrap:break-word;overflow-wrap:anywhere}
