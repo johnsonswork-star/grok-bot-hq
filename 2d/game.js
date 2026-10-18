@@ -1110,12 +1110,19 @@ const load = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } 
 let entries = load(LOG), office = load(FEED);
 const saveLog = () => { try { localStorage.setItem(LOG, JSON.stringify(entries.slice(-120))); } catch (e) {} };
 const tms = a => typeof a === 'number' ? a : Date.parse(a) || 0;
+function hqAck(id, text) {
+  const mm = /^g-(.+)$/.exec(String(id || '')); if (!mm) return null;
+  const n = String(text || '').match(/HQ #(\d+)/); return n ? { mid: mm[1], n: n[1] } : null;
+}
 function merged() {
   const mine = new Set(entries.filter(e => e.kind === 'me').map(e => e.ref || e.mid)), ids = new Set(entries.filter(e => e.kind === 'bot').map(e => String(e.id)));
-  const out = entries.filter(e => !e.thread).map(e => ({ ...e, t: tms(e.at) }));
+  const acks = new Map();
+  for (const o of office) { const a = hqAck(o.id, o.text); if (a) acks.set(a.mid, a.n); }
+  const stamp = m => { const n = m.ackN || acks.get(m.mid) || acks.get(m.ref); return n ? { ...m, ackN: n } : m; };
+  const out = entries.filter(e => !e.thread).map(e => stamp({ ...e, t: tms(e.at) }));
   for (const o of office) {
-    if (o.thread) continue;
-    if (o.kind === 'chris') { if (o.mid && mine.has(o.mid)) continue; out.push({ kind: 'me', text: o.text, to: o.to, t: tms(o.at), status: 'delivered' }); continue; }
+    if (o.thread || hqAck(o.id, o.text)) continue;
+    if (o.kind === 'chris') { if (o.mid && mine.has(o.mid)) continue; out.push(stamp({ kind: 'me', text: o.text, to: o.to, t: tms(o.at), status: 'delivered', mid: o.mid })); continue; }
     if (ids.has(String(o.id))) continue;
     out.push({ kind: 'bot', from: o.name, who: o.who, bot: o.bot, text: o.text, t: tms(o.at), sub: o.kind });
   }
@@ -1129,12 +1136,12 @@ function renderChat() {
   let html = '';
   if (tab === 'chat') {
     const list = merged();
+    const meStatus = m => m.status === 'sending' ? 'sending' : m.status === 'failed' ? `<a href="#" class="retry" data-mid="${esc(m.mid)}">failed, tap to retry</a>` : m.ackN ? `Michael has it (#${esc(m.ackN)})` : 'delivered';
     html = list.length ? list.map(m => {
-      if (m.kind === 'me') { const st = m.status === 'sending' ? ' \u00b7 sending' : m.status === 'failed' ? ` \u00b7 <a href="#" class="retry" data-mid="${esc(m.mid)}">failed, tap to retry</a>` : '';
-        return `<div class="msg me"><img class="av" src="${avatar('chris')}"><div><div class="n">Chris <i>to ${esc(m.to === OFFICE_TO || m.to === 'Office' ? 'the office' : m.to === 'Grok Bot' ? 'Michael' : m.to || '')} \u00b7 ${hm(m.t)}${st}</i></div><div class="x">${esc(m.text)}</div></div></div>`; }
+      if (m.kind === 'me') return `<div class="msg me"><img class="av" src="${avatar('chris')}"><div><div class="n">Chris <i>to ${esc(m.to === OFFICE_TO || m.to === 'Office' ? 'the office' : m.to === 'Grok Bot' ? 'Michael' : m.to || '')} \u00b7 ${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div><div class="mst" style="font-size:11px;opacity:.8">${meStatus(m)}</div></div></div>`;
       const s = stOf(m.who) || stOf(m.from) || (/grok/i.test(m.from || '') ? stOf('grok') : null);
       return `<div class="msg"><img class="av" src="${avatar(s?.id || 'grok')}"><div><div class="n">${esc(s?.name || m.from || 'Grok Bot')} <i>${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div></div></div>`;
-    }).join('') : `<div class="empty">No chat yet on this iPad. Messages go to the same HQ chat as the 3D office. Michael (Grok Bot) answers real orders.</div>`;
+    }).join('') : `<div class="empty">No messages yet. Send one and Michael answers here.</div>`;
   } else if (tab === 'assign') {
     html = people.map(p => { const st = stateOf(p.s.id); return `<div class="row" data-id="${p.s.id}"><span class="sdot" style="background:${st === 'active' ? '#6fd35b' : st === 'blocked' ? '#d8432f' : '#f2b33d'}"></span><img class="av" src="${avatar(p.s.id)}"><div><b>${esc(p.s.name)}</b> \u00b7 ${esc(p.s.bot)}<small>${esc(lineOf(p.s.id))}</small></div></div>`; }).join('');
   } else {
@@ -1175,11 +1182,16 @@ async function pollChat() {
   if (polling || document.hidden) return; polling = true;
   try {
     const f = await link.fetchChatFeed();
-    if (f?.feed?.items) { office = f.feed.items.slice(-150); try { localStorage.setItem(FEED, JSON.stringify(office)); } catch (e) {} }
-    const reps = await link.fetchReplies(); let ch = !!f?.feed;
+    let chSoon = false;
+    if (f?.feed?.items) {
+      office = f.feed.items.slice(-150); try { localStorage.setItem(FEED, JSON.stringify(office)); } catch (e) {}
+      for (const o of office) if (noteAck(o.id, o.text)) chSoon = true;
+    }
+    const reps = await link.fetchReplies(); let ch = !!f?.feed || chSoon;
     const have = new Set(entries.filter(e => e.kind === 'bot').map(e => String(e.id)));
     for (const r of reps) {
       if (r.type === 'ack') { const m = entries.find(x => x.mid === r.mid); if (m && !m.issue) { m.issue = r.issue; m.route = r.route || m.route; ch = true; } continue; }
+      if (hqAck(r.id, r.text)) { if (noteAck(r.id, r.text)) ch = true; continue; }
       if (r.thread || have.has(String(r.id))) continue;
       entries.push({ kind: 'bot', id: r.id, from: r.from, text: r.text, at: r.at, ref: r.ref }); ch = true;
       const who = stOf(r.who) || (/grok/i.test(r.from || '') ? stOf('grok') : null); if (who && byId(who.id)) say(who.id, r.text, 6);
@@ -1188,8 +1200,41 @@ async function pollChat() {
   } catch (e) {}
   polling = false;
 }
+function noteAck(id, text) {
+  const a = hqAck(id, text); if (!a) return false;
+  const m = entries.find(x => x.kind === 'me' && (x.mid === a.mid || x.ref === a.mid));
+  if (!m || m.ackN === a.n) return false;
+  m.ackN = a.n; return true;
+}
 setInterval(() => { if (Date.now() < fastUntil) pollChat(); }, 5000);
 setInterval(pollChat, 25000);
+const HELLO_AT = 'hq.helloAt', HELLO_MS = 24 * 60 * 60 * 1000;
+async function sayHello() {
+  let last = 0; try { last = Number(localStorage.getItem(HELLO_AT)) || 0; } catch (e) {}
+  if (last && Date.now() - last < HELLO_MS) return;
+  if (await link.hello()) { try { localStorage.setItem(HELLO_AT, String(Date.now())); } catch (e) {} }
+}
+let chatEs = null, esWait = 0;
+async function openReplyStream() {
+  clearTimeout(esWait);
+  if (chatEs) { try { chatEs.close(); } catch (e) {} chatEs = null; }
+  let topic = ''; try { topic = await link.deviceTopic(); } catch (e) {}
+  if (!topic) { esWait = setTimeout(openReplyStream, 4000); return; }
+  let es; try { es = new EventSource('https://ntfy.sh/' + topic + ',' + topic + '_chat/sse'); }
+  catch (e) { esWait = setTimeout(openReplyStream, 3000); return; }
+  chatEs = es;
+  es.onmessage = () => pollChat();
+  es.onerror = () => {
+    if (chatEs !== es) return;
+    chatEs = null; try { es.close(); } catch (e) {}
+    esWait = setTimeout(openReplyStream, 3000);
+  };
+}
+function onChatVisible() { if (!document.hidden) pollChat(); }
+document.addEventListener('visibilitychange', onChatVisible);
+window.addEventListener('pageshow', onChatVisible);
+sayHello();
+openReplyStream();
 
 // ---------- live data: tasks.json, work feed, design deck, version ----------
 async function loadTasks() { try { const r = await fetch('../tasks.json?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) { busyFile = (await r.json()).busy || {}; renderChat(); } } catch (e) {} }
