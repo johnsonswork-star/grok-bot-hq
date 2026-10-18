@@ -28,9 +28,13 @@ export function ntfyBlocked() {
   } catch (e) {}
   return false;
 }
-function relayFetch(url, opts) {
+function relayBlocked(url) {
   const u = typeof url === 'string' ? url : '';
-  if (ntfyBlocked() && /ntfy\.sh/i.test(u)) {
+  // Headless checks must not reach the live inbox or the wake relay.
+  return /ntfy\.sh/i.test(u) || /(^|\.)val\.run\b/i.test(u);
+}
+function relayFetch(url, opts) {
+  if (ntfyBlocked() && relayBlocked(url)) {
     return Promise.resolve({ ok: false, status: 0, text: async () => '', json: async () => null });
   }
   return globalThis.fetch(url, opts);
@@ -43,8 +47,9 @@ const DEV = 'hq.device';
 // Empty = off (the GitHub Action check every 5 min and the box bridge still deliver).
 export const WAKE_URL = 'https://grokbothq--fb701e76caaf11f1848b1607ee4eb77e.web.val.run/';
 function wake(mid) {
-  if (!WAKE_URL || ntfyBlocked()) return; // headless tests never wake Grok Bot
-  try { fetch(WAKE_URL, { method: 'POST', mode: 'cors', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mid }) }).catch(() => {}); } catch (e) {}
+  if (!WAKE_URL) return;
+  // relayFetch refuses ntfy.sh and *.val.run while ntfyBlocked(), so headless tests never wake Grok Bot.
+  try { relayFetch(WAKE_URL, { method: 'POST', mode: 'cors', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mid }) }).catch(() => {}); } catch (e) {}
 }
 
 (function cleanupOldSetup() { // v1 used a per-device GitHub key; drop it

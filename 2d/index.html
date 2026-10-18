@@ -28,6 +28,8 @@
 
 <div id="tr" class="hud">
   <div class="trrow">
+    <button id="rotL" class="pillbtn rot" type="button" aria-label="Rotate left" title="Rotate left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.2V9h4.8"/></svg></button>
+    <button id="rotR" class="pillbtn rot" type="button" aria-label="Rotate right" title="Rotate right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.2V9h-4.8"/></svg></button>
     <button id="needsBtn" class="needs">! Needs you (<span id="needsN">0</span>)</button>
   </div>
   <div id="clock" class="panel"><span class="ci">&#9719;</span><div><div id="clkT">--:--</div><div id="clkD">---</div></div></div>
@@ -63,7 +65,7 @@
   </div>
 </div>
 <div id="toast" class="hidden"></div>
-<div id="padHint" class="hidden">Controller: D-pad pick a desk, A open, B close, Y Needs you, X chat</div>
+<div id="padHint" class="hidden">Controller: D-pad pick a desk, A open, B close, Y Needs you, X chat, L1 and R1 rotate</div>
 
 <script type="module" src="game.js"></script>
 </body>
