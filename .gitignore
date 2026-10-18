@@ -1,5 +1,7 @@
 node_modules/
 shots/
+# 2d/shots: public go-live screenshots for HQ chat (public UI only, no personal data). Root shots/ stays ignored.
+!2d/shots/
 *.log
 tools/hq-webhook.env
 tools/slack.env

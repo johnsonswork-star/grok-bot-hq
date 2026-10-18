@@ -1589,6 +1589,15 @@ function merged() {
 const stOf = who => STATIONS.find(s => s.id === who) || STATIONS.find(s => who && s.name.toLowerCase() === String(who).toLowerCase());
 const hm = t => new Date(t).toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
 let chatStick = true;
+// Screenshots in replies: a line that is only an https image URL (or a markdown image ![alt](url)) shows as a
+// tappable thumbnail; tap opens it big in the card. Everything else stays plain escaped text, as before.
+const IMG_LINE = /^\s*(?:!\[([^\]]*)\]\()?(https:\/\/[^\s()<>"]+\.(?:png|jpe?g|gif|webp)(?:\?[^\s()<>"]*)?)\)?\s*$/i;
+function richText(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  if (!lines.some(l => IMG_LINE.test(l))) return esc(text);
+  return lines.map(l => { const m = l.match(IMG_LINE); return m ? `<a href="${esc(m[2])}" class="shot" data-img="${esc(m[2])}"><img src="${esc(m[2])}" alt="${esc(m[1] || 'screenshot')}" loading="lazy"></a>` : esc(l); })
+    .join('<br>').replace(/(<\/a>)(?:<br>)+(?=<a href)/g, '$1'); // consecutive shots sit side by side
+}
 function renderChat() {
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   $('#chatForm').classList.toggle('hidden', tab !== 'chat');
@@ -1599,7 +1608,7 @@ function renderChat() {
     html = list.length ? list.map(m => {
       if (m.kind === 'me') return `<div class="msg me"><img class="av" src="${avatar('chris')}"><div><div class="n">Chris <i>to ${esc(m.to === OFFICE_TO || m.to === 'Office' ? 'the office' : m.to === 'Grok Bot' ? 'Michael' : m.to || '')} \u00b7 ${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div><div class="mst">${meStatus(m)}</div></div></div>`;
       const s = stOf(m.who) || stOf(m.from) || (/grok/i.test(m.from || '') ? stOf('grok') : null);
-      return `<div class="msg"><img class="av" src="${avatar(s?.id || 'grok')}"><div><div class="n">${esc(s?.name || m.from || 'Grok Bot')} <i>${hm(m.t)}</i></div><div class="x">${esc(m.text)}</div></div></div>`;
+      return `<div class="msg"><img class="av" src="${avatar(s?.id || 'grok')}"><div><div class="n">${esc(s?.name || m.from || 'Grok Bot')} <i>${hm(m.t)}</i></div><div class="x">${richText(m.text)}</div></div></div>`;
     }).join('') : `<div class="empty">No messages yet. Send one and Michael answers here.</div>`;
   } else if (tab === 'assign') {
     html = people.map(p => { const st = stateOf(p.s.id); return `<div class="row" data-id="${p.s.id}"><span class="sdot" style="background:${st === 'active' ? '#6fd35b' : st === 'blocked' ? '#d8432f' : '#f2b33d'}"></span><img class="av" src="${avatar(p.s.id)}"><div><b>${esc(p.s.name)}</b> \u00b7 ${esc(p.s.bot)}<small>${esc(lineOf(p.s.id))}</small></div></div>`; }).join('');
@@ -1627,6 +1636,7 @@ if (window.ResizeObserver) new ResizeObserver(() => scrollChatEnd(false)).observ
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scrollChatEnd(true); });
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { const was = tab; tab = b.dataset.tab; renderChat(); if (tab === 'chat' && was !== 'chat') scrollChatEnd(true); } });
 chatBody.addEventListener('click', e => {
+  const sh = e.target.closest('a.shot'); if (sh) { e.preventDefault(); openCard(`<a href="${esc(sh.dataset.img)}" target="_blank" rel="noopener"><img class="shotbig" src="${esc(sh.dataset.img)}" alt="screenshot"></a>`, true); return; }
   const r = e.target.closest('a.retry'); if (r) { e.preventDefault(); const m = entries.find(x => x.mid === r.dataset.mid); if (m) deliver(m); return; }
   const row = e.target.closest('.row'); if (!row) return;
   if (row.dataset.id) { sel = row.dataset.id; openWorker(row.dataset.id); } else if (row.dataset.needs) openNeeds();
