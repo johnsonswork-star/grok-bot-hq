@@ -91,14 +91,15 @@ button{font-family:var(--px);cursor:pointer}
 .sw-chips{display:flex;flex-wrap:wrap;gap:6px}
 .sw-chip{background:#2a1c10;color:#fbe9c6;border-radius:99px;padding:4px 10px;font-size:14px}
 .trainer-again{min-height:56px;padding:10px 16px;font-size:20px;font-weight:700;background:#f2b33d;color:#24160b;border:3px solid #24160b;border-radius:8px}
-.trainer-actions{display:flex;gap:10px;margin-top:12px}
+.trainer-actions{display:flex;gap:10px;margin-top:12px;position:sticky;bottom:0;z-index:2;background:linear-gradient(180deg,rgba(248,236,210,0),#f8ecd2 28%);padding:10px 0 2px}
 .trainer-actions button{flex:1;min-height:76px;font-size:28px;font-weight:700;border:3px solid #24160b;border-radius:8px;box-shadow:0 4px 0 #24160b}
 .trainer-actions button:disabled{opacity:.45}
 #trainerSkip{background:#e07a7a;color:#2a100c}
 #trainerUndo{background:#3a4150;color:#f3e6c4;flex:0.8}
 #trainerKeep{background:#6fcf8c;color:#102814}
 @media (max-width:900px),(orientation:portrait){
-  .trainer-stage{grid-template-columns:1fr}
+  .trainer-stage{grid-template-columns:1fr;justify-items:center}
+  #trainerArt{max-height:42vh;width:auto;max-width:100%}
   #trainerBody h2{font-size:28px}
   .trainer-actions button{font-size:22px;min-height:68px}
 }
@@ -114,6 +115,7 @@ button{font-family:var(--px);cursor:pointer}
 #card .grid img{width:100%;aspect-ratio:1;object-fit:cover;display:block;margin-bottom:3px}
 #card .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 #card .btns button{background:var(--wood);color:#fbe9c6;border:2px solid var(--wood2);border-radius:4px;padding:10px 14px;font-size:17px;min-height:48px}
+#card .btns button.needs{background:linear-gradient(180deg,#e2533c,#b8321f);color:#fff;border-color:#5a140c}
 #toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);z-index:30;background:#2b2118;color:#fbe9c6;border:2px solid #000;border-radius:5px;padding:7px 14px;font-size:15px}
 #padHint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;background:rgba(36,26,18,.85);color:#fbe9c6;padding:5px 12px;border-radius:5px;font-size:13px}
 @media (max-width:820px){#projects{min-width:200px}#chat{width:46vw}}

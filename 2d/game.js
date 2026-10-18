@@ -839,7 +839,7 @@ function textPass(t) {
     cc.fillStyle = '#16120e'; cc.font = `700 8px ${FONT}`;
     cc.fillText('TEAM BOARD', 6, 7);
     cc.textAlign = 'right'; cc.fillText(String(PROJECTS.length), Wd - 8, 7); cc.textAlign = 'left';
-    const rows = Math.ceil(PROJECTS.length / 2), colW = (Wd - 10) / 2, rowH = 12;
+    const rows = Math.ceil(PROJECTS.length / 2), colW = (Wd - 10) / 2, rowH = 10;
     const pill = p => p.status === 'done' || p.status === 'active' ? 'LIVE' : p.status === 'waiting' ? 'REVIEW' : p.status === 'blocked' ? 'STUCK' : 'HOLD';
     const colr = p => p.status === 'done' || p.status === 'active' ? '#7dff78' : p.status === 'waiting' ? '#f0c14a' : p.status === 'blocked' ? '#ff8a72' : '#e7d7b0';
     PROJECTS.forEach((p, i) => {
@@ -1101,7 +1101,7 @@ function openWorker(id) {
 }
 function openProjects() {
   const rows = PROJECTS.map(p => `<button type="button" class="biz" data-act="biz" data-id="${esc(p.id)}"><span class="ico">${p.icon || ''}</span><span class="t">${esc(p.title)}</span>${stTag(p.status)}</button>`).join('');
-  openCard(`<h2>Team Board</h2><div class="sub">${PROJECTS.length} businesses. Updated ${esc(UPDATED)}.</div>${rows}<div class="btns"><button type="button" data-act="needs">Needs you (${needsCount()})</button></div>`, true);
+  openCard(`<h2>Team Board</h2><div class="sub">${PROJECTS.length} businesses. Updated ${esc(UPDATED)}.</div><div class="btns"><button type="button" class="needs" data-act="needs">Needs you (${needsCount()})</button></div>${rows}`, true);
 }
 function needsFor(p) {
   const ids = new Set([p.id, ...(p.needIds || [])]);
@@ -1154,7 +1154,7 @@ function openBusiness(id) {
     <h3>LINKS</h3>${linkHtml}
     <h3>NEEDS YOU</h3>${needHtml}
     <div class="note">${esc(PAUSE_NOTE)}</div>
-    <div class="btns"><button type="button" data-act="ask" data-text="About ${esc(p.title)}: ">Ask Michael</button><button type="button" data-act="needs">All needs you</button><button type="button" data-act="projects">Team Board</button></div>`, true);
+    <div class="btns"><button type="button" data-act="ask" data-text="About ${esc(p.title)}: ">Ask Michael</button><button type="button" class="needs" data-act="needs">All needs you</button><button type="button" data-act="projects">Team Board</button></div>`, true);
 }
 function needsHtml() {
   const L = liveNeeds();
