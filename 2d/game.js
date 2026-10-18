@@ -1152,6 +1152,7 @@ function merged() {
 }
 const stOf = who => STATIONS.find(s => s.id === who) || STATIONS.find(s => who && s.name.toLowerCase() === String(who).toLowerCase());
 const hm = t => new Date(t).toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
+let chatStick = true;
 function renderChat() {
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   $('#chatForm').classList.toggle('hidden', tab !== 'chat');
@@ -1169,11 +1170,26 @@ function renderChat() {
   } else {
     html = [...NEEDS, ...liveNeeds()].map(n => `<div class="row" data-needs="1"><span class="sdot" style="background:#d8432f"></span><div><b>${esc(n.title)}</b>${n.due ? ` <span class="st blocked">by ${esc(n.due)}</span>` : ''}<small>${esc(n.do || '')}</small></div></div>`).join('') || '<div class="empty">Nothing needs you right now.</div>';
   }
-  const atBottom = chatBody.scrollHeight - chatBody.scrollTop - chatBody.clientHeight < 40;
   chatBody.innerHTML = noDash(html);
-  if (tab === 'chat' && (atBottom || !renderChat.did)) chatBody.scrollTop = chatBody.scrollHeight; renderChat.did = true;
+  // HQ #125: always land on the newest message. A new message (or the first render) forces it;
+  // plain re-renders keep the bottom pinned unless Chris scrolled up to read older lines.
+  let key = '';
+  if (tab === 'chat') { const l = merged(); const z = l[l.length - 1]; key = l.length + '|' + (z ? z.t + '|' + (z.text || '').length + '|' + (z.status || '') : ''); }
+  const fresh = tab === 'chat' && key !== renderChat.key; if (tab === 'chat') renderChat.key = key;
+  scrollChatEnd(fresh || !renderChat.did); renderChat.did = true;
 }
-document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { tab = b.dataset.tab; renderChat(); } });
+function scrollChatEnd(force) {
+  if (tab !== 'chat') return;
+  if (force) chatStick = true;
+  if (!chatStick) return;
+  const go = () => { if (tab === 'chat' && chatStick) chatBody.scrollTop = chatBody.scrollHeight; };
+  go(); requestAnimationFrame(() => { go(); requestAnimationFrame(go); }); setTimeout(go, 250);
+}
+chatBody.addEventListener('scroll', () => { if (tab === 'chat') chatStick = chatBody.scrollHeight - chatBody.scrollTop - chatBody.clientHeight < 60; }, { passive: true });
+chatBody.addEventListener('load', () => scrollChatEnd(false), true); // avatars finish loading and push the list taller
+if (window.ResizeObserver) new ResizeObserver(() => scrollChatEnd(false)).observe(chatBody); // size toggle, keyboard
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scrollChatEnd(true); });
+document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { const was = tab; tab = b.dataset.tab; renderChat(); if (tab === 'chat' && was !== 'chat') scrollChatEnd(true); } });
 chatBody.addEventListener('click', e => {
   const r = e.target.closest('a.retry'); if (r) { e.preventDefault(); const m = entries.find(x => x.mid === r.dataset.mid); if (m) deliver(m); return; }
   const row = e.target.closest('.row'); if (!row) return;
@@ -1191,11 +1207,11 @@ async function deliver(m) {
 $('#chatForm').addEventListener('submit', e => {
   e.preventDefault(); const text = chatIn.value.trim(); if (!text) return; chatIn.value = '';
   const m = { kind: 'me', to: chatTo.value, text, at: Date.now(), mid: rid(), status: 'sending' };
-  entries.push(m); saveLog(); tab = 'chat'; renderChat(); deliver(m);
+  entries.push(m); saveLog(); tab = 'chat'; renderChat(); scrollChatEnd(true); deliver(m);
   if (m.to === 'Grok Bot') say('grok', 'Got it, looking now.', 4);
 });
 const chatBox = $('#chat'), chatOpenBtn = $('#chatOpen');
-function openChat() { chatBox.classList.remove('hidden'); chatOpenBtn.classList.add('hidden'); }
+function openChat() { chatBox.classList.remove('hidden'); chatOpenBtn.classList.add('hidden'); scrollChatEnd(true); }
 $('#chatMin').onclick = () => { chatBox.classList.add('hidden'); chatOpenBtn.classList.remove('hidden'); };
 chatOpenBtn.onclick = openChat;
 
