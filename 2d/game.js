@@ -286,6 +286,15 @@ function inPlane(c, scale, pl, K, fn) {
   c.setTransform(m[0] * scale * s, m[1] * scale * s, m[2] * scale * s, m[3] * scale * s, m[4] * scale * s + tx, m[5] * scale * s + ty);
   fn(c); c.restore();
 }
+// Same plane, composed onto the transform already on the canvas. The live view uses the camera;
+// the cached warehouse bitmap uses the floor cache. Either way the letters stay on the sign.
+function paintOnPlane(c, pl, K, fn) {
+  const m = planeM(pl[0], pl[1], pl[2], K);
+  c.save();
+  c.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  fn(c);
+  c.restore();
+}
 // Keep authored wall text left-to-right on screen. span is the world length of the text block along `right`.
 function facePlane(pl, span) {
   const [o, r, dwn] = pl;
@@ -895,7 +904,13 @@ function paintStairSign(c, up) {
   box(c, s.x0 + 0.08, s.yPost, 0, 0.1, 0.1, 2.08, '#333');
   box(c, s.x1 - 0.22, s.yPost, 0, 0.1, 0.1, 2.08, '#333');
   poly(c, quadY(s.ySign, s.x0, s.x1, 1.42, 2.08), up ? '#1f4e86' : '#1f7a3a');
-  poly(c, quadY(s.ySign + (showPosY() ? 0.01 : -0.01), s.x0 + 0.08, s.x1 - 0.08, 1.48, 2.02), up ? '#2a6cb0' : '#2a9a4a');
+  const yFace = s.ySign + (showPosY() ? 0.01 : -0.01);
+  poly(c, quadY(yFace, s.x0 + 0.08, s.x1 - 0.08, 1.48, 2.02), up ? '#2a6cb0' : '#2a9a4a');
+  // Drawn with the posts so a nearer desk, person, or pallet covers the letters too.
+  paintOnPlane(c, facePlane(PLANE_Y(s.textX, yFace, 2.0), s.span), 40, cc => {
+    cc.textBaseline = 'top'; cc.textAlign = 'center'; cc.fillStyle = '#fff'; cc.font = `700 12px ${FONT}`;
+    cc.fillText(up ? '\u2191 OFFICE' : '\u2193 WAREHOUSE', s.span * 20, 3);
+  });
 }
 function paintBench(c) {
   const b = BENCH;
@@ -1173,9 +1188,6 @@ function fontFit(c, s, w, maxPx, minPx) {
   return s;
 }
 function warehouseText(c, S) {
-  { const s = stairSignBox(); inPlane(c, S, facePlane(PLANE_Y(s.textX, s.ySign + (showPosY() ? 0.01 : -0.01), 2.0), s.span), 40, cc => {
-    cc.textBaseline = 'top'; cc.textAlign = 'center'; cc.fillStyle = '#fff'; cc.font = `700 12px ${FONT}`; cc.fillText('\u2191 OFFICE', s.span * 20, 3);
-  }); }
   if (isFar('N')) {
     for (const [x, label] of [[1.1, 'BAY 1'], [6.5, 'BAY 2'], [14.55, 'BAY 3']]) {
       inPlane(c, S, facePlane(PLANE_Y(x + 0.45, 0.02, 2.5), 1.6), 26, cc => {
@@ -1250,8 +1262,6 @@ function textPass(t, which = 'all') {
     cc.lineWidth = 1.6; const hand = (a, len) => { cc.beginPath(); cc.moveTo(r + 2, r + 2); cc.lineTo(r + 2 + Math.sin(a) * len, r + 2 - Math.cos(a) * len); cc.stroke(); };
     hand(((h % 12) + m / 60) / 12 * Math.PI * 2, 5.5); cc.lineWidth = 1; hand(m / 60 * Math.PI * 2, 8);
   });
-  // stair sign
-  { const s = stairSignBox(); inPlane(c, S, facePlane(PLANE_Y(s.textX, s.ySign + (showPosY() ? 0.01 : -0.01), 2.0), s.span), 40, cc => { cc.textBaseline = 'top'; cc.textAlign = 'center'; cc.fillStyle = '#fff'; cc.font = `700 12px ${FONT}`; cc.fillText('\u2193 WAREHOUSE', s.span * 20, 3); }); }
   // reception sign (front of the desk). Only while that face points at the camera.
   if (showPosX()) inPlane(c, S, facePlane(PLANE_X(3.11, 11.15, 0.58), 2.5), 40, cc => { cc.textBaseline = 'top'; cc.fillStyle = '#f3e3c0'; cc.font = `700 8px ${FONT}`; cc.fillText('DUNDER MIFFLIN', 4, 2); cc.font = `5px ${FONT}`; cc.fillText('RECEPTION', 4, 11); });
   // design trainer sign, above the shirts
@@ -2111,7 +2121,7 @@ let toastT = 0; function toast(s) { const el = $('#toast'); el.textContent = noD
 // ---------- boot ----------
 resize(); renderProjects(); renderChat();
 startLoop();
-document.fonts?.ready?.then(() => { /* boards redraw every frame once the font is in */ });
+document.fonts?.ready?.then(() => { baseOk.warehouse.fill(false); });
 loadTasks(); setInterval(loadTasks, 30000);
 loadWork(); setInterval(loadWork, 90000);
 loadDeck(false);
