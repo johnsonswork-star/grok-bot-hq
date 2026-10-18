@@ -1172,6 +1172,47 @@ function openChat() { chatBox.classList.remove('hidden'); chatOpenBtn.classList.
 $('#chatMin').onclick = () => { chatBox.classList.add('hidden'); chatOpenBtn.classList.remove('hidden'); };
 chatOpenBtn.onclick = openChat;
 
+// Chat size: Normal (roomy iPad default), Large, Full screen. Remembered on this device.
+const CHAT_SZ_KEY = 'hq2d.chatSize', CHAT_SZS = ['normal', 'large', 'full'];
+const chatSzLabel = sz => (sz === 'full' ? 'Full screen' : sz === 'large' ? 'Large' : 'Normal');
+const chatSzNext = sz => (sz === 'normal' ? 'Large' : sz === 'large' ? 'Full screen' : 'Normal');
+function applyChatSize(sz, persist) {
+  if (!CHAT_SZS.includes(sz)) sz = 'normal';
+  chatBox.classList.remove('sz-normal', 'sz-large', 'sz-full');
+  chatBox.classList.add('sz-' + sz);
+  const btn = $('#chatSize'), minBtn = $('#chatMin');
+  if (btn) {
+    btn.textContent = chatSzLabel(sz);
+    const tip = 'Chat size: ' + chatSzLabel(sz) + '. Tap for ' + chatSzNext(sz) + '.';
+    btn.title = tip; btn.setAttribute('aria-label', tip);
+  }
+  if (minBtn) {
+    const full = sz === 'full';
+    minBtn.textContent = full ? 'Hide' : '_';
+    minBtn.title = full ? 'Hide chat' : 'hide';
+    minBtn.setAttribute('aria-label', 'Hide chat');
+  }
+  if (persist) { try { localStorage.setItem(CHAT_SZ_KEY, sz); } catch (e) {} }
+}
+let chatSz = 'normal';
+try { chatSz = localStorage.getItem(CHAT_SZ_KEY) || 'normal'; } catch (e) {}
+applyChatSize(chatSz, false);
+const chatSizeBtn = $('#chatSize');
+if (chatSizeBtn) chatSizeBtn.onclick = e => {
+  e.stopPropagation();
+  const cur = CHAT_SZS.find(s => chatBox.classList.contains('sz-' + s)) || 'normal';
+  applyChatSize(CHAT_SZS[(CHAT_SZS.indexOf(cur) + 1) % CHAT_SZS.length], true);
+};
+function pinChatAboveKeyboard() {
+  const vv = window.visualViewport; if (!vv) return;
+  const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+  chatBox.style.setProperty('--kb', (kb > 40 ? Math.round(kb) : 0) + 'px');
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', pinChatAboveKeyboard);
+  visualViewport.addEventListener('scroll', pinChatAboveKeyboard);
+}
+
 let fastUntil = 0, polling = false;
 async function pollChat() {
   if (polling || document.hidden) return; polling = true;
