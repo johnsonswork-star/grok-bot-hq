@@ -19,48 +19,41 @@ function clothOf(card) {
 }
 function inkOf(cloth) { return cloth === '#24324f' ? '#f3efe6' : '#24324f'; }
 
-function drawTee(g, cloth, ink) {
-  g.fillStyle = 'rgba(20,12,8,.25)';
+// Garments are drawn around (0, 0). The print box is where the design sits on that garment.
+function teePath(g) {
+  g.beginPath(); g.moveTo(-64, -86); g.lineTo(64, -86); g.lineTo(112, -36); g.lineTo(72, 0); g.lineTo(52, -16); g.lineTo(52, 112); g.lineTo(-52, 112); g.lineTo(-52, -16); g.lineTo(-72, 0); g.lineTo(-112, -36); g.closePath();
+}
+function drawTee(g, cloth) {
+  g.fillStyle = 'rgba(20,12,8,.22)';
   g.beginPath(); g.moveTo(-70, -78); g.lineTo(70, -78); g.lineTo(118, -28); g.lineTo(78, 8); g.lineTo(58, -8); g.lineTo(58, 120); g.lineTo(-58, 120); g.lineTo(-58, -8); g.lineTo(-78, 8); g.lineTo(-118, -28); g.closePath(); g.fill();
-  g.fillStyle = cloth;
-  g.beginPath(); g.moveTo(-64, -86); g.lineTo(64, -86); g.lineTo(112, -36); g.lineTo(72, 0); g.lineTo(52, -16); g.lineTo(52, 112); g.lineTo(-52, 112); g.lineTo(-52, -16); g.lineTo(-72, 0); g.lineTo(-112, -36); g.closePath(); g.fill();
+  g.fillStyle = cloth; teePath(g); g.fill();
   g.strokeStyle = '#2a1c10'; g.lineWidth = 4; g.stroke();
   g.fillStyle = shadeHex(cloth, 0.82);
   g.beginPath(); g.ellipse(0, -78, 28, 16, 0, 0, Math.PI); g.fill();
-  g.fillStyle = ink;
-  g.beginPath(); g.arc(0, 10, 26, 0, Math.PI * 2); g.fill();
-  g.fillStyle = cloth;
-  g.fillRect(-6, -4, 12, 30); g.fillRect(-16, 4, 32, 10);
 }
 function drawHoodie(g, cloth, ink) {
-  drawTee(g, cloth, ink);
+  drawTee(g, cloth);
   g.fillStyle = shadeHex(cloth, 0.78);
   g.beginPath(); g.moveTo(-36, -86); g.quadraticCurveTo(0, -130, 36, -86); g.lineTo(22, -70); g.quadraticCurveTo(0, -108, -22, -70); g.closePath(); g.fill();
   g.strokeStyle = '#2a1c10'; g.lineWidth = 4; g.stroke();
-  g.strokeStyle = ink; g.lineWidth = 5; g.beginPath(); g.moveTo(0, -20); g.lineTo(0, 70); g.stroke();
+  g.strokeStyle = ink; g.lineWidth = 5; g.beginPath(); g.moveTo(0, -20); g.lineTo(0, 78); g.stroke();
 }
-function drawHat(g, cloth, ink) {
-  g.fillStyle = 'rgba(20,12,8,.25)';
+function drawHat(g, cloth) {
+  g.fillStyle = 'rgba(20,12,8,.22)';
   g.beginPath(); g.ellipse(4, 48, 120, 28, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = cloth;
   g.beginPath(); g.ellipse(0, 36, 116, 26, 0, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#2a1c10'; g.lineWidth = 4; g.stroke();
-  g.beginPath(); g.ellipse(0, -10, 78, 62, 0, Math.PI, 0); g.fill(); g.stroke();
-  g.fillStyle = ink;
-  g.beginPath(); g.arc(0, -8, 22, 0, Math.PI * 2); g.fill();
-  g.fillStyle = cloth;
-  g.fillRect(-5, -20, 10, 24); g.fillRect(-14, -12, 28, 8);
+  g.beginPath(); g.ellipse(0, -8, 78, 64, 0, Math.PI, 0); g.fill(); g.stroke();
 }
-function drawMug(g, cloth, ink) {
-  g.fillStyle = 'rgba(20,12,8,.25)';
+function drawMug(g, cloth) {
+  g.fillStyle = 'rgba(20,12,8,.22)';
   g.fillRect(-58, -68, 128, 168);
   g.fillStyle = cloth;
   g.fillRect(-70, -80, 140, 170);
   g.strokeStyle = '#2a1c10'; g.lineWidth = 4; g.strokeRect(-70, -80, 140, 170);
   g.beginPath(); g.ellipse(0, -80, 70, 18, 0, 0, Math.PI * 2); g.fillStyle = shadeHex(cloth, 1.08); g.fill(); g.stroke();
   g.beginPath(); g.ellipse(78, 0, 28, 40, 0, -Math.PI / 2, Math.PI / 2); g.stroke();
-  g.fillStyle = ink; g.font = `700 22px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('AF', 0, 10);
 }
 function shadeHex(h, f) {
   const n = parseInt(String(h).replace('#', ''), 16);
@@ -75,6 +68,104 @@ function wrap(g, text, maxW, maxLines) {
   }
   if (cur) lines.push(cur);
   return lines.slice(0, maxLines);
+}
+
+const FINISHED = new Set(['printful-photo', 'composite', 'designer', 'render']);
+const STUDIO = '#ECEAE6';
+// Fractions of the contained product photo. Wearer's left chest is the viewer's right.
+const OVERLAY = {
+  left: { x: 0.56, y: 0.22, w: 0.16, h: 0.14 },
+  full: { x: 0.28, y: 0.22, w: 0.44, h: 0.42 },
+  wrap: { x: 0.28, y: 0.32, w: 0.44, h: 0.36 },
+  front: { x: 0.32, y: 0.24, w: 0.36, h: 0.30 },
+};
+// Print boxes in garment-local pixels (the same space as the path commands).
+const PRINTS = {
+  tee: {
+    left: { x: 6, y: -44, w: 42, h: 36 },
+    full: { x: -40, y: -22, w: 80, h: 96 },
+    front: { x: -34, y: -16, w: 68, h: 72 },
+    wrap: { x: -34, y: -16, w: 68, h: 72 },
+  },
+  hoodie: {
+    left: { x: 6, y: -38, w: 42, h: 36 },
+    full: { x: -42, y: -12, w: 84, h: 100 },
+    front: { x: -36, y: -8, w: 72, h: 78 },
+    wrap: { x: -36, y: -8, w: 72, h: 78 },
+  },
+  hat: {
+    left: { x: 4, y: -54, w: 34, h: 28 },
+    full: { x: -32, y: -58, w: 64, h: 40 },
+    front: { x: -32, y: -58, w: 64, h: 40 },
+    wrap: { x: -32, y: -58, w: 64, h: 40 },
+  },
+  mug: {
+    left: { x: 10, y: -6, w: 36, h: 36 },
+    full: { x: -46, y: -18, w: 92, h: 72 },
+    front: { x: -40, y: -12, w: 80, h: 64 },
+    wrap: { x: -46, y: -16, w: 92, h: 70 },
+  },
+};
+const BOUNDS = {
+  tee: { l: -122, t: -96, r: 122, b: 128 },
+  hoodie: { l: -122, t: -136, r: 122, b: 128 },
+  hat: { l: -126, t: -78, r: 126, b: 82 },
+  mug: { l: -82, t: -104, r: 114, b: 108 },
+};
+
+function ready(im) { return !!(im && im.complete && im.naturalWidth); }
+function artSrc(c) { return c ? (c.art || c.designImg || c.designD || '') : ''; }
+function placeKey(placement) {
+  const p = String(placement || '').toLowerCase();
+  if (p.includes('left')) return 'left';
+  if (p.includes('full')) return 'full';
+  if (p.includes('wrap')) return 'wrap';
+  return 'front';
+}
+function kindOf(c) {
+  const k = String(c?.product_type || '').toLowerCase();
+  if (k.includes('mug')) return 'mug';
+  if (k.includes('hat') || k.includes('cap')) return 'hat';
+  if (k.includes('hood')) return 'hoodie';
+  return 'tee';
+}
+function containRect(nw, nh, w, h) {
+  if (!(nw > 0) || !(nh > 0) || !(w > 0) || !(h > 0)) return { x: 0, y: 0, w: 0, h: 0 };
+  const s = Math.min(w / nw, h / nh);
+  const dw = nw * s, dh = nh * s;
+  return { x: (w - dw) / 2, y: (h - dh) / 2, w: dw, h: dh };
+}
+function containDraw(g, im, x, y, w, h) {
+  const r = containRect(im.naturalWidth, im.naturalHeight, w, h);
+  if (r.w < 0.5 || r.h < 0.5) return;
+  g.imageSmoothingEnabled = true;
+  g.drawImage(im, x + r.x, y + r.y, r.w, r.h);
+}
+function fitText(g, text, box) {
+  const raw = String(text || '').trim();
+  if (!raw || box.w < 4 || box.h < 4) return;
+  let size = Math.max(6, Math.floor(Math.min(box.w * 0.42, box.h * 0.4, 32)));
+  let lines = [];
+  for (; size >= 6; size--) {
+    g.font = `700 ${size}px ${FONT}`;
+    const all = wrap(g, raw, Math.max(4, box.w - 4), 12);
+    lines = all.slice(0, 4);
+    const lh = size + 1;
+    const tooWide = lines.some(ln => g.measureText(ln).width > box.w - 2);
+    const tooTall = lines.length * lh > box.h - 2;
+    if (!tooWide && !tooTall && all.length <= lines.length) break;
+  }
+  if (size < 6) size = 6;
+  g.font = `700 ${size}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const lh = size + 1;
+  const total = lines.length * lh;
+  let y = box.y + (box.h - total) / 2 + lh / 2;
+  for (const ln of lines) {
+    g.fillText(ln, box.x + box.w / 2, y);
+    y += lh;
+  }
 }
 
 export function createTrainer({ esc, noDash, sendSwipes, toast }) {
@@ -118,38 +209,74 @@ export function createTrainer({ esc, noDash, sendSwipes, toast }) {
     if (ok && out.length) setTimeout(flush, 400);
   }
   function rememberImages(d) {
-    for (const c of d?.cards || []) if (c.d && !imgs.has(c.id)) {
-      const im = new Image(); im.onload = () => { if (isOpen() && curId() === c.id) paint(c); }; im.src = c.d; imgs.set(c.id, im);
+    const load = (c, key, src) => {
+      if (!src || imgs.has(key)) return;
+      const im = new Image();
+      im.onload = () => { if (isOpen() && curId() === c.id) paint(c); };
+      im.src = src;
+      imgs.set(key, im);
+    };
+    for (const c of d?.cards || []) {
+      load(c, c.id, c.d);
+      load(c, c.id + '#art', artSrc(c));
     }
   }
+  function drawBlank(g, c, w, h, aim) {
+    g.fillStyle = STUDIO;
+    g.fillRect(0, 0, w, h);
+    if (!c) return;
+    const kind = kindOf(c);
+    const b = BOUNDS[kind];
+    const cloth = clothOf(c), ink = inkOf(cloth);
+    const gw = b.r - b.l, gh = b.b - b.t;
+    const s = (Math.min(w, h) * 0.9) / Math.max(gw, gh);
+    g.save();
+    g.translate(w / 2, h / 2);
+    g.scale(s, s);
+    g.translate(-(b.l + b.r) / 2, -(b.t + b.b) / 2);
+    if (kind === 'mug') drawMug(g, cloth);
+    else if (kind === 'hat') drawHat(g, cloth);
+    else if (kind === 'hoodie') drawHoodie(g, cloth, ink);
+    else drawTee(g, cloth);
+    const box = PRINTS[kind][placeKey(c.placement)];
+    g.beginPath();
+    g.rect(box.x, box.y, box.w, box.h);
+    g.clip();
+    if (ready(aim)) containDraw(g, aim, box.x, box.y, box.w, box.h);
+    else { g.fillStyle = ink; fitText(g, noDash(c.design || c.title || ''), box); }
+    g.restore();
+  }
   function paint(c) {
-    const art = body?.querySelector('#trainerArt'); if (!art) return;
+    const art = body?.querySelector('#trainerArt');
+    if (!art) return;
+    const frame = art.parentElement;
+    const w = Math.round(frame?.clientWidth || 0);
+    const h = Math.round(frame?.clientHeight || 0);
+    if (w < 2 || h < 2) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const bw = Math.max(1, Math.round(w * dpr));
+    const bh = Math.max(1, Math.round(h * dpr));
+    if (art.width !== bw) art.width = bw;
+    if (art.height !== bh) art.height = bh;
     const g = art.getContext('2d');
-    const w = art.width, h = art.height;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const im = c && imgs.get(c.id);
-    g.clearRect(0, 0, w, h);
-    if (im && im.complete && im.naturalWidth) {
-      g.fillStyle = '#1b2a4a'; g.fillRect(0, 0, w, h);
-      const s = Math.min(w / im.naturalWidth, h / im.naturalHeight);
-      const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
-      g.drawImage(im, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    const aim = c && imgs.get(c.id + '#art');
+    const photoOnly = ready(im) && (!c || FINISHED.has(String(c.mock || '')) || !artSrc(c));
+    g.fillStyle = STUDIO;
+    g.fillRect(0, 0, w, h);
+    if (photoOnly) { containDraw(g, im, 0, 0, w, h); return; }
+    if (ready(im)) {
+      const rect = containRect(im.naturalWidth, im.naturalHeight, w, h);
+      g.imageSmoothingEnabled = true;
+      g.drawImage(im, rect.x, rect.y, rect.w, rect.h);
+      if (ready(aim)) {
+        const f = OVERLAY[placeKey(c.placement)] || OVERLAY.front;
+        containDraw(g, aim, rect.x + rect.w * f.x, rect.y + rect.h * f.y, rect.w * f.w, rect.h * f.h);
+      }
       return;
     }
-    if (!c) { g.fillStyle = '#efe6d2'; g.fillRect(0, 0, w, h); return; }
-    const cloth = clothOf(c), ink = inkOf(cloth);
-    g.fillStyle = '#efe6d2'; g.fillRect(0, 0, w, h);
-    g.fillStyle = 'rgba(36,28,16,.06)'; g.fillRect(0, 0, w, 18);
-    g.save(); g.translate(w / 2, h / 2 + 8);
-    const kind = String(c.product_type || '');
-    if (kind.includes('mug')) drawMug(g, cloth, ink);
-    else if (kind.includes('hat')) drawHat(g, cloth, ink);
-    else if (kind.includes('hood')) drawHoodie(g, cloth, ink);
-    else drawTee(g, cloth, ink);
-    g.restore();
-    const label = noDash(c.design || c.title || '');
-    g.fillStyle = '#2a1c10'; g.font = `700 20px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    const lines = wrap(g, label, w - 36, 2);
-    lines.forEach((ln, i) => g.fillText(ln, w / 2, h - 36 + i * 22));
+    drawBlank(g, c, w, h, aim);
   }
   function chip(text) { return `<span class="sw-chip">${esc(noDash(text))}</span>`; }
   function render() {
@@ -161,18 +288,22 @@ export function createTrainer({ esc, noDash, sendSwipes, toast }) {
     const chips = c ? [c.supplier, c.product, c.blank, c.technique, c.placement].filter(Boolean).map(chip).join('') : '';
     const kept = Object.entries(st?.decisions || {}).filter(([, v]) => v.d === 'keep').map(([id]) => byId(id)?.title).filter(Boolean);
     body.innerHTML = noDash(`
-      <div class="trainer-kicker">ATOM FAMILY CLOTHING</div>
-      <h2>Design Trainer</h2>
+      <div class="trainer-head">
+        <div class="trainer-kicker">ATOM FAMILY CLOTHING</div>
+        <h2>Design Trainer</h2>
+      </div>
       <p class="trainer-meta">${esc(meta)}</p>
       <p class="trainer-src">${esc(deck?.label || 'Atom Family design deck')}</p>
       <div class="trainer-stage">
-        <canvas id="trainerArt" width="480" height="560" aria-label="Design card"></canvas>
+        <div class="trainer-frame"><canvas id="trainerArt" aria-label="Design card"></canvas></div>
         <div class="sw-copy">
           ${c ? `<h3>${esc(c.title || '')}</h3><p>${esc(c.pitch || c.design || '')}</p><div class="sw-chips">${chips}</div>`
             : `<h3>All caught up</h3><p>${kept.length ? 'Kept: ' + esc(kept.slice(0, 8).join(', ')) + (kept.length > 8 ? `, +${kept.length - 8} more` : '') : 'Nothing kept this round.'}</p><button type="button" id="trainerAgain" class="trainer-again">NEW ROUND</button>`}
         </div>
       </div>`);
     paint(c);
+    watchFrame();
+    requestAnimationFrame(() => { if (isOpen()) paint(byId(curId())); });
     const skip = document.querySelector('#trainerSkip'), keep = document.querySelector('#trainerKeep'), undo = document.querySelector('#trainerUndo');
     if (skip) skip.disabled = !c;
     if (keep) keep.disabled = !c;
@@ -234,6 +365,22 @@ export function createTrainer({ esc, noDash, sendSwipes, toast }) {
   document.querySelector('#trainerUndo')?.addEventListener('click', () => act('undo'));
   root?.addEventListener('click', e => { if (e.target === root && performance.now() - openedAt > 400) close(); });
   setDeck(null);
+  let frameObs = null, seenFrame = '', paintRaf = 0;
+  function watchFrame() {
+    const frame = body?.querySelector('.trainer-frame');
+    if (!frame || typeof ResizeObserver === 'undefined') return;
+    frameObs?.disconnect();
+    seenFrame = '';
+    frameObs = new ResizeObserver(() => {
+      if (!isOpen()) return;
+      const sig = Math.round(frame.clientWidth) + 'x' + Math.round(frame.clientHeight);
+      if (frame.clientWidth < 2 || sig === seenFrame) return;
+      seenFrame = sig;
+      if (paintRaf) cancelAnimationFrame(paintRaf);
+      paintRaf = requestAnimationFrame(() => { paintRaf = 0; if (isOpen()) paint(byId(curId())); });
+    });
+    frameObs.observe(frame);
+  }
   document.fonts?.ready?.then(() => { if (isOpen()) paint(byId(curId())); });
   return { open, close, isOpen, setDeck, act, curId };
 }

@@ -1380,18 +1380,23 @@ openReplyStream();
 // ---------- live data: tasks.json, work feed, design deck, version ----------
 async function loadTasks() { try { const r = await fetch('../tasks.json?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) { busyFile = (await r.json()).busy || {}; renderChat(); } } catch (e) {} }
 async function loadWork() { try { const r = await link.fetchWorkFeed(); if (r?.feed) { workFeed = r.feed; renderProjects(); if (tab !== 'chat') renderChat(); } } catch (e) {} }
+let deckToken = 0, deckBusy = 0;
 async function loadDeck(force) {
+  const token = deckToken;
+  deckBusy++;
+  let fed = false;
   try {
     const r = await link.fetchSwipeDeck(force);
-    if (r?.feed?.cards) {
+    if (token === deckToken && r?.feed?.cards) {
       deck = r.feed; deckImgs.length = 0;
       for (const c of deck.cards.filter(c => c.d).slice(0, 3)) { const im = new Image(); im.src = c.d; deckImgs.push(im); }
       trainer.setDeck(deck);
-      return true;
+      fed = true;
     }
   } catch (e) {}
-  trainer.setDeck(null);
-  return false;
+  finally { deckBusy--; }
+  if (!fed && token === deckToken) trainer.setDeck(null);
+  return fed;
 }
 let build = null;
 async function checkVersion() {
@@ -1483,4 +1488,4 @@ window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('c
       return { kind: h.kind, id: h.id || null, rect: [x, y, x2 - x, y2 - y] };
     }
     return { kind: h.kind, id: h.id || null, poly: h.poly.map(p => legToCSS(p[0], p[1])) };
-  }), openNeeds, openWorker, openProjects, openBusiness, openDesign, state: () => ({ PS, BW, BH, DPR, n: people.length, cam: { ...cam } }) };
+  }), openNeeds, openWorker, openProjects, openBusiness, openDesign, setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, state: () => ({ PS, BW, BH, DPR, n: people.length, cam: { ...cam } }) };
