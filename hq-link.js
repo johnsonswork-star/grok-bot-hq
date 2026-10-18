@@ -141,6 +141,23 @@ export async function requestRefresh(kind) {
   } catch (e) { return false; }
 }
 
+// 2D office page load: encrypted hello so the bridge registers this device for the shared chat feed.
+// The page sends it once, then again only after 24 hours (it stores the timestamp).
+export async function hello() {
+  try {
+    const d = await device();
+    const msg = { v: 2, type: 'hello', mid: 'hl' + randomId(9), ts: new Date().toISOString(),
+      device: { id: d.id, topic: d.topic, pub: d.pubJwk } };
+    const r = await fetch(`${RELAY}/${INBOX_TOPIC}`, { method: 'POST', body: JSON.stringify(await seal(msg, INBOX_PUB)) });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+// This device's ntfy reply topic (the page also listens on `<topic>_chat`).
+export async function deviceTopic() {
+  try { return (await device()).topic || ''; } catch (e) { return ''; }
+}
+
 // Live work on desk screens (HQ #31): per-bot step / file / last output lines / design thumbnails, encrypted on the box
 // to THIS device's key and posted to `<topic>_work` (tools/work-live.mjs). Big feeds (thumbnails) ride as an ntfy
 // attachment (kept ~3 h, CORS-open); the iPad keeps its last copy. Only the newest message is read (since=latest),
