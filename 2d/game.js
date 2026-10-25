@@ -303,6 +303,24 @@ function facePlane(pl, span) {
   if (b[0] >= a[0] - 1e-4) return pl;
   return [[o[0] + r[0] * span, o[1] + r[1] * span, o[2] + r[2] * span], [-r[0], -r[1], -r[2]], dwn];
 }
+// Like facePlane, and also keep local "down" pointing down the screen so a word cannot flip upside down.
+function planeUpright(pl, span, height) {
+  let [o, r, dwn] = pl;
+  const delta = (origin, dir) => {
+    const a = P(origin[0], origin[1], origin[2]);
+    const b = P(origin[0] + dir[0], origin[1] + dir[1], origin[2] + dir[2]);
+    return [b[0] - a[0], b[1] - a[1]];
+  };
+  if (delta(o, r)[0] < -1e-4) {
+    o = [o[0] + r[0] * span, o[1] + r[1] * span, o[2] + r[2] * span];
+    r = [-r[0], -r[1], -r[2]];
+  }
+  if (height > 0 && delta(o, dwn)[1] < -1e-4) {
+    o = [o[0] + dwn[0] * height, o[1] + dwn[1] * height, o[2] + dwn[2] * height];
+    dwn = [-dwn[0], -dwn[1], -dwn[2]];
+  }
+  return [o, r, dwn];
+}
 
 // ---------- hash noise ----------
 const hsh = (x, y) => { let n = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; n = (n ^ (n >> 13)) * 1274126177; return ((n ^ (n >> 16)) >>> 0) / 4294967295; };
@@ -897,20 +915,61 @@ function stairSignBox() {
   const yPost = ST.y0 - 0.42;
   const x0 = ST.x0 + 0.06, x1 = ST.x1 - 0.06;
   const ySign = showPosY() ? yPost + 0.16 : yPost + 0.02;
-  return { yPost, x0, x1, ySign, textX: x0 + 0.1, span: x1 - x0 - 0.2 };
+  const textX = x0 + (x1 - x0) * 0.34;
+  return { yPost, x0, x1, ySign, textX, span: x1 - textX - 0.08, z0: 1.42, z1: 2.08 };
+}
+// Office stairs go DOWN to the warehouse. Warehouse stairs go UP to the office.
+// The chevron uses world height, so the point stays down or up on every facing.
+function stairCue(up = floor === 'warehouse') {
+  const s = stairSignBox();
+  const y = s.ySign + (showPosY() ? 0.03 : -0.03);
+  const xMid = s.x0 + (s.x1 - s.x0) * 0.18;
+  const half = (s.x1 - s.x0) * 0.12;
+  const zTip = up ? s.z1 - 0.1 : s.z0 + 0.1;
+  const zTail = up ? s.z1 - 0.42 : s.z0 + 0.42;
+  return {
+    up,
+    word: up ? 'UP' : 'DOWN',
+    dest: up ? 'OFFICE' : 'WAREHOUSE',
+    tip: [xMid, y, zTip],
+    tail: [xMid, y, zTail],
+    left: [xMid - half, y, zTail],
+    right: [xMid + half, y, zTail],
+  };
+}
+function paintStairChevron(c, cue) {
+  c.save();
+  c.strokeStyle = '#fff';
+  c.lineWidth = 3.1;
+  c.lineJoin = 'round';
+  c.lineCap = 'round';
+  const a = P(...cue.left), b = P(...cue.tip), d = P(...cue.right);
+  c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.lineTo(d[0], d[1]); c.stroke();
+  c.restore();
 }
 function paintStairSign(c, up) {
   const s = stairSignBox();
-  box(c, s.x0 + 0.08, s.yPost, 0, 0.1, 0.1, 2.08, '#333');
-  box(c, s.x1 - 0.22, s.yPost, 0, 0.1, 0.1, 2.08, '#333');
-  poly(c, quadY(s.ySign, s.x0, s.x1, 1.42, 2.08), up ? '#1f4e86' : '#1f7a3a');
-  const yFace = s.ySign + (showPosY() ? 0.01 : -0.01);
-  poly(c, quadY(yFace, s.x0 + 0.08, s.x1 - 0.08, 1.48, 2.02), up ? '#2a6cb0' : '#2a9a4a');
-  // Drawn with the posts so a nearer desk, person, or pallet covers the letters too.
-  paintOnPlane(c, facePlane(PLANE_Y(s.textX, yFace, 2.0), s.span), 40, cc => {
-    cc.textBaseline = 'top'; cc.textAlign = 'center'; cc.fillStyle = '#fff'; cc.font = `700 12px ${FONT}`;
-    cc.fillText(up ? '\u2191 OFFICE' : '\u2193 WAREHOUSE', s.span * 20, 3);
+  const cue = stairCue(up);
+  box(c, s.x0 + 0.12, s.yPost, 0, 0.1, 0.1, s.z1, '#333');
+  box(c, s.x1 - 0.24, s.yPost, 0, 0.1, 0.1, s.z1, '#333');
+  poly(c, quadY(s.ySign, s.x0, s.x1, s.z0, s.z1), up ? '#1f4e86' : '#1f7a3a');
+  const yFace = s.ySign + (showPosY() ? 0.012 : -0.012);
+  poly(c, quadY(yFace, s.x0 + 0.08, s.x1 - 0.08, s.z0 + 0.06, s.z1 - 0.06), up ? '#2a6cb0' : '#2a9a4a');
+  // UP: words under the chevron. DOWN: words over the chevron, so the point and the word agree.
+  const top = s.z1 - 0.06;
+  const height = s.z1 - s.z0 - 0.12;
+  const pl = planeUpright(PLANE_Y(s.textX, yFace + (showPosY() ? 0.008 : -0.008), top), s.span, height);
+  paintOnPlane(c, pl, 46, cc => {
+    const Wd = s.span * 46, Hd = height * 46;
+    cc.textAlign = 'center'; cc.textBaseline = 'middle'; cc.fillStyle = '#fff';
+    const wordPx = Math.max(16, Math.floor(Hd * 0.46));
+    const word = fontFit(cc, cue.word, Wd - 4, wordPx, 12);
+    cc.fillText(word, Wd / 2, Hd * 0.32);
+    const destPx = Math.max(11, Math.floor(Hd * 0.3));
+    const dest = fontFit(cc, cue.dest, Wd - 4, destPx, 9);
+    cc.fillText(dest, Wd / 2, Hd * 0.7);
   });
+  paintStairChevron(c, cue);
 }
 function paintBench(c) {
   const b = BENCH;
@@ -972,7 +1031,7 @@ function drawWarehouseShell(c) {
     box(c, 0, GY, 0, GX, 0.4, WALL, '#2f2216', { r: lip.r, l: lip.l, ol: false });
     blockWallY(c, GY, 0, GX);
     windowY(c, GY, 1.05, 3.55, 1.25, 2.45);
-    boardY(c, GY, 6.2, 12.5, 0.8, 2.6, '#22303a');
+    boardY(c, GY, 6.15, 12.55, 0.32, 2.9, '#1c2830');
     windowY(c, GY, 15.1, 18.5, 1.25, 2.45);
   } else floorLipY(c, GY, 0, GX, -0.45, 0, '#4b4a47', '#8a8680');
 }
@@ -1195,20 +1254,40 @@ function warehouseText(c, S) {
       });
     }
   }
-  if (isFar('S')) inPlane(c, S, facePlane(PLANE_Y(6.45, GY - 0.02, 2.48), 5.7), 34, cc => {
-    const Wd = 5.7 * 34;
-    cc.textBaseline = 'middle';
-    cc.fillStyle = '#f2b33d'; cc.fillRect(2, 2, Wd - 4, 16);
-    cc.fillStyle = '#16120e'; cc.font = `700 12px ${FONT}`; cc.fillText('PAPER STOCK', 8, 10);
-    cc.fillStyle = '#f3ead2'; cc.fillRect(2, 20, Wd - 4, 58);
-    cc.fillStyle = '#1d1a16'; cc.font = `700 10px ${FONT}`;
-    cc.fillText('Reams on the pallets', 8, 32);
-    cc.fillText('Cartons on the racks', 8, 48);
-    cc.fillText('Tap a pallet for the list', 8, 64);
-  });
+  if (isFar('S')) paintOnpadBoard(c, S);
   const yB = showPosY() ? BENCH.y + BENCH.d : BENCH.y;
   inPlane(c, S, facePlane(PLANE_Y(BENCH.x + 0.12, yB, 0.68), 2.2), 32, cc => {
     cc.textBaseline = 'middle'; cc.fillStyle = '#f7f1e4'; cc.font = `700 10px ${FONT}`; cc.fillText('STOCK DESK', 2, 8);
+  });
+}
+// South-wall screen. The live OnPad iframe sits on this same quad (see syncOnpadFrame).
+function paintOnpadBoard(c, S) {
+  const x0 = 6.5, x1 = 12.2, zTop = 2.74, y = GY - 0.02;
+  const span = x1 - x0, height = 2.28;
+  inPlane(c, S, planeUpright(PLANE_Y(x0, y, zTop), span, height), 40, cc => {
+    const Wd = span * 40, Hd = height * 40;
+    cc.textBaseline = 'middle';
+    cc.fillStyle = '#f2b33d'; cc.fillRect(0, 0, Wd, 18);
+    cc.fillStyle = '#16120e'; cc.font = `700 13px ${FONT}`; cc.fillText('ONPAD', 8, 9);
+    cc.textAlign = 'right'; cc.fillText('JOBSITE MAP', Wd - 8, 9); cc.textAlign = 'left';
+    cc.fillStyle = '#c5dcb0'; cc.fillRect(0, 18, Wd, Hd - 18);
+    cc.strokeStyle = 'rgba(255,255,255,.9)'; cc.lineWidth = 4; cc.lineCap = 'round';
+    cc.beginPath();
+    cc.moveTo(0, 46); cc.lineTo(Wd, 62);
+    cc.moveTo(36, 18); cc.lineTo(58, Hd);
+    cc.moveTo(Wd * 0.62, 18); cc.lineTo(Wd * 0.46, Hd);
+    cc.stroke();
+    cc.strokeStyle = '#e6d7a8'; cc.lineWidth = 3;
+    cc.beginPath(); cc.moveTo(0, Hd * 0.62); cc.lineTo(Wd, Hd * 0.5); cc.stroke();
+    const pin = (px, py, col) => {
+      cc.fillStyle = col; cc.beginPath(); cc.arc(px, py, 6, 0, Math.PI * 2); cc.fill();
+      cc.fillStyle = '#fff'; cc.beginPath(); cc.arc(px, py, 2.2, 0, Math.PI * 2); cc.fill();
+    };
+    pin(Wd * 0.3, Hd * 0.46, '#e2533c');
+    pin(Wd * 0.58, Hd * 0.6, '#2a6cb0');
+    pin(Wd * 0.76, Hd * 0.4, '#e2533c');
+    cc.fillStyle = '#1d140c'; cc.font = `700 11px ${FONT}`;
+    cc.fillText('Tap to open', 8, Hd - 12);
   });
 }
 function textPass(t, which = 'all') {
@@ -1365,7 +1444,7 @@ function addStairHits() {
     pushPoly('stairs', [P(s.x + s.w, s.y, s.top), P(s.x + s.w, s.y + s.d, s.top), P(s.x + s.w, s.y + s.d, 0), P(s.x + s.w, s.y, 0)], key);
   }
   const s = stairSignBox();
-  pushPoly('stairs', quadY(s.ySign, s.x0, s.x1, 1.42, 2.08), anchorKey((s.x0 + s.x1) / 2, s.ySign, 1.75));
+  pushPoly('stairs', quadY(s.ySign, s.x0, s.x1, s.z0, s.z1), anchorKey((s.x0 + s.x1) / 2, s.ySign, 1.75));
 }
 function addStockHits() {
   for (const [x, y, w] of RACKS) {
@@ -1384,7 +1463,7 @@ function addStockHits() {
   if (isFar('N')) {
     for (const x0 of [1.1, 6.5, 14.55]) pushPoly('warehouse', quadY(0.01, x0, x0 + 2.5, 0.1, 2.2), anchorKey(x0 + 1.25, 0, 1.1));
   }
-  if (isFar('S')) pushPoly('warehouse', quadY(GY, 6.2, 12.5, 0.8, 2.6), anchorKey(9.35, GY, 1.7));
+  if (isFar('S')) pushPoly('onpadmap', quadY(GY, 6.15, 12.55, 0.32, 2.9), anchorKey(9.35, GY, 1.6));
 }
 function deskTop(d) { return d.reception ? 0.89 : 0.62; }
 function addDeskHits(p) {
@@ -1574,6 +1653,7 @@ function frame(ts) {
     facing = prev;
     textPass(t, 'screen');
   } else textPass(t);
+  syncOnpadFrame();
   requestAnimationFrame(frame);
 }
 function startLoop() { if (rafOn || document.hidden) return; rafOn = true; lastFrame = 0; requestAnimationFrame(frame); }
@@ -1639,6 +1719,8 @@ function tap(x, y) {
   openHit(h);
 }
 function openHit(h) {
+  if (h.kind === 'onpadmap') { closeCard(); openOnpad(); return; }
+  if (onpadOpen) closeOnpad();
   if (h.kind === 'worker') { sel = h.id; openWorker(h.id); }
   else if (h.kind === 'board' || h.kind === 'status' || h.kind === 'whiteboard') openProjects();
   else if (h.kind === 'design') openDesign();
@@ -1649,7 +1731,10 @@ function openHit(h) {
 // ---------- modal cards ----------
 const modal = $('#modal'), cardBody = $('#cardBody');
 let openedAt = 0;
-function openCard(html, wide) { $('#card').classList.toggle('wide', !!wide); cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); openedAt = performance.now(); }
+function openCard(html, wide) {
+  if (onpadOpen) closeOnpad();
+  $('#card').classList.toggle('wide', !!wide); cardBody.innerHTML = noDash(html); modal.classList.remove('hidden'); openedAt = performance.now();
+}
 function closeCard() { modal.classList.add('hidden'); }
 $('#cardX').onclick = closeCard;
 // A tap opens the card on pointerup. The same gesture then delivers a click, which lands on
@@ -1744,7 +1829,76 @@ function openNeeds() {
   openCard(`<h2>Needs you (${needsCount()})</h2><div class="sub">Things waiting on you. Answer in chat and Michael picks it up.</div>${needsHtml()}<div class="btns"><button data-act="ask" data-text="">Answer in chat</button><button data-act="projects">Team Board</button></div>`);
 }
 const trainer = createTrainer({ esc, noDash, sendSwipes: items => link.sendSwipes(items), toast: s => toast(s) });
-function openDesign() { closeCard(); trainer.open(); if (!(deck?.cards || []).length) loadDeck(true); }
+function openDesign() { closeCard(); if (onpadOpen) closeOnpad(); trainer.open(); if (!(deck?.cards || []).length) loadDeck(true); }
+
+// ---------- OnPad wall screen (warehouse south wall) ----------
+// Same origin as this office on GitHub Pages, so the iframe shares OnPad's storage and Google sign-in.
+const ONPAD_URL = 'https://johnsonswork-star.github.io/onpad/';
+const ONPAD_FACE = { x0: 6.5, x1: 12.2, z0: 0.5, z1: 2.26 };
+let onpadOpen = false, onpadOpenedAt = 0, onpadArmed = false;
+function armOnpad() {
+  const f = $('#onpadFrame');
+  if (!f || onpadArmed) return;
+  onpadArmed = true;
+  f.src = ONPAD_URL;
+}
+function onpadIsOpen() { return onpadOpen; }
+function facingOnpadBoard() {
+  return floor === 'warehouse' && !floorAnim && !rotAnim && isFar('S');
+}
+function syncOnpadFrame() {
+  const f = $('#onpadFrame');
+  if (!f) return;
+  if (onpadOpen) {
+    f.classList.add('onpad-open');
+    f.classList.remove('onpad-live');
+    f.style.transform = 'none';
+    return;
+  }
+  f.classList.remove('onpad-open');
+  const show = facingOnpadBoard();
+  f.classList.toggle('onpad-live', show);
+  if (!show) return;
+  armOnpad();
+  const y = GY - 0.02;
+  const { x0, x1, z0, z1 } = ONPAD_FACE;
+  let tl = projectCSS(x0, y, z1), tr = projectCSS(x1, y, z1), bl = projectCSS(x0, y, z0);
+  if (tr[0] < tl[0]) {
+    tl = projectCSS(x1, y, z1);
+    tr = projectCSS(x0, y, z1);
+    bl = projectCSS(x1, y, z0);
+  }
+  const w = 960, h = 340;
+  const a = (tr[0] - tl[0]) / w, b = (tr[1] - tl[1]) / w;
+  const c = (bl[0] - tl[0]) / h, d = (bl[1] - tl[1]) / h;
+  f.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, ${tl[0]}, ${tl[1]})`;
+}
+function openOnpad() {
+  armOnpad();
+  try { chatIn.blur(); } catch (e) {}
+  onpadOpen = true;
+  onpadOpenedAt = performance.now();
+  document.body.classList.add('onpad-on');
+  $('#onpadOverlay')?.classList.remove('hidden');
+  syncOnpadFrame();
+}
+function closeOnpad() {
+  if (!onpadOpen && !$('#onpadFrame')?.classList.contains('onpad-open')) {
+    syncOnpadFrame();
+    return;
+  }
+  onpadOpen = false;
+  document.body.classList.remove('onpad-on');
+  $('#onpadOverlay')?.classList.add('hidden');
+  syncOnpadFrame();
+}
+function bindOnpad() {
+  const ov = $('#onpadOverlay'), x = $('#onpadClose'), tab = $('#onpadTab');
+  if (tab) tab.href = ONPAD_URL;
+  if (x) x.onclick = e => { e.preventDefault(); e.stopPropagation(); closeOnpad(); };
+  if (ov) ov.addEventListener('click', e => { if (e.target === ov && performance.now() - onpadOpenedAt > 400) closeOnpad(); });
+}
+bindOnpad();
 
 // ---------- HUD ----------
 const projList = $('#projList');
@@ -2049,7 +2203,7 @@ async function checkVersion() {
     if (!here && !root) return;
     const next = here + '|' + root;
     if (build === null) build = next;
-    else if (next !== build && !chatIn.value && modal.classList.contains('hidden') && !trainer.isOpen() && document.activeElement !== chatIn) { toast('Office update: reloading'); setTimeout(() => location.reload(), 800); }
+    else if (next !== build && !chatIn.value && modal.classList.contains('hidden') && !trainer.isOpen() && !onpadOpen && document.activeElement !== chatIn && document.activeElement?.id !== 'onpadFrame') { toast('Office update: reloading'); setTimeout(() => location.reload(), 800); }
   } catch (e) {}}
 
 // ---------- controller + keyboard ----------
@@ -2064,8 +2218,14 @@ function moveSel(dx, dy) {
 function press(btn) {
   const open = !modal.classList.contains('hidden');
   const train = trainer.isOpen();
-  if (btn === 'A') { if (train) return; if (open) closeCard(); else if (sel) openWorker(sel); else sel = 'grok'; }
-  else if (btn === 'B') { if (train) trainer.close(); else if (open) closeCard(); else sel = null; }
+  if (btn === 'A') {
+    if (train || onpadOpen) return;
+    if (open) closeCard();
+    else if (facingOnpadBoard()) openOnpad();
+    else if (sel) openWorker(sel);
+    else if (floor === 'office') sel = 'grok';
+  }
+  else if (btn === 'B') { if (onpadOpen) closeOnpad(); else if (train) trainer.close(); else if (open) closeCard(); else sel = null; }
   else if (btn === 'Y') openNeeds();
   else if (btn === 'X') { closeCard(); openChat(); chatIn.focus(); }
   else if (btn === 'start') openProjects();
@@ -2184,7 +2344,7 @@ function clickTargets() {
     list.push({ name: 'rack', want: 'warehouse', x: rx + rw / 2, y: ry + 0.4, z: 2.05 });
     list.push({ name: 'stock desk', want: 'warehouse', x: BENCH.x + BENCH.w / 2, y: BENCH.y + BENCH.d / 2, z: 0.74 });
     if (isFar('N')) list.push({ name: 'bay', want: 'warehouse', x: 2.35, y: 0.01, z: 1.15 });
-    if (isFar('S')) list.push({ name: 'stock board', want: 'warehouse', x: 9.35, y: GY, z: 1.7 });
+    if (isFar('S')) list.push({ name: 'stock board', want: 'onpadmap', x: 9.35, y: GY, z: 1.6 });
     return list;
   }
   for (const p of people) {
@@ -2214,8 +2374,18 @@ function checkHits() {
       floorAnim = null;
       for (let f = 0; f < 4; f++) {
         facing = f;
+        updateFloorBtn();
         rebuildHits();
-        if (fl === 'office' && hits.some(h => h.kind === 'warehouse')) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'warehouse hit upstairs', want: 'none', got: 'warehouse' });
+        if (fl === 'office' && hits.some(h => h.kind === 'warehouse' || h.kind === 'onpadmap')) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'downstairs hit upstairs', want: 'none', got: hits.find(h => h.kind === 'warehouse' || h.kind === 'onpadmap')?.kind });
+        const cue = stairCue(fl === 'warehouse');
+        const btn = $('#floorBtn')?.textContent || '';
+        const wantWord = fl === 'warehouse' ? 'UP' : 'DOWN';
+        const wantDest = fl === 'warehouse' ? 'OFFICE' : 'WAREHOUSE';
+        const wantBtn = fl === 'warehouse' ? 'Up' : 'Down';
+        if (cue.word !== wantWord || cue.dest !== wantDest || btn !== wantBtn) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'stair sign', want: wantWord + ' ' + wantDest + ' / ' + wantBtn, got: cue.word + ' ' + cue.dest + ' / ' + btn });
+        const tip = projectCSS(...cue.tip), tail = projectCSS(...cue.tail);
+        const pointOk = fl === 'warehouse' ? tip[1] < tail[1] - 3 : tip[1] > tail[1] + 3;
+        if (!pointOk) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'stair arrow', want: fl === 'warehouse' ? 'points up' : 'points down', got: 'tip ' + tip[1].toFixed(1) + ' tail ' + tail[1].toFixed(1) });
         for (const t of clickTargets()) {
           const css = t.iso ? isoToCSS(t.iso[0], t.iso[1]) : projectCSS(t.x, t.y, t.z);
           const h = hitAt(css[0], css[1]);
@@ -2225,7 +2395,14 @@ function checkHits() {
           if (got !== t.want) { fails.push(row); continue; }
           if (t.want === 'stairs') continue;
           openHit(h);
-          if (t.want === 'design') {
+          if (t.want === 'onpadmap') {
+            const link = $('#onpadTab'), close = $('#onpadClose');
+            if (!onpadOpen) fails.push({ floor: fl, facing: FACE_NAME[f], name: t.name + ' open', want: 'onpad', got: 'closed' });
+            if (!close || close.textContent.trim() !== 'Close') fails.push({ floor: fl, facing: FACE_NAME[f], name: 'onpad close', want: 'Close', got: close?.textContent || 'none' });
+            if (!link || link.textContent.trim() !== 'Open in new tab') fails.push({ floor: fl, facing: FACE_NAME[f], name: 'onpad link', want: 'Open in new tab', got: link?.textContent || 'none' });
+            if (link && link.getAttribute('href') !== ONPAD_URL) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'onpad href', want: ONPAD_URL, got: link.getAttribute('href') || 'none' });
+            closeOnpad();
+          } else if (t.want === 'design') {
             if (!trainer.isOpen()) fails.push({ floor: fl, facing: FACE_NAME[f], name: t.name + ' card', want: 'Design Trainer', got: 'closed' });
             trainer.close();
           } else {
@@ -2237,7 +2414,7 @@ function checkHits() {
         }
         if (fl === 'office') {
           const sg = stairSignBox();
-          const sign = quadY(sg.ySign, sg.x0, sg.x1, 1.42, 2.08);
+          const sign = quadY(sg.ySign, sg.x0, sg.x1, sg.z0, sg.z1);
           for (let x = 0.6; x < GX; x += 1) for (let y = 0.6; y < GY; y += 1) {
             if (x >= ST.x0 - 0.3 && x <= ST.x1 + 0.3 && y >= ST.y0 - 0.6 && y <= ST.y1 + 0.25) continue;
             const css = projectCSS(x, y, 0);
@@ -2255,15 +2432,42 @@ function checkHits() {
         }
       }
     }
+    for (const fl of ['office', 'warehouse']) {
+      floor = fl;
+      floorAnim = null;
+      rotAnim = null;
+      updateFloorBtn();
+      for (let f = 0; f < 4; f++) {
+        facing = f;
+        closeOnpad();
+        closeCard();
+        sel = null;
+        press('A');
+        const wantOpen = fl === 'warehouse' && isFar('S');
+        if (onpadOpen !== wantOpen) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'action button', want: wantOpen ? 'onpad' : 'closed', got: onpadOpen ? 'onpad' : 'closed' });
+        if (wantOpen) {
+          press('B');
+          if (onpadOpen) fails.push({ floor: fl, facing: FACE_NAME[f], name: 'action close', want: 'closed', got: 'onpad' });
+        }
+        closeOnpad();
+        closeCard();
+      }
+    }
   } finally {
     facing = savedF;
     floor = savedFl;
     floorAnim = null;
+    rotAnim = null;
+    sel = null;
+    closeOnpad();
+    closeCard();
+    updateFloorBtn();
     rebuildHits();
   }
   return { ok: fails.length === 0, fails, checked: rows.length };
 }
-function lookAt(x, y, z = 1.2) {
+function lookAt(x, y, z = 1.2, zoom = 0) {
+  if (zoom) { wish.zoom = clampZ(zoom); cam.zoom = wish.zoom; }
   const [ix, iy] = P(x, y, z);
   const [fx, fy] = focusIso();
   const sCss = homePS * cam.zoom;
@@ -2275,4 +2479,4 @@ window.__hq2d = { bench: (n = 30) => { const scratch = document.createElement('c
       return { kind: h.kind, id: h.id || null, rect: [x, y, x2 - x, y2 - y] };
     }
     return { kind: h.kind, id: h.id || null, poly: h.poly.map(p => legToCSS(p[0], p[1])) };
-  }), tap: (x, y) => tap(x, y), checkHits, openNeeds, openWorker, openProjects, openBusiness, openDesign, setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, facing: () => FACE_NAME[facing], rotate: rotateView, setFacing, snapshot, floor: () => floor, goFloor, setFloor, state: () => ({ PS, BW, BH, DPR, n: people.length, facing: FACE_NAME[facing], floor, cam: { ...cam } }) };
+  }), tap: (x, y) => tap(x, y), checkHits, openNeeds, openWorker, openProjects, openBusiness, openDesign, openOnpad, closeOnpad, onpadOpen: () => onpadOpen, stairCue: () => stairCue(), action: () => press('A'), setTrainerDeck: feed => { deckToken++; trainer.setDeck(feed); }, deckBusy: () => deckBusy, facing: () => FACE_NAME[facing], rotate: rotateView, setFacing, snapshot, floor: () => floor, goFloor, setFloor, state: () => ({ PS, BW, BH, DPR, n: people.length, facing: FACE_NAME[facing], floor, cam: { ...cam } }) };
